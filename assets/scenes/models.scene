@@ -1,0 +1,84 @@
+// Модели Piska Modeler (assets/models/*.pmodel) в сцене движка: каждая — MeshRenderer
+// с `mesh` = модель; текстура не назначена, поэтому берётся атлас из самого файла.
+// Белый `color` — чтобы цвета текстуры не затемнялись. См. docs/api/modeler.md.
+(
+    name: "Piska Modeler Samples",
+    objects: [
+        (
+            name: "Main Camera",
+            tag: "MainCamera",
+            transform: (position: (0.1, 1.7, 6.6), rotation: (-15.0, 0.0, 0.0)),
+            components: [
+                (kind: "Camera", fields: {
+                    "projection": Enum("Perspective"),
+                    "fov_deg": Float(45.0),
+                    "background": Enum("Sky"),
+                }),
+            ],
+        ),
+        (
+            name: "Sun",
+            transform: (rotation: (-48.0, 35.0, 0.0)),
+            components: [
+                (kind: "Light", fields: { "intensity": Float(2.6) }),
+            ],
+        ),
+        (
+            name: "Ground",
+            transform: (scale: (60.0, 1.0, 60.0)),
+            components: [
+                (kind: "MeshRenderer", fields: {
+                    "shape": Enum("Plane"),
+                    "color": Color(0.36, 0.42, 0.30, 1.0),
+                    "roughness": Float(0.95),
+                    "cast_shadows": Bool(false),
+                }),
+            ],
+        ),
+        (
+            name: "Crate",
+            transform: (position: (-1.7, 0.0, -0.4), rotation: (0.0, 20.0, 0.0)),
+            components: [
+                (kind: "MeshRenderer", fields: {
+                    "mesh": Asset("0def5a43e9294e4bbc88471442901b40"),
+                    "color": Color(1.0, 1.0, 1.0, 1.0),
+                    "roughness": Float(0.85),
+                }),
+            ],
+        ),
+        (
+            name: "Lantern",
+            transform: (position: (-1.7, 1.0, -0.4), rotation: (0.0, -15.0, 0.0), scale: (0.8, 0.8, 0.8)),
+            components: [
+                (kind: "MeshRenderer", fields: {
+                    "mesh": Asset("c940e19d95a14ba5a492b988a2b4d8ed"),
+                    "color": Color(1.0, 1.0, 1.0, 1.0),
+                    "roughness": Float(0.5),
+                    "emissive": Color(0.12, 0.08, 0.02, 1.0),
+                }),
+            ],
+        ),
+        (
+            name: "Pine",
+            transform: (position: (1.9, 0.0, -1.6), scale: (2.2, 2.2, 2.2)),
+            components: [
+                (kind: "MeshRenderer", fields: {
+                    "mesh": Asset("fc155733ad3343b591d06b56abae00ad"),
+                    "color": Color(1.0, 1.0, 1.0, 1.0),
+                    "roughness": Float(0.9),
+                }),
+            ],
+        ),
+        (
+            name: "Rover",
+            transform: (position: (0.3, 0.0, 0.2), rotation: (0.0, 200.0, 0.0)),
+            components: [
+                (kind: "MeshRenderer", fields: {
+                    "mesh": Asset("4984359c82e949f08b21b9e873f58c9f"),
+                    "color": Color(1.0, 1.0, 1.0, 1.0),
+                    "roughness": Float(0.8),
+                }),
+            ],
+        ),
+    ],
+)

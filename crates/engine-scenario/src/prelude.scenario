@@ -1,0 +1,149 @@
+-- Часть стандартной библиотеки, написанная на самом Scenario: функции, которые
+-- вызывают функции скрипта (map, filter, sort с компаратором, pcall, wait_until).
+-- Так они остаются сопрограммами: внутри колбэка можно ждать.
+-- Ошибки внутри этих функций показываются в месте вызова из скрипта пользователя.
+
+function __list_map(list, f) {
+    __check_fn(f, "map")
+    let out = []
+    for (let i = 0; i < #list; i += 1) { out.push(f(list[i], i)) }
+    return out
+}
+
+function __list_filter(list, f) {
+    __check_fn(f, "filter")
+    let out = []
+    for (let i = 0; i < #list; i += 1) {
+        let item = list[i]
+        if (f(item, i)) { out.push(item) }
+    }
+    return out
+}
+
+function __list_find(list, f) {
+    __check_fn(f, "find")
+    for (let i = 0; i < #list; i += 1) {
+        if (f(list[i], i)) { return list[i] }
+    }
+    return nil
+}
+
+function __list_find_index(list, f) {
+    __check_fn(f, "find_index")
+    for (let i = 0; i < #list; i += 1) {
+        if (f(list[i], i)) { return i }
+    }
+    return -1
+}
+
+function __list_each(list, f) {
+    __check_fn(f, "each")
+    for (let i = 0; i < #list; i += 1) { f(list[i], i) }
+}
+
+function __list_reduce(list, f, init) {
+    __check_fn(f, "reduce")
+    let acc = init
+    let start = 0
+    if (acc == nil) {
+        if (#list == 0) { error("reduce of an empty list needs a starting value") }
+        acc = list[0]
+        start = 1
+    }
+    for (let i = start; i < #list; i += 1) { acc = f(acc, list[i], i) }
+    return acc
+}
+
+function __list_some(list, f) {
+    __check_fn(f, "some")
+    for (let i = 0; i < #list; i += 1) {
+        if (f(list[i], i)) { return true }
+    }
+    return false
+}
+
+function __list_every(list, f) {
+    __check_fn(f, "every")
+    for (let i = 0; i < #list; i += 1) {
+        if (!f(list[i], i)) { return false }
+    }
+    return true
+}
+
+function __list_count(list, f) {
+    __check_fn(f, "count")
+    let n = 0
+    for (let i = 0; i < #list; i += 1) {
+        if (f(list[i], i)) { n += 1 }
+    }
+    return n
+}
+
+-- Устойчивая сортировка слиянием с компаратором: cmp(a, b) → true/false (как в Lua)
+-- или число < 0 (как в JavaScript). Вид ответа определяется по первому сравнению.
+function __list_sort(list, cmp) {
+    if (cmp == nil) { return __sort_native(list) }
+    __check_fn(cmp, "sort")
+    let n = #list
+    if (n < 2) { return list }
+    let a = list.copy()
+    let b = list.copy()
+    const numeric = typeof cmp(a[0], a[1]) == "number"
+    let width = 1
+    while (width < n) {
+        let i = 0
+        while (i < n) {
+            let mid = i + width
+            if (mid > n) mid = n
+            let hi = mid + width
+            if (hi > n) hi = n
+            let l = i, r = mid, k = i
+            while (k < hi) {
+                let left
+                if (l >= mid) left = false
+                else if (r >= hi) left = true
+                else if (numeric) left = !(cmp(a[r], a[l]) < 0)
+                else left = !cmp(a[r], a[l])
+                if (left) {
+                    b[k] = a[l]
+                    l += 1
+                } else {
+                    b[k] = a[r]
+                    r += 1
+                }
+                k += 1
+            }
+            i = hi
+        }
+        let t = a
+        a = b
+        b = t
+        width *= 2
+    }
+    __replace(list, a)
+    return list
+}
+
+function __map_each(map, f) {
+    __check_fn(f, "each")
+    for (const [k, v] of map) { f(k, v) }
+}
+
+function pcall(f, ...args) {
+    __check_fn(f, "pcall")
+    try {
+        return [true, f(...args)]
+    } catch (e) {
+        return [false, e]
+    }
+}
+
+function wait_until(cond, timeout) {
+    __check_fn(cond, "wait_until")
+    let started = time()
+    while (!cond()) {
+        if (timeout != nil && time() - started >= timeout) { return false }
+        wait_frame()
+    }
+    return true
+}

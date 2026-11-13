@@ -1,0 +1,103 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/engine-core",
+    "crates/engine-assets",
+    "crates/engine-render",
+    "crates/engine-physics",
+    "crates/engine-audio",
+    "crates/engine-ui",
+    "crates/engine-scenario",
+    "crates/engine-cpp-bridge",
+    "crates/engine-cpp-build",
+    "crates/engine-build",
+    "crates/engine-modeler",
+    "crates/engine-editor",
+    "crates/engine",
+    "tools/piska-export",
+    "tools/piska-modeler",
+    "tools/piska-hub",
+    "games/*",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+engine-core = { path = "crates/engine-core" }
+# Возможности подсистем выбирает фасад `engine` (см. docs/design/engine-features.md):
+# `default-features = false` здесь, чтобы игра линковала только то, что включила.
+engine-assets = { path = "crates/engine-assets", default-features = false }
+engine-render = { path = "crates/engine-render", default-features = false }
+engine-physics = { path = "crates/engine-physics", default-features = false }
+engine-audio = { path = "crates/engine-audio", default-features = false }
+engine-ui = { path = "crates/engine-ui" }
+engine-scenario = { path = "crates/engine-scenario" }
+engine-cpp-bridge = { path = "crates/engine-cpp-bridge" }
+engine-cpp-build = { path = "crates/engine-cpp-build" }
+engine-build = { path = "crates/engine-build" }
+engine-editor = { path = "crates/engine-editor" }
+engine-modeler = { path = "crates/engine-modeler" }
+
+glam = "0.29"
+serde = { version = "1", features = ["derive"] }
+ron = "0.8"
+thiserror = "1"
+log = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+gltf = { version = "1", default-features = false, features = ["import", "utils"] }
+wgpu = "23"
+winit = "0.30"
+pollster = "0.3"
+# egui 0.30 — выпуск под wgpu 23 и winit 0.30.
+egui = { version = "0.30", default-features = false, features = ["default_fonts"] }
+egui-wgpu = { version = "0.30", default-features = false }
+egui-winit = { version = "0.30", default-features = false, features = ["clipboard", "wayland", "x11"] }
+rapier2d = "0.22"
+rapier3d = "0.22"
+libloading = "0.8"
+cc = "1"
+cbindgen = { version = "0.27", default-features = false }
+
+# Отладочная сборка должна быть играбельной: без оптимизации wgpu, naga и egui
+# тратят на кадр в несколько раз больше времени, и даже простая сцена не держит
+# частоту монитора. Зависимости оптимизируются полностью (они собираются один раз),
+# свой код — слегка, чтобы пересборка оставалась быстрой.
+# Отладочной информации — только номера строк для бэктрейсов: каталог `target`
+# получается в несколько раз меньше.
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# Интерпретатор Scenario исполняет скрипты в каждом кадре и в редакторе: собирается
+# с полной оптимизацией и в dev (он маленький и меняется редко).
+[profile.dev.package.engine-scenario]
+opt-level = 3
+
+# Готовая игра: полная оптимизация по всей программе и без таблицы символов — файл меньше,
+# кадр быстрее. Сборка дольше, но она делается один раз при экспорте.
+# Окно Piska Modeler рисует модель программным растеризатором: без оптимизации кадр
+# стоит в разы дороже. Крейт небольшой, пересборка остаётся быстрой.
+[profile.dev.package.engine-modeler]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+
+# Веб-сборка (`piska-export web --release`): размер файла важнее последних процентов
+# скорости — wasm скачивается при каждом заходе на страницу.
+[profile.web-release]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+debug = false

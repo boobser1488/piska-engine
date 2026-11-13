@@ -1,0 +1,20 @@
+[package]
+name = "engine-physics"
+description = "2D-физика: Rigidbody2D + Collider2D поверх Rapier2D, триггеры, слои, raycast."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["2d", "3d"]
+# 2D-физика (Rapier2D): Rigidbody2D, Collider2D, Physics2D.
+2d = ["dep:rapier2d"]
+# 3D-физика (Rapier3D): Rigidbody, Collider, CharacterController, Physics3D.
+3d = ["dep:rapier3d"]
+
+[dependencies]
+engine-core.workspace = true
+engine-assets.workspace = true
+rapier2d = { workspace = true, optional = true }
+rapier3d = { workspace = true, optional = true }
+log.workspace = true

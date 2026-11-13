@@ -1,0 +1,20 @@
+[package]
+name = "engine-cpp-bridge"
+description = "Граница Rust ↔ C++: статические C++-модули и динамические плагины через C ABI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+engine-core.workspace = true
+thiserror.workspace = true
+log.workspace = true
+
+# Динамические плагины: только там, где есть dlopen / LoadLibrary (в браузере их нет).
+[target.'cfg(any(unix, windows))'.dependencies]
+libloading.workspace = true
+
+[build-dependencies]
+cc.workspace = true
+cbindgen.workspace = true

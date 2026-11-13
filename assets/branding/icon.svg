@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Piska Engine</title>
+  <!-- Тот же рисунок, что строит tools/gen_icon.py (дизайн A_monogram), в координатах 1024. -->
+  <rect x="32" y="32" width="960" height="960" rx="215" fill="#2f54eb"/>
+  <!-- Буква P: ножка, чаша и просвет чаши. -->
+  <path fill="#ffffff" fill-rule="evenodd" d="M297 195 H532 A195 195 0 0 1 532 584 H471 V829 H297 Z M471 317 H543 A72 72 0 0 1 543 461 H471 Z"/>
+  <!-- Янтарная искра. -->
+  <rect x="594" y="655" width="143" height="143" fill="#ffb020"/>
+</svg>

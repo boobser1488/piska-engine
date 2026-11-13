@@ -1,0 +1,165 @@
+// Уровень платформера. Формат: RON, дерево объектов.
+// Узел либо описан целиком (components + children), либо ссылается на префаб
+// (prefab: Some("…")) и хранит только отличия (overrides).
+(
+    name: "Level 1",
+    objects: [
+        (
+            name: "Main Camera",
+            tag: "MainCamera",
+            transform: (position: (-5.0, -0.5, 0.0)),
+            components: [
+                (kind: "Camera", fields: {
+                    "ortho_size": Float(5.5),
+                    "clear_color": Color(0.209, 0.578, 0.768, 1.0),
+                }),
+                (kind: "CameraFollow", fields: {
+                    "target_tag": Str("Player"),
+                    "smoothing": Float(6.0),
+                    "offset": Vec2(0.0, 1.5),
+                }),
+            ],
+        ),
+        (
+            name: "Backdrop",
+            children: [
+                (
+                    name: "Far Hills",
+                    transform: (position: (2.0, -1.2, 0.0)),
+                    components: [
+                        (kind: "SpriteRenderer", fields: {
+                            "color": Color(0.159, 0.451, 0.392, 1.0),
+                            "size": Vec2(60.0, 4.0),
+                            "sorting_layer": Int(-2),
+                        }),
+                    ],
+                ),
+                (
+                    name: "Near Hills",
+                    transform: (position: (-3.0, -2.0, 0.0)),
+                    components: [
+                        (kind: "SpriteRenderer", fields: {
+                            "color": Color(0.078, 0.337, 0.195, 1.0),
+                            "size": Vec2(60.0, 2.4),
+                            "sorting_layer": Int(-1),
+                        }),
+                    ],
+                ),
+            ],
+        ),
+        (
+            name: "Ground",
+            transform: (position: (0.0, -5.5, 0.0)),
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "color": Color(0.153, 0.072, 0.053, 1.0),
+                    "size": Vec2(40.0, 6.0),
+                }),
+                (kind: "Collider2D", fields: { "size": Vec2(40.0, 6.0) }),
+            ],
+            children: [
+                (
+                    name: "Grass",
+                    transform: (position: (0.0, 2.9, 0.0)),
+                    components: [
+                        (kind: "SpriteRenderer", fields: {
+                            "color": Color(0.05, 0.366, 0.074, 1.0),
+                            "size": Vec2(40.0, 0.2),
+                            "order": Int(1),
+                        }),
+                    ],
+                ),
+            ],
+        ),
+        (
+            name: "Platforms",
+            children: [
+                (
+                    name: "Platform A",
+                    transform: (position: (-1.5, -0.9, 0.0)),
+                    components: [
+                        (kind: "SpriteRenderer", fields: {
+                            "color": Color(0.266, 0.156, 0.125, 1.0),
+                            "size": Vec2(3.0, 0.4),
+                        }),
+                        (kind: "Collider2D", fields: { "size": Vec2(3.0, 0.4), "one_way": Bool(true) }),
+                    ],
+                ),
+                (
+                    name: "Platform B",
+                    transform: (position: (3.0, 0.6, 0.0)),
+                    components: [
+                        (kind: "SpriteRenderer", fields: {
+                            "color": Color(0.266, 0.156, 0.125, 1.0),
+                            "size": Vec2(3.0, 0.4),
+                        }),
+                        (kind: "Collider2D", fields: { "size": Vec2(3.0, 0.4), "one_way": Bool(true) }),
+                    ],
+                ),
+                (
+                    name: "Platform C",
+                    transform: (position: (7.5, 2.1, 0.0), rotation: (0.0, 0.0, -6.0)),
+                    components: [
+                        (kind: "SpriteRenderer", fields: {
+                            "color": Color(0.266, 0.156, 0.125, 1.0),
+                            "size": Vec2(3.0, 0.4),
+                        }),
+                        (kind: "Collider2D", fields: { "size": Vec2(3.0, 0.4), "one_way": Bool(true) }),
+                    ],
+                ),
+            ],
+        ),
+        (
+            name: "Coins",
+            children: [
+                // Обычный экземпляр префаба: только имя и позиция.
+                (
+                    name: "Coin 1",
+                    prefab: Some("prefabs/coin.prefab"),
+                    transform: (position: (-4.0, -1.9, 0.0)),
+                ),
+                (
+                    name: "Coin 2",
+                    prefab: Some("prefabs/coin.prefab"),
+                    transform: (position: (-1.5, -0.1, 0.0)),
+                ),
+                // Экземпляр с переопределениями: дороже и другого цвета.
+                (
+                    name: "Ruby",
+                    prefab: Some("prefabs/coin.prefab"),
+                    overrides: [
+                        (component: "Coin", field: "value", value: Int(5)),
+                        (path: "Gem", component: "SpriteRenderer", field: "color", value: Color(0.8, 0.02, 0.1, 1.0)),
+                        (path: "Gem", component: "Transform", field: "scale", value: Vec3(1.4, 1.4, 1.0)),
+                    ],
+                    transform: (position: (7.5, 3.1, 0.0)),
+                ),
+            ],
+        ),
+        (
+            name: "Player",
+            tag: "Player",
+            transform: (position: (-7.0, -1.0, 0.0)),
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("7f3a9c2e5b1d4e8fa6c0d2b4e6f81a3c"),
+                    "size": Vec2(0.9, 0.9),
+                    "sorting_layer": Int(1),
+                }),
+                (kind: "Rigidbody2D", fields: {
+                    "body_type": Enum("Dynamic"),
+                    "gravity_scale": Float(2.5),
+                    "lock_rotation": Bool(true),
+                }),
+                (kind: "Collider2D", fields: {
+                    "size": Vec2(0.8, 0.9),
+                    "friction": Float(0.0),
+                }),
+                (kind: "PlayerController", fields: {
+                    "speed": Float(6.0),
+                    "jump_speed": Float(11.0),
+                }),
+            ],
+        ),
+    ],
+)

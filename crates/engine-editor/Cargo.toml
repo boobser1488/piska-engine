@@ -1,0 +1,27 @@
+[package]
+name = "engine-editor"
+description = "Редактор в стиле Unity на egui + wgpu: иерархия, инспектор, вьюпорт с гизмо, проект, консоль, профайлер, Play/Pause/Step."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+engine-core.workspace = true
+engine-assets = { workspace = true, features = ["gltf"] }
+engine-render.workspace = true
+egui.workspace = true
+egui-wgpu.workspace = true
+egui-winit.workspace = true
+# Окна-вкладки как в Unity: дерево дока, разделители, перетаскивание, плавающие окна.
+# Выпуск 0.15 — под egui 0.30. Без `serde`: раскладка сохраняется своим форматом.
+egui_dock = "0.15.0"
+wgpu.workspace = true
+winit.workspace = true
+pollster.workspace = true
+image.workspace = true
+thiserror.workspace = true
+log.workspace = true
+# Страница Build настроек проекта правит `[package.metadata.piska]` в Cargo.toml игры,
+# не трогая остальной текст и комментарии. Та же версия, что уже есть в Cargo.lock
+# (её тянет `toml` 0.8) — новых загрузок нет.
+toml_edit = "=0.22.27"

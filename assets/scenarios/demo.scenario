@@ -1,0 +1,43 @@
+-- Демо Scenario: короткая катсцена (cargo run --example scenario_demo).
+-- Обе формы записи — Lua и JavaScript — смешаны в одном файле нарочно.
+
+const cubes = find_all_tag("Cube")
+let arrived = 0
+
+-- Параллельная задача: лампа «дышит», пока идёт сценарий.
+start(function()
+    local lamp = find("Lamp")
+    while true do
+        lamp:tween("Light.intensity", 40, 0.5, "in_out_sine")
+        wait(0.5)
+        lamp:tween("Light.intensity", 8, 0.5, "in_out_sine")
+        wait(0.5)
+    end
+end)
+
+-- Обработчик сообщения: каждый куб сообщает, что доехал.
+on("cube_arrived", (name) => {
+    arrived += 1
+    ui.text("Caption", `${name} на месте (${arrived}/${cubes.length})`)
+})
+
+-- Отсчёт со звуком.
+for i = 3, 1, -1 do
+    ui.text("Caption", i .. "…")
+    play("blip", 0.5)
+    wait(0.4)
+end
+ui.text("Caption", "Поехали!")
+
+-- Кубы выезжают в ряд, каждый — своей задачей, с задержкой.
+for i, cube in ipairs(cubes) do
+    start(function()
+        wait(i * 0.25)
+        cube:move_to(-2.5 + i * 2.5, 0.6, 1.5, 1.0, "out_back")
+        emit("cube_arrived", cube.name)
+    end)
+end
+
+wait_until(() => arrived == cubes.length)
+play("done", 0.6)
+ui.text("Caption", "Готово: сценарий доиграл")

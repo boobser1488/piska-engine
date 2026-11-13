@@ -1,0 +1,25 @@
+[package]
+name = "engine-assets"
+description = "База ассетов: .meta-файлы, GUID, типизированные ссылки AssetHandle<T>."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["gltf"]
+# Загрузка моделей `.gltf` / `.glb` (крейт gltf). Без неё работают `.obj` и `.pmodel`;
+# `.gltf` в такой сборке даёт понятную ошибку с названием возможности.
+gltf = ["dep:gltf"]
+
+[dependencies]
+engine-core.workspace = true
+serde.workspace = true
+ron.workspace = true
+thiserror.workspace = true
+log.workspace = true
+gltf = { workspace = true, features = ["names"], optional = true }
+web-time = "1"
+
+[dev-dependencies]
+# Тесты импорта `.pmodel` и `.glb` из Piska Modeler.
+engine-modeler.workspace = true

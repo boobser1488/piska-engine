@@ -1,0 +1,29 @@
+[package]
+name = "piska-hub"
+description = "Piska Hub — стартовое окно движка: список проектов, новый проект из шаблона, открытие в редакторе с ходом сборки, примеры и документация."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Палитра, шрифты, виджеты и иконки — те же, что у редактора (`engine_editor::kit`);
+# оттуда же общие настройки (масштаб интерфейса, акцент).
+engine-editor.workspace = true
+# Устройство wgpu и чтение текстуры для снимков без окна.
+engine-render.workspace = true
+egui.workspace = true
+egui-wgpu.workspace = true
+egui-winit.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+pollster.workspace = true
+image.workspace = true
+serde.workspace = true
+ron.workspace = true
+thiserror.workspace = true
+log.workspace = true
+# Сообщения cargo `--message-format=json`.
+serde_json = "1"
+# Чтение `Cargo.toml` проектов.
+toml = "0.8"

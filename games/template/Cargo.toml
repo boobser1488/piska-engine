@@ -1,0 +1,26 @@
+[package]
+name = "template"
+description = "Шаблон игры на Piska Engine: «Звездопад» — спрайты, физика, UI, звук, сохранения."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Редактор в игру не входит: экспорт собирает только рантайм. Подсистемы — только те,
+# что игра использует (docs/design/engine-features.md): остальные не попадают в exe.
+engine = { path = "../../crates/engine", default-features = false, features = ["physics2d", "audio", "audio-wav", "ui", "scenario", "gamepad"] }
+log.workspace = true
+
+[build-dependencies]
+# Значок приложения в exe на Windows (см. build.rs).
+engine-build = { path = "../../crates/engine-build" }
+
+[features]
+# Программа редактора: `cargo run -p template --features editor --bin template-editor`.
+# В экспорт и обычную сборку игры редактор не входит.
+editor = ["engine/editor"]
+
+[[bin]]
+name = "template-editor"
+required-features = ["editor"]

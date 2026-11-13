@@ -1,0 +1,7 @@
+(
+    guid: "d3a0c94a752d73c89b63c5ace7e38318",
+    importer: "Texture",
+    settings: {
+        "filter": Enum("Linear"),
+    },
+)

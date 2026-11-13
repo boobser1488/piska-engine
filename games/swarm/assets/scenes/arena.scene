@@ -1,0 +1,60 @@
+// Единственная сцена «Роя»: камера со свечением, звёздный фон, пол арены и менеджер игры.
+// Всё остальное (спрайты врагов и снарядов, частицы, интерфейс) создаёт Director при старте.
+(
+    name: "Arena",
+    objects: [
+        (
+            name: "Main Camera",
+            tag: "MainCamera",
+            components: [
+                (kind: "Camera", fields: {
+                    "ortho_size": Float(10.4),
+                    "clear_color": Color(0.012, 0.016, 0.04, 1.0),
+                }),
+                (kind: "CameraController2D", fields: {
+                    "smoothing": Float(0.0),
+                    "shake_decay": Float(2.4),
+                    "shake_max_offset": Vec2(0.55, 0.55),
+                    "shake_frequency": Float(32.0),
+                }),
+                (kind: "AudioListener", fields: {}),
+            ],
+        ),
+        (
+            name: "Environment",
+            components: [
+                (kind: "Environment", fields: {
+                    "bloom": Float(0.55),
+                    "vignette": Float(0.32),
+                    "exposure": Float(1.0),
+                }),
+            ],
+        ),
+        (
+            name: "Space",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("71b77369d43505930fd4182c6e806f0f"),
+                    "size": Vec2(41.0, 23.0),
+                    "sorting_layer": Int(-20),
+                }),
+            ],
+        ),
+        (
+            name: "ArenaFloor",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("ebffdee5648c0b05d3be3b810cf24635"),
+                    "size": Vec2(20.0, 20.0),
+                    "sorting_layer": Int(-10),
+                }),
+            ],
+        ),
+        (
+            name: "Director",
+            components: [
+                (kind: "Director", fields: {}),
+            ],
+        ),
+    ],
+)

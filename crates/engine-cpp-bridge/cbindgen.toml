@@ -1,0 +1,21 @@
+# Rust → C: генерация include/engine_api.h из src/abi.rs (см. build.rs).
+language = "C"
+cpp_compat = true
+include_guard = "ENGINE_API_H"
+autogen_warning = "/* Сгенерировано cbindgen из crates/engine-cpp-bridge/src/abi.rs. Не редактировать вручную. */"
+header = "/* Piska Engine — C ABI для плагинов. */"
+documentation = true
+style = "type"
+
+[parse]
+parse_deps = false
+
+[export]
+# Типы не упоминаются в экспортируемых функциях, поэтому перечисляем явно.
+include = [
+    "EngineApi", "EnginePlugin", "EngineComponentType", "EngineField", "EngineObject", "EngineVec3",
+    "EngineValue", "EngineTime", "EngineTouch", "EngineTweenParams",
+]
+# Функции статического C++-модуля — внутренняя кухня крейта (см. engine_noise.h),
+# плагинам они не экспортируются.
+exclude = ["eng_noise_fbm2", "eng_noise_fill_rgba", "engine_builtin_gameplay_entry"]

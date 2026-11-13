@@ -1,0 +1,29 @@
+[package]
+name = "swarm"
+description = "Рой: аркадный шутер на выживание в круглой арене (Piska Engine)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[package.metadata.piska]
+title = "Рой"
+
+[dependencies]
+# Редактор в игру не входит: экспорт собирает только рантайм. Подсистемы — только те,
+# что игра использует (docs/design/engine-features.md): остальные не попадают в exe.
+engine = { path = "../../crates/engine", default-features = false, features = ["audio", "ui", "gamepad"] }
+log.workspace = true
+
+[build-dependencies]
+# Значок приложения в exe на Windows (см. build.rs).
+engine-build = { path = "../../crates/engine-build" }
+
+[features]
+# Программа редактора: `cargo run -p swarm --features editor --bin swarm-editor`.
+# В экспорт и обычную сборку игры редактор не входит.
+editor = ["engine/editor"]
+
+[[bin]]
+name = "swarm-editor"
+required-features = ["editor"]

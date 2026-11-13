@@ -1,0 +1,9 @@
+[package]
+name = "engine-scenario"
+description = "Scenario — маленький встроенный язык сценариев (синтаксис Lua + JavaScript): лексер, парсер, компилятор в байткод и возобновляемая ВМ-сопрограмма. Без зависимостей от движка."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Ядро языка намеренно без зависимостей: собирается под wasm32, без потоков и std::time.
+[dependencies]

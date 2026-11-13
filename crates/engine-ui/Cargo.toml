@@ -1,0 +1,23 @@
+[package]
+name = "engine-ui"
+description = "Игровой интерфейс: холст, текст, картинки, кнопки, раскладка."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# JPEG при чтении размера текстуры из заголовка (PNG есть всегда).
+jpeg = ["image/jpeg"]
+
+[dependencies]
+engine-core.workspace = true
+engine-assets.workspace = true
+engine-render.workspace = true
+log.workspace = true
+# Растеризация глифов TrueType/OpenType: чистый Rust, работает и в wasm.
+ab_glyph = "0.2"
+# Встроенные шрифты egui (Ubuntu Light и Hack — латиница и кириллица) с их лицензиями
+# (UFL и лицензия Hack лежат в самом крейте).
+epaint_default_fonts = "0.30"
+# Размер текстуры для 9-slice читается из заголовка файла.
+image = { version = "0.25", default-features = false, features = ["png"] }

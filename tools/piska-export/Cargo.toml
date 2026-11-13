@@ -1,0 +1,24 @@
+[package]
+name = "piska-export"
+description = "Экспорт игр Piska Engine: веб (wasm + WebGPU/WebGL2), Windows, Android (APK), Linux; локальный сервер для проверки."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Пак ассетов пишет тот же код, что его читает.
+engine-assets.workspace = true
+# Версия ОБЯЗАНА совпадать с `wasm-bindgen` в Cargo.lock (проверяется при экспорте):
+# обвязка и рантайм wasm-bindgen должны быть одной версии.
+wasm-bindgen-cli-support = "=0.2.130"
+serde_json = "1"
+toml = "0.8"
+flate2 = "1"
+# Значок приложения (Android, Linux): масштабирование и запись PNG.
+image.workspace = true
+# Проверка значка в собранном exe (чтение ресурсов PE).
+engine-build.workspace = true
+
+[build-dependencies]
+engine-build.workspace = true

@@ -1,0 +1,10 @@
+[package]
+name = "engine-cpp-build"
+description = "Помощник build.rs: собрать C++-скрипты игры и статически слинковать их в её крейт."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cc.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,103 @@
+[package]
+name = "engine"
+description = "Фасад движка: один `use engine::prelude::*;` и готовое приложение с рендером и физикой."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+# Значок движка в exe примеров (в первую очередь редактора) на Windows.
+engine-build.workspace = true
+
+# Возможности фасада. Подробно — docs/design/engine-features.md.
+#
+# Игра берёт `engine` с `default-features = false` и перечисляет только то, чем пользуется:
+#     engine = { path = "../../crates/engine", default-features = false,
+#                features = ["physics2d", "audio", "ui", "gamepad"] }
+# `full` — «всё, кроме редактора» (так собирались игры до разбиения на возможности).
+[features]
+default = ["full", "editor"]
+# Редактор (egui). Отключается для сборки самой игры: `--no-default-features`.
+# Редактору нужен весь рантайм, поэтому тянет `full`.
+editor = ["dep:engine-editor", "full"]
+# Весь рантайм движка.
+full = ["physics", "audio", "audio-wav", "audio-ogg", "ui", "cpp", "scenario", "gamepad", "mesh-gltf", "image-jpeg"]
+# 2D-физика (Rapier2D): Rigidbody2D, Collider2D, Physics2D.
+physics2d = ["dep:engine-physics", "engine-physics/2d"]
+# 3D-физика (Rapier3D): Rigidbody, Collider, CharacterController, Physics3D, коллайдеры рельефа.
+physics3d = ["dep:engine-physics", "engine-physics/3d"]
+# Обе физики.
+physics = ["physics2d", "physics3d"]
+# Звук: микшер, синтезатор, AudioSource / AudioListener, вывод на устройство (cpal).
+audio = ["dep:engine-audio", "engine-audio/device"]
+# Клипы из файлов .wav / .ogg (без них звук — только из синтезатора и сырых сэмплов).
+audio-wav = ["audio", "engine-audio/wav"]
+audio-ogg = ["audio", "engine-audio/ogg"]
+# Игровой интерфейс: холст, текст, кнопки, раскладка.
+ui = ["dep:engine-ui"]
+# C++-логика: `add_static_cpp`, `add_cpp_plugins`, сервисы для `engine_component.hpp`.
+cpp = ["dep:engine-cpp-bridge"]
+# Язык сценариев Scenario (`ScenarioRunner`, `.scenario`). Сценарии играют звук и читают
+# кнопки интерфейса, поэтому возможность тянет `audio` и `ui`.
+scenario = ["dep:engine-scenario", "audio", "ui"]
+# Геймпады (gilrs на десктопе; Gamepad API браузера в вебе читается всегда, когда включено).
+gamepad = ["dep:gilrs"]
+# Модели .gltf / .glb (.obj и .pmodel работают всегда).
+mesh-gltf = ["engine-assets/gltf"]
+# Текстуры JPEG (PNG — всегда).
+image-jpeg = ["engine-render/jpeg", "engine-ui?/jpeg"]
+# Браузер: запасной WebGL2. Экспорт (`piska-export web`) включает её сам, если не указан `--no-webgl`.
+webgl = ["engine-render/webgl"]
+
+[dependencies]
+engine-editor = { workspace = true, optional = true }
+engine-core.workspace = true
+engine-assets.workspace = true
+engine-render.workspace = true
+engine-physics = { workspace = true, optional = true }
+engine-audio = { workspace = true, optional = true }
+engine-ui = { workspace = true, optional = true }
+engine-scenario = { workspace = true, optional = true }
+engine-cpp-bridge = { workspace = true, optional = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+thiserror.workspace = true
+log.workspace = true
+
+[[example]]
+name = "hello_sprite"
+
+[[example]]
+name = "platformer"
+path = "examples/platformer/main.rs"
+
+[[example]]
+name = "cpp_plugin"
+
+[[example]]
+name = "editor"
+path = "examples/platformer/editor.rs"
+required-features = ["editor"]
+
+[[example]]
+name = "hello_3d"
+
+[[example]]
+name = "demo3d"
+
+[[example]]
+name = "physics3d"
+
+# Геймпады. gilrs не поддерживает Android и веб: там подсистема ничего не делает.
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+gilrs = { version = "0.11", optional = true }
+
+# Android: лог движка в logcat (`adb logcat -s piska`).
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = { version = "0.14", default-features = false }
+
+# Браузер: консоль, fetch пака ассетов, localStorage, точка входа для index.html.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.100"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console", "Window", "Document", "HtmlElement", "Response", "Storage", "Navigator", "Gamepad", "GamepadButton", "GamepadMappingType"] }

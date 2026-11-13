@@ -1,0 +1,29 @@
+[package]
+name = "engine-audio"
+description = "Звук: клипы, синтезатор, микшер, источники, слушатель, шины громкости."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["device", "wav", "ogg"]
+# Вывод на звуковую карту через cpal. Без него крейт собирается и работает «вхолостую»
+# (микшер доступен, звука нет) — для платформ, где бэкенда ещё нет.
+device = ["dep:cpal"]
+# Декодер и кодировщик WAV (hound) и декодер Ogg Vorbis (lewton). Без них клип собирается
+# из кода (синтезатор) или из сырых сэмплов; `AudioClip::from_bytes` вернёт `ClipError::Disabled`.
+wav = ["dep:hound"]
+ogg = ["dep:lewton"]
+
+[dependencies]
+engine-core.workspace = true
+engine-assets.workspace = true
+log.workspace = true
+thiserror.workspace = true
+hound = { version = "3.5", default-features = false, optional = true }
+lewton = { version = "0.10", optional = true }
+cpal = { version = "0.18", optional = true }
+
+# В браузере cpal работает через Web Audio.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+cpal = { version = "0.18", optional = true, features = ["wasm-bindgen"] }

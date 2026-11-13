@@ -1,0 +1,27 @@
+// Префаб монеты. Файл .prefab — один узел того же формата, что и в сцене.
+// Корень несёт логику (триггер + скрипт), дочерний Gem — картинку.
+(
+    name: "Coin",
+    tag: "Pickup",
+    components: [
+        (kind: "Collider2D", fields: {
+            "shape": Enum("Circle"),
+            "radius": Float(0.3),
+            "is_trigger": Bool(true),
+        }),
+        (kind: "Coin", fields: { "value": Int(1) }),
+    ],
+    children: [
+        (
+            name: "Gem",
+            transform: (rotation: (0.0, 0.0, 45.0)),
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "color": Color(1.0, 0.59, 0.021, 1.0),
+                    "size": Vec2(0.36, 0.36),
+                    "order": Int(2),
+                }),
+            ],
+        ),
+    ],
+)

@@ -1,0 +1,67 @@
+// Рельеф как в проекте-образце (docs/api/terrain.md): 2 × 2 км, побережье, озёра и горы
+// (сид 99), площадка в центре, море, солнце и шары на площадке. В редакторе: выделите
+// Terrain в 3D-виде Scene — внизу слева появится панель кистей.
+(
+    name: "Terrain",
+    objects: [
+        (
+            name: "Main Camera",
+            tag: "MainCamera",
+            transform: (position: (-60.0, 110.0, 160.0), rotation: (-18.0, -20.0, 0.0)),
+            components: [
+                (kind: "Camera", fields: {
+                    "projection": Enum("Perspective"),
+                    "fov_deg": Float(60.0),
+                    "far": Float(4000.0),
+                    "background": Enum("Sky"),
+                }),
+            ],
+        ),
+        (
+            name: "Sun",
+            transform: (rotation: (-40.0, -28.0, 0.0)),
+            components: [
+                (kind: "Light", fields: { "intensity": Float(2.4) }),
+            ],
+        ),
+        (
+            name: "Environment",
+            components: [
+                (kind: "Environment", fields: {
+                    "fog_density": Float(0.0005),
+                    "shadow_distance": Float(180.0),
+                }),
+            ],
+        ),
+        (
+            name: "Terrain",
+            transform: (position: (-1024.0, 0.0, -1024.0)),
+            components: [
+                (kind: "Terrain", fields: {
+                    "seed": Int(99),
+                    "size": Float(2048.0),
+                    "view_distance": Float(1600.0),
+                    "flat_zones": List([Vec3(1024.0, 1024.0, 60.0)]),
+                }),
+            ],
+        ),
+        (
+            name: "Sea",
+            components: [
+                (kind: "Water", fields: {}),
+            ],
+        ),
+        (
+            name: "Ball",
+            transform: (position: (0.0, 150.0, 0.0)),
+            components: [
+                (kind: "MeshRenderer", fields: {
+                    "shape": Enum("Sphere"),
+                    "color": Color(1.0, 0.76, 0.35, 1.0),
+                }),
+                (kind: "Rigidbody", fields: { "ccd": Bool(true) }),
+                (kind: "Collider", fields: { "shape": Enum("Sphere"), "radius": Float(0.5) }),
+            ],
+        ),
+    ],
+)

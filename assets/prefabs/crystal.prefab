@@ -1,0 +1,49 @@
+(
+    name: "Crystal",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.6, 1.6, 1.6),
+    ),
+    components: [
+        (
+            kind: "MeshRenderer",
+            fields: {
+                "cast_shadows": Bool(true),
+                "color": Color(0.12, 0.55, 0.85, 1.0),
+                "emissive": Color(0.02, 0.12, 0.25, 1.0),
+                "grid": Bool(false),
+                "mesh": Asset("c1a7e5d2b4f84c0e9a3d6b8f0e2c4a61"),
+                "metallic": Float(0.2),
+                "roughness": Float(0.18),
+                "shape": Enum("Cube"),
+                "texture": Asset("7f3a9c2e5b1d4e8fa6c0d2b4e6f81a3c"),
+                "tiling": Float(0.0),
+            },
+        ),
+        (
+            kind: "Spinner",
+            fields: {
+                "speed_deg": Float(40.0),
+            },
+        ),
+        (
+            kind: "Bobber",
+            fields: {
+                "amplitude": Vec3(0.0, 0.25, 0.0),
+                "enabled": Bool(true),
+                "period": Float(3.0),
+            },
+        ),
+        (
+            kind: "Light",
+            fields: {
+                "color": Color(1.0, 0.95, 0.88, 1.0),
+                "intensity": Float(2.4),
+                "kind": Enum("Directional"),
+                "range": Float(10.0),
+                "shadows": Bool(true),
+            },
+        ),
+    ],
+)

@@ -1,0 +1,7 @@
+(
+    guid: "38140a7128b1536d8cc00732b9944fb2",
+    importer: "Texture",
+    settings: {
+        "filter": Enum("Nearest"),
+    },
+)

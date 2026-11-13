@@ -1,0 +1,46 @@
+[package]
+name = "engine-render"
+description = "Рендер на wgpu: 2D-спрайты с батчингом, камеры, окно на winit, захват кадра."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["jpeg"]
+# Декодирование JPEG в текстурах (zune-jpeg, ~270 КиБ кода). PNG есть всегда.
+jpeg = ["image/jpeg"]
+# Браузер: запасной WebGL2, если у браузера нет WebGPU. Без возможности wasm меньше на
+# бэкенд GLES (его и naga-писатель GLSL), но браузер без WebGPU игру не запустит.
+webgl = ["wgpu/webgl"]
+
+[dependencies]
+engine-core.workspace = true
+engine-assets.workspace = true
+# Не `wgpu.workspace`: набор возможностей wgpu 23 по умолчанию (`wgsl`, `dx12`, `metal`,
+# `webgpu`) тянет лишнее. Нужны шейдеры на WGSL; DX12 — только на Windows (ниже), писатель
+# WGSL (`webgpu`) — только в браузере. Vulkan и GLES wgpu подключает сам для своей цели.
+# Редактор берёт `wgpu.workspace` с полным набором — там это не имеет значения.
+wgpu = { version = "23", default-features = false, features = ["wgsl"] }
+winit.workspace = true
+bytemuck.workspace = true
+pollster.workspace = true
+image = { version = "0.25", default-features = false, features = ["png"] }
+thiserror.workspace = true
+log.workspace = true
+# `std::time::Instant` в браузере не работает; web-time — тот же API везде.
+web-time = "1"
+
+# Windows: Vulkan (автоматически) и DX12.
+[target.'cfg(windows)'.dependencies]
+wgpu = { version = "23", default-features = false, features = ["wgsl", "dx12"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# В браузере: WebGPU; запасной WebGL2 — возможность `webgl`.
+wgpu = { version = "23", default-features = false, features = ["wgsl", "webgpu"] }
+wasm-bindgen = "0.2.100"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "Location"] }
+
+# Android: окно NativeActivity (точка входа `android_main`).
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { workspace = true, features = ["android-native-activity"] }

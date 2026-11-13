@@ -1,0 +1,102 @@
+# Сборка и тесты движка на Linux и Windows + экспорт шаблона игры (games/template)
+# для Linux, Windows, браузера и Android. Готовые сборки — в артефактах запуска.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Тесты не открывают звуковое устройство (на раннерах его нет).
+  ENGINE_AUDIO: "off"
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux packages (ALSA, udev; Mesa lavapipe — Vulkan без видеокарты для тестов рендера)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libudev-dev mesa-vulkan-drivers
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --all-targets
+      - run: cargo test --workspace --no-fail-fast
+
+  # Linux: собирается в Debian 11 (glibc 2.31) — программа запускается на всех
+  # живых дистрибутивах (Debian 11+, Ubuntu 20.04+, Fedora, Arch).
+  export-linux:
+    runs-on: ubuntu-latest
+    container: debian:bullseye
+    steps:
+      - name: Debian packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git build-essential pkg-config libasound2-dev libudev-dev
+      - uses: actions/checkout@v4
+      - name: Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - run: cargo run -p piska-export -- linux --game template --release --tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: template-linux-x86_64
+          path: dist/template/linux/template-linux-x86_64.tar.gz
+
+  export-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run -p piska-export -- windows --game template --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: template-windows
+          path: dist/template/windows/
+
+  export-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run -p piska-export -- web --game template --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: template-web
+          path: dist/template/web/
+
+  # Android: SDK, NDK и Java уже есть на образе ubuntu-latest. APK подписан
+  # отладочным ключом раннера — для проверки, не для магазина.
+  export-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+      - uses: Swatinem/rust-cache@v2
+      - name: Export the APK
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          cargo run -p piska-export -- android --game template --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: template-android
+          path: dist/template/android/template.apk

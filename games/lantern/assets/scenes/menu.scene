@@ -1,0 +1,84 @@
+// Главное меню. Сгенерировано tools/gen_levels.py.
+(
+    name: "Menu",
+    objects: [
+        (
+            name: "Main Camera",
+            tag: "MainCamera",
+            transform: (position: (0.0, 0.0, 0.0)),
+            components: [
+                (kind: "Camera", fields: { "ortho_size": Float(7.0), "clear_color": Color(0.0023, 0.0039, 0.0134, 1.000) }),
+                (kind: "Environment", fields: { "ambient": Float(1.0), "fog_density": Float(0.0), "bloom": Float(0.4), "vignette": Float(0.4) }),
+            ],
+        ),
+        (
+            name: "bg_far_0",
+            components: [
+                (kind: "SpriteRenderer", fields: { "texture": Asset("cde011581b927dac380048dbeb30a878"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-10), "color": Color(0.6038, 1.0000, 1.5168, 1.000) }),
+                (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(0), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(0.40) }),
+            ],
+        ),
+        (
+            name: "bg_far_1",
+            components: [
+                (kind: "SpriteRenderer", fields: { "texture": Asset("cde011581b927dac380048dbeb30a878"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-10), "color": Color(0.6038, 1.0000, 1.5168, 1.000) }),
+                (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(1), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(0.40) }),
+            ],
+        ),
+        (
+            name: "bg_far_2",
+            components: [
+                (kind: "SpriteRenderer", fields: { "texture": Asset("cde011581b927dac380048dbeb30a878"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-10), "color": Color(0.6038, 1.0000, 1.5168, 1.000) }),
+                (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(2), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(0.40) }),
+            ],
+        ),
+        (
+            name: "bg_mid_0",
+            components: [
+                (kind: "SpriteRenderer", fields: { "texture": Asset("1aba76794dd84344eb5899450bbd448b"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-9), "color": Color(0.7874, 1.2428, 1.8233, 1.000) }),
+                (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(0), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(1.20) }),
+            ],
+        ),
+        (
+            name: "bg_mid_1",
+            components: [
+                (kind: "SpriteRenderer", fields: { "texture": Asset("1aba76794dd84344eb5899450bbd448b"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-9), "color": Color(0.7874, 1.2428, 1.8233, 1.000) }),
+                (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(1), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(1.20) }),
+            ],
+        ),
+        (
+            name: "bg_mid_2",
+            components: [
+                (kind: "SpriteRenderer", fields: { "texture": Asset("1aba76794dd84344eb5899450bbd448b"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-9), "color": Color(0.7874, 1.2428, 1.8233, 1.000) }),
+                (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(2), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(1.20) }),
+            ],
+        ),
+        (
+            name: "bg_near_0",
+            components: [
+                (kind: "SpriteRenderer", fields: { "texture": Asset("f9d4f93bbbaddb97b96984e68f20c847"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-8), "color": Color(0.7874, 1.2428, 1.8233, 0.700) }),
+                (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(0), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(2.40) }),
+            ],
+        ),
+        (
+            name: "bg_near_1",
+            components: [
+                (kind: "SpriteRenderer", fields: { "texture": Asset("f9d4f93bbbaddb97b96984e68f20c847"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-8), "color": Color(0.7874, 1.2428, 1.8233, 0.700) }),
+                (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(1), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(2.40) }),
+            ],
+        ),
+        (
+            name: "bg_near_2",
+            components: [
+                (kind: "SpriteRenderer", fields: { "texture": Asset("f9d4f93bbbaddb97b96984e68f20c847"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-8), "color": Color(0.7874, 1.2428, 1.8233, 0.700) }),
+                (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(2), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(2.40) }),
+            ],
+        ),
+        (
+            name: "Menu",
+            components: [
+                (kind: "MenuController", fields: {}),
+            ],
+        ),
+    ],
+)

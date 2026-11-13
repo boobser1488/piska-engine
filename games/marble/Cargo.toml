@@ -1,0 +1,32 @@
+[package]
+name = "marble"
+description = "Шаровой завод: катите стальной шар по цехам завода в небе. 3D-физика, механизмы на C++."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[package.metadata.piska]
+title = "Шаровой завод"
+
+[dependencies]
+# Редактор в игру не входит: экспорт собирает только рантайм. Подсистемы — только те,
+# что игра использует (docs/design/engine-features.md): остальные не попадают в exe.
+engine = { path = "../../crates/engine", default-features = false, features = ["physics3d", "cpp", "audio", "ui", "gamepad"] }
+log.workspace = true
+
+[build-dependencies]
+# Механизмы уровней написаны на C++ (cpp/*.cpp) и линкуются в крейт статически.
+engine-cpp-build = { path = "../../crates/engine-cpp-build" }
+# Значок приложения в exe на Windows.
+engine-build = { path = "../../crates/engine-build" }
+
+[features]
+# Программа редактора: `cargo run -p marble --features editor --bin marble-editor`.
+# В экспорт и обычную сборку игры редактор не входит.
+editor = ["engine/editor"]
+
+[[bin]]
+name = "marble-editor"
+required-features = ["editor"]

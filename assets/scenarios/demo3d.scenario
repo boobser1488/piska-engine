@@ -1,0 +1,31 @@
+-- Сценарий демо-сцены (объект Director): лампа меняет цвет, стальной шар патрулирует.
+-- Нажмите Play в редакторе; поменяйте цвета или точки маршрута и сохраните файл —
+-- сценарий перезапустится прямо в Play, без пересборки.
+
+const warm = color(1.0, 0.25, 0.045)
+const cool = color(0.15, 0.45, 1.0)
+
+-- Лампа: свет и свечение плавно переходят между тёплым и холодным.
+start(function()
+    local lamp = find("Lamp")
+    while true do
+        lamp:tween("Light.color", cool, 1.5, "in_out_sine")
+        lamp:tween("MeshRenderer.emissive", cool * 9, 1.5, "in_out_sine")
+        wait(1.5)
+        lamp:tween("Light.color", warm, 1.5, "in_out_sine")
+        lamp:tween("MeshRenderer.emissive", color(9.0, 3.6, 0.9), 1.5, "in_out_sine")
+        wait(1.5)
+    end
+end)
+
+-- Патруль: стальной шар обходит точки по кругу, на каждой ненадолго замирает.
+const ball = find("Steel Sphere")
+const route = [vec3(1.6, 0.45, 2.8), vec3(-0.4, 0.45, 3.6), vec3(-1.0, 0.45, 1.6), vec3(1.0, 0.45, 1.4)]
+let laps = 0
+while (true) {
+    for (const point of route) {
+        ball.move_to(point, 0.9, "in_out_quad")
+        wait(0.2)
+    }
+    laps += 1
+}

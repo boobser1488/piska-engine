@@ -1,0 +1,22 @@
+-- Интро «Звездопада» на языке Scenario (docs/api/scenario.md).
+-- Работает на объекте Game: GameManager ждёт сообщения "Go" перед первой звездой.
+-- Поменяйте текст и сохраните файл во время игры — интро перезапустится само.
+
+ui.show("Hint")
+for n = 3, 1, -1 do
+    ui.text("Hint", n .. "…")
+    play("tick", 0.6)
+    wait(0.5)
+end
+ui.text("Hint", "Лови!")
+play("start")
+self:send("Go")
+
+wait(1.2)
+ui.text("Hint", "Корзина едет на A/D, ←/→ или за пальцем")
+
+-- Подсказка реагирует на первую пойманную звезду (сообщение "Caught" приходит Game).
+wait_message("Caught")
+ui.text("Hint", "Есть первая! Так держать")
+wait(2)
+ui.hide("Hint")

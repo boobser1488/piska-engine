@@ -1,0 +1,161 @@
+// 3D-сцена: PBR-материалы, солнце с тенями, точечный свет, небо, туман, блум.
+// Spinner, Bobber и LightFlicker — компоненты на C++ (plugins/cpp-gameplay),
+// Orbit — компонент на Rust (crates/engine/examples/demo3d/scripts/orbit.rs).
+(
+    name: "Demo 3D",
+    objects: [
+        (
+            name: "Main Camera",
+            tag: "MainCamera",
+            transform: (position: (0.0, 3.2, 9.5), rotation: (-16.0, 0.0, 0.0)),
+            components: [
+                (kind: "Camera", fields: {
+                    "projection": Enum("Perspective"),
+                    "fov_deg": Float(50.0),
+                    "background": Enum("Sky"),
+                }),
+                (kind: "Orbit", fields: {
+                    "target": Vec3(0.0, 0.9, 0.0),
+                    "distance": Float(9.5),
+                    "height": Float(3.2),
+                }),
+            ],
+        ),
+        (
+            name: "Sun",
+            transform: (rotation: (-52.0, 40.0, 0.0)),
+            components: [
+                (kind: "Light", fields: { "intensity": Float(2.4) }),
+            ],
+        ),
+        (
+            name: "Environment",
+            components: [
+                (kind: "Environment", fields: {
+                    "fog_density": Float(0.006),
+                    "bloom": Float(0.07),
+                }),
+            ],
+        ),
+        (
+            name: "Ground",
+            transform: (scale: (400.0, 1.0, 400.0)),
+            components: [
+                (kind: "MeshRenderer", fields: {
+                    "shape": Enum("Plane"),
+                    "color": Color(0.26, 0.28, 0.21, 1.0),
+                    "roughness": Float(0.9),
+                    "grid": Bool(true),
+                    "cast_shadows": Bool(false),
+                }),
+            ],
+        ),
+        (
+            name: "Crystal",
+            transform: (position: (0.0, 1.9, 0.0), scale: (1.6, 1.6, 1.6)),
+            components: [
+                (kind: "MeshRenderer", fields: {
+                    "mesh": Asset("c1a7e5d2b4f84c0e9a3d6b8f0e2c4a61"),
+                    "color": Color(0.12, 0.55, 0.85, 1.0),
+                    "metallic": Float(0.2),
+                    "roughness": Float(0.18),
+                    "emissive": Color(0.02, 0.12, 0.25, 1.0),
+                }),
+                (kind: "Spinner", fields: { "speed_deg": Float(40.0) }),
+                (kind: "Bobber", fields: {
+                    "amplitude": Vec3(0.0, 0.25, 0.0),
+                    "period": Float(3.0),
+                }),
+            ],
+        ),
+        (
+            name: "Pedestal",
+            transform: (position: (0.0, 0.3, 0.0), scale: (1.8, 0.6, 1.8)),
+            components: [
+                (kind: "MeshRenderer", fields: {
+                    "shape": Enum("Cylinder"),
+                    "color": Color(0.62, 0.60, 0.56, 1.0),
+                    "roughness": Float(0.75),
+                }),
+            ],
+        ),
+        (
+            name: "Props",
+            children: [
+                (
+                    name: "Plastic Cube",
+                    transform: (position: (-3.0, 0.75, 0.6), rotation: (0.0, 25.0, 0.0), scale: (1.5, 1.5, 1.5)),
+                    components: [
+                        (kind: "MeshRenderer", fields: {
+                            "color": Color(1.0, 0.195, 0.1, 1.0),
+                            "roughness": Float(0.35),
+                        }),
+                    ],
+                ),
+                (
+                    name: "Gold Sphere",
+                    transform: (position: (3.0, 0.9, 0.4), scale: (1.8, 1.8, 1.8)),
+                    components: [
+                        (kind: "MeshRenderer", fields: {
+                            "shape": Enum("Sphere"),
+                            "color": Color(1.0, 0.55, 0.1, 1.0),
+                            "metallic": Float(1.0),
+                            "roughness": Float(0.28),
+                        }),
+                    ],
+                ),
+                (
+                    name: "Steel Sphere",
+                    transform: (position: (1.6, 0.45, 2.8), scale: (0.9, 0.9, 0.9)),
+                    components: [
+                        (kind: "MeshRenderer", fields: {
+                            "shape": Enum("Sphere"),
+                            "color": Color(0.5, 0.53, 0.58, 1.0),
+                            "metallic": Float(1.0),
+                            "roughness": Float(0.45),
+                        }),
+                    ],
+                ),
+                (
+                    name: "Spinning Block",
+                    transform: (position: (-1.6, 0.4, 2.9), scale: (0.8, 0.8, 0.8)),
+                    components: [
+                        (kind: "MeshRenderer", fields: {
+                            "color": Color(0.07, 0.25, 1.0, 1.0),
+                            "roughness": Float(0.5),
+                        }),
+                        (kind: "Spinner", fields: { "speed_deg": Float(-120.0) }),
+                    ],
+                ),
+            ],
+        ),
+        (
+            name: "Lamp",
+            transform: (position: (-2.2, 1.4, 2.4), scale: (0.18, 0.18, 0.18)),
+            components: [
+                (kind: "Light", fields: {
+                    "kind": Enum("Point"),
+                    "color": Color(1.0, 0.25, 0.045, 1.0),
+                    "intensity": Float(14.0),
+                    "range": Float(7.0),
+                }),
+                // Скрипт на C++, повешенный на источник света: яркость мерцает.
+                (kind: "LightFlicker", fields: { "amount": Float(0.45) }),
+                (kind: "MeshRenderer", fields: {
+                    "shape": Enum("Sphere"),
+                    "emissive": Color(9.0, 3.6, 0.9, 1.0),
+                    "cast_shadows": Bool(false),
+                }),
+            ],
+        ),
+        (
+            name: "Director",
+            components: [
+                // Сценарий на языке Scenario: цвет лампы и патруль стального шара (в Play).
+                (kind: "ScenarioRunner", fields: {
+                    "script": Asset("bdf7d901c0bb41e586b6ea84fb29a8c8"),
+                }),
+            ],
+        ),
+    ],
+)

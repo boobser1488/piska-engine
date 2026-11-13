@@ -1,0 +1,273 @@
+// Уровень 1: Тихая пещера. Сгенерировано tools/gen_levels.py — правьте генератор, а не этот файл.
+(
+    name: "Level1",
+    objects: [
+        (
+            name: "Main Camera",
+            tag: "MainCamera",
+            transform: (position: (4.50, 7.00, 0.0)),
+            components: [
+                (kind: "Camera", fields: { "ortho_size": Float(7.0), "clear_color": Color(0.0019, 0.0046, 0.0145, 1.000) }),
+                (kind: "CameraController2D", fields: {
+                    "target_tag": Str("Player"), "offset": Vec2(0.0, 1.6), "smoothing": Float(7.0),
+                    "use_bounds": Bool(true), "shake_max_offset": Vec2(0.5, 0.4),
+                }),
+                (kind: "Environment", fields: {
+                    "ambient": Float(1.0), "fog_density": Float(0.0), "exposure": Float(1.00),
+                    "bloom": Float(0.35), "vignette": Float(0.32),
+                }),
+            ],
+        ),
+        (
+            name: "bg_far_0",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("cde011581b927dac380048dbeb30a878"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-10), "color": Color(0.2738, 1.2235, 1.6967, 1.000),
+                }),
+                (kind: "Parallax", fields: {
+                    "factor": Float(0.06), "period": Float(32.0), "slot": Int(0), "y_follow": Float(0.08), "mid_y": Float(15.0),
+                }),
+            ],
+        ),
+        (
+            name: "bg_far_1",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("cde011581b927dac380048dbeb30a878"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-10), "color": Color(0.2738, 1.2235, 1.6967, 1.000),
+                }),
+                (kind: "Parallax", fields: {
+                    "factor": Float(0.06), "period": Float(32.0), "slot": Int(1), "y_follow": Float(0.08), "mid_y": Float(15.0),
+                }),
+            ],
+        ),
+        (
+            name: "bg_far_2",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("cde011581b927dac380048dbeb30a878"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-10), "color": Color(0.2738, 1.2235, 1.6967, 1.000),
+                }),
+                (kind: "Parallax", fields: {
+                    "factor": Float(0.06), "period": Float(32.0), "slot": Int(2), "y_follow": Float(0.08), "mid_y": Float(15.0),
+                }),
+            ],
+        ),
+        (
+            name: "bg_mid_0",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("1aba76794dd84344eb5899450bbd448b"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-9), "color": Color(0.3672, 1.3758, 1.5387, 1.000),
+                }),
+                (kind: "Parallax", fields: {
+                    "factor": Float(0.22), "period": Float(32.0), "slot": Int(0), "y_follow": Float(0.16), "mid_y": Float(15.0),
+                }),
+            ],
+        ),
+        (
+            name: "bg_mid_1",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("1aba76794dd84344eb5899450bbd448b"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-9), "color": Color(0.3672, 1.3758, 1.5387, 1.000),
+                }),
+                (kind: "Parallax", fields: {
+                    "factor": Float(0.22), "period": Float(32.0), "slot": Int(1), "y_follow": Float(0.16), "mid_y": Float(15.0),
+                }),
+            ],
+        ),
+        (
+            name: "bg_mid_2",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("1aba76794dd84344eb5899450bbd448b"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-9), "color": Color(0.3672, 1.3758, 1.5387, 1.000),
+                }),
+                (kind: "Parallax", fields: {
+                    "factor": Float(0.22), "period": Float(32.0), "slot": Int(2), "y_follow": Float(0.16), "mid_y": Float(15.0),
+                }),
+            ],
+        ),
+        (
+            name: "bg_near_0",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("f9d4f93bbbaddb97b96984e68f20c847"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-8), "color": Color(0.3672, 1.3758, 1.5387, 0.700),
+                }),
+                (kind: "Parallax", fields: {
+                    "factor": Float(0.45), "period": Float(32.0), "slot": Int(0), "y_follow": Float(0.22), "mid_y": Float(15.0),
+                }),
+            ],
+        ),
+        (
+            name: "bg_near_1",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("f9d4f93bbbaddb97b96984e68f20c847"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-8), "color": Color(0.3672, 1.3758, 1.5387, 0.700),
+                }),
+                (kind: "Parallax", fields: {
+                    "factor": Float(0.45), "period": Float(32.0), "slot": Int(1), "y_follow": Float(0.22), "mid_y": Float(15.0),
+                }),
+            ],
+        ),
+        (
+            name: "bg_near_2",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("f9d4f93bbbaddb97b96984e68f20c847"), "size": Vec2(32.0, 18.0), "sorting_layer": Int(-8), "color": Color(0.3672, 1.3758, 1.5387, 0.700),
+                }),
+                (kind: "Parallax", fields: {
+                    "factor": Float(0.45), "period": Float(32.0), "slot": Int(2), "y_follow": Float(0.22), "mid_y": Float(15.0),
+                }),
+            ],
+        ),
+        (
+            name: "Deco",
+            components: [
+                (kind: "Tilemap", fields: {
+                    "tileset": Asset("38140a7128b1536d8cc00732b9944fb2"), "tileset_columns": Int(8), "tileset_rows": Int(4),
+                    "tile_size": Vec2(1.0, 1.0), "sorting_layer": Int(-2), "color": Color(0.4770, 1.3758, 1.1175, 1.000),
+                    "rows": List([
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("2*. 2*27 2*. 29 2*. 29 27 42*. 27 3*. 29 27 2*. 27 . 29 26*. 29 . 29 . 29 6*. 2*27 21*. 27 3*."),
+            Str("20*. 27 30*. 29 63*. 27 12*."),
+            Str("18*. 27 2*. 27 11*. 29 . 27 51*. 29 . 27 38*."),
+            Str("81*. 27 46*."),
+            Str("128*."),
+            Str("38*. 27 9*. 27 79*."),
+            Str("128*."),
+            Str("128*."),
+            Str("42*. 27 85*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("96*. 26 31*."),
+            Str("60*. 28 67*."),
+            Str("17*. 25 . 26 31 2*. 28 24 25 . 26 100*."),
+            Str("2*. 26 5*. 32 2*. 26 3*. 25 16*. 26 8*. 31 2*. 26 2*. 24 . 32 16*. 32 3*. 25 3*. 24 5*. 24 2*31 24 20*. 26 11*. 25 6*. 24 . 24 2*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+            Str("128*."),
+                    ]),
+                }),
+            ],
+        ),
+        (
+            name: "Tiles",
+            components: [
+                (kind: "Tilemap", fields: {
+                    "tileset": Asset("38140a7128b1536d8cc00732b9944fb2"), "tileset_columns": Int(8), "tileset_rows": Int(4),
+                    "tile_size": Vec2(1.0, 1.0), "sorting_layer": Int(0), "color": Color(0.3672, 1.3758, 1.3896, 1.000),
+                    "rows": List([
+            Str("22 23 22 3*1 23 1 23 22 6*1 23 22 1 23 2*1 22 23 2*1 2*23 22 4*1 22 5*23 1 22 23 4*1 22 23 1 23 1 23 1 22 2*23 4*1 23 1 22 23 1 22 3*1 2*22 1 22 2*1 2*23 2*22 4*1 22 2*1 23 3*1 23 2*1 23 5*1 3*22 2*1 2*22 1 23 2*22 3*1 22 23 22 23 1 23 8*1 22"),
+            Str("4*1 23 1 22 2*1 22 5*1 2*23 22 1 23 22 1 23 4*1 22 23 1 22 3*1 22 1 22 1 22 2*1 23 22 23 5*1 2*23 1 22 1 23 1 22 4*1 22 1 22 23 22 1 23 2*1 22 3*23 6*1 2*23 1 22 1 23 2*22 5*1 22 8*1 23 2*1 3*22 2*1 23 4*1 22 8*1 22 23 1 22"),
+            Str("2*22 23 2*1 22 1 22 5*1 2*23 1 22 1 23 22 23 1 22 1 23 22 1 22 23 6*1 2*22 5*1 2*22 1 2*22 3*1 23 5*1 22 1 23 1 3*22 23 4*1 23 1 23 2*1 23 1 22 1 22 10*1 2*23 22 1 2*22 4*1 22 1 23 22 3*1 23 2*1 22 9*1 3*23 2*1 2*22 2*1 23"),
+            Str("4*23 22 3*1 2*23 3*1 23 22 2*1 22 6*1 2*22 3*1 23 2*22 23 1 23 22 1 22 3*1 23 3*1 22 1 23 2*22 1 3*23 22 1 3*22 1 23 22 23 1 22 1 22 2*1 22 4*1 23 5*1 22 23 2*1 23 1 2*22 1 22 3*23 2*1 22 23 2*1 22 6*1 22 3*1 2*23 22 23 2*1 22 3*1 22 2*1 22 4*1"),
+            Str("1 2*22 23 2*1 23 22 2*1 22 3*23 1 22 1 23 4*1 23 22 23 3*22 4*1 22 5*1 2*23 2*22 23 2*1 23 22 2*1 2*22 6*1 22 23 2*1 2*22 23 22 23 1 22 1 22 2*23 3*1 23 1 23 1 23 2*1 2*23 2*1 23 3*1 22 4*1 23 4*1 22 1 22 2*1 23 2*1 23 3*1 2*23 2*1 23 3*1 22 23 5*1 23"),
+            Str("1 23 1 23 4*1 22 1 2*22 1 2*23 2*22 1 22 1 23 22 2*1 22 23 1 22 2*1 23 1 4*23 2*22 23 2*22 23 2*1 22 9*1 2*23 2*1 23 2*1 23 1 22 1 23 22 2*1 2*23 2*22 2*23 2*1 23 22 2*1 23 1 22 2*1 22 4*1 23 22 1 22 7*1 23 1 23 3*1 23 1 23 1 23 12*1 2*23 22"),
+            Str("23 1 23 5*1 22 1 23 22 3*1 23 2*1 22 3*1 22 1 22 2*1 22 23 2*1 22 1 23 22 23 22 1 2*22 6*1 23 2*1 2*22 23 3*1 22 2*23 6*1 23 2*22 1 22 1 23 3*1 2*22 8*1 22 10*1 22 4*1 23 1 23 3*1 23 5*1 22 3*1 22 23 2*1 22 4*1 23 22 1"),
+            Str("23 22 1 23 22 23 1 22 4*1 22 1 23 22 2*1 23 2*22 1 2*23 4*1 22 1 23 22 3*1 23 22 4*1 23 2*22 4*1 2*22 2*1 22 3*1 23 2*1 22 1 22 1 2*22 3*1 23 1 23 22 1 22 3*1 23 1 23 3*1 23 4*1 2*23 7*1 23 22 3*1 22 2*1 23 2*1 23 2*1 23 1 22 3*1 23 2*1 22 1 22 1 22 1 2*22"),
+            Str("22 23 9*5 2*22 23 2*1 22 3*1 22 5*1 22 1 23 1 22 2*1 23 4*1 23 22 1 23 1 23 1 23 2*1 22 1 23 2*1 25*5 2*1 23 2*22 1 23 22 3*1 23 25*5 2*1 9*5 2*1"),
+            Str("23 3 9*. 9 1 23 22 5 3*1 2*5 2*22 2*1 2*22 23 5 1 3*5 23 5 6*1 2*22 2*23 1 22 23 22 1 23 5 7 25*. 13 4*1 3*23 2*1 23 3 25*. 13 3 9*. 9 22"),
+            Str("1 3 9*. 9 23 5 7 . 13 5 7 2*. 13 5*5 7 . 15 3*. 15 . 13 2*1 23 1 22 1 2*22 23 3*1 23 5 7 28*. 13 5 6*1 2*5 7 26*. 15 9*. 9 22"),
+            Str("1 3 9*. 13 7 23*. 13 6*1 23 2*1 22 1 3 32*. 13 4*1 7 39*. 9 1"),
+            Str("22 3 35*. 13 22 2*1 2*22 1 22 1 2*23 3 33*. 13 2*5 7 40*. 9 1"),
+            Str("1 3 36*. 13 5 2*1 23 5*1 7 77*. 9 22"),
+            Str("1 3 38*. 13 1 23 1 3*23 7 78*. 9 1"),
+            Str("1 3 39*. 13 1 3*5 7 79*. 9 22"),
+            Str("1 3 40*. 15 83*. 9 1"),
+            Str("1 3 64*. 3*17 57*. 9 1"),
+            Str("1 3 124*. 9 1"),
+            Str("1 3 68*. 3*17 53*. 9 22"),
+            Str("1 3 124*. 9 22"),
+            Str("22 3 72*. 3*17 49*. 9 1"),
+            Str("1 3 54*. 2*18 37*. 10 4*2 4 25*. 9 22"),
+            Str("23 3 51*. 10 6*2 4 9*. 3*17 22*. 9 2*23 1 23 3 25*. 9 1"),
+            Str("1 3 15*. 10 9*2 4 23*. 2*17 9 23 2*1 3*23 3 34*. 9 2*1 2*23 3 25*. 9 23"),
+            Str("22 23 15*2 22 1 23 6*1 23 3 4*. 10 20*2 23 1 22 3*23 22 3 4*. 10 18*2 4 4*. 10 5*2 22 23 4*1 3*2 4 4*. 10 16*2 2*1"),
+            Str("4*1 23 2*1 22 2*1 2*22 1 22 4*1 23 4*1 22 23 2*1 3 4*. 9 2*1 23 2*1 22 1 22 1 22 2*1 2*22 1 22 4*1 23 6*1 3 4*. 9 1 22 2*1 23 3*1 2*22 1 23 6*1 3 4*. 9 22 2*1 23 1 23 2*1 22 4*1 22 3 4*. 9 1 23 3*1 22 4*1 22 1 22 23 3*1 22"),
+            Str("2*1 22 1 23 1 23 3*1 23 1 23 22 4*1 23 2*1 2*23 1 2*23 1 3 4*. 9 23 1 2*23 1 22 1 23 1 23 3*1 23 2*1 22 1 22 2*23 3*1 2*23 1 3 4*. 9 23 8*1 23 1 22 23 3*1 2*22 3 4*. 9 23 4*1 22 2*1 22 1 22 1 22 23 3 4*. 9 1 22 2*1 23 3*1 22 23 1 22 1 22 1 22 1 22"),
+            Str("1 22 23 1 22 4*1 2*22 6*1 3*22 7*1 3 4*. 9 23 1 22 23 1 22 3*1 2*22 5*1 22 1 22 2*1 22 2*1 2*22 1 3 4*. 9 1 2*23 5*1 23 4*1 23 22 23 2*22 3 4*. 9 2*23 1 23 1 22 2*1 23 2*1 23 2*1 3 4*. 9 23 1 22 2*1 23 3*1 22 23 7*1"),
+            Str("22 1 22 3*1 22 9*1 2*23 2*1 23 2*22 1 23 1 22 3 4*. 9 22 1 2*23 5*1 22 1 2*22 23 4*1 22 4*1 2*22 1 22 3 4*. 9 3*1 23 2*1 2*23 3*1 2*22 2*23 3*1 3 4*. 9 2*22 4*1 22 2*23 1 22 1 22 23 3 4*. 9 23 2*22 1 22 1 22 4*1 23 6*1"),
+                    ]),
+                }),
+            ],
+        ),
+        (
+            name: "Level",
+            components: [
+                (kind: "LevelManager", fields: {
+                    "index": Int(0), "title": Str("Тихая пещера"), "subtitle": Str("Первые огоньки"), "need": Int(12),
+                    "par_time": Float(150.0), "music": Str("music_cave"),
+                    "entities": List([
+            Str("player 4.50 5.00"),
+            Str("hint 6.50 5.50 w=4 h=4 | A / D или стрелки — бег, Пробел — прыжок. Держите прыжок — выше."),
+            Str("firefly 9.50 6.50"),
+            Str("firefly 10.50 6.50"),
+            Str("firefly 11.50 6.50"),
+            Str("firefly 12.50 6.50"),
+            Str("firefly 13.50 6.50"),
+            Str("firefly 19.50 7.50"),
+            Str("firefly 21.50 7.50"),
+            Str("firefly 23.50 7.50"),
+            Str("firefly 25.50 7.50"),
+            Str("firefly 28.50 7.50"),
+            Str("firefly 29.50 9.28"),
+            Str("firefly 30.50 9.28"),
+            Str("firefly 31.50 7.50"),
+            Str("hint 33.50 5.50 w=4 h=4 | Прыгайте на врагов сверху!"),
+            Str("crawler 40.50 5.00"),
+            Str("firefly 35.50 6.50"),
+            Str("firefly 37.00 6.50"),
+            Str("firefly 38.50 6.50"),
+            Str("firefly 42.50 8.50"),
+            Str("hint 54.50 7.50 w=3 h=4 | Шипы колются: перепрыгните их."),
+            Str("firefly 54.50 8.50"),
+            Str("firefly 59.00 10.50"),
+            Str("firefly 60.50 8.50"),
+            Str("firefly 61.50 9.50"),
+            Str("firefly 63.00 11.00"),
+            Str("firefly 64.50 9.50"),
+            Str("checkpoint 67.50 5.00"),
+            Str("crawler 75.50 5.00"),
+            Str("bat 81.50 9.50 range=3 amp=1"),
+            Str("firefly 70.50 6.50"),
+            Str("firefly 72.00 6.50"),
+            Str("firefly 73.50 6.50"),
+            Str("golden 67.50 13.50"),
+            Str("firefly 75.50 10.50"),
+            Str("firefly 71.50 12.50"),
+            Str("firefly 78.50 6.50"),
+            Str("firefly 81.00 6.50"),
+            Str("firefly 83.50 6.50"),
+            Str("firefly 85.50 8.50"),
+            Str("firefly 87.00 10.00"),
+            Str("firefly 88.50 8.50"),
+            Str("spring 92.50 5.00 power=17"),
+            Str("firefly 95.50 8.50"),
+            Str("firefly 97.17 8.50"),
+            Str("firefly 98.83 8.50"),
+            Str("firefly 100.50 8.50"),
+            Str("bat 100.50 10.50 range=3 amp=1.2 phase=1.5"),
+            Str("crawler 90.50 5.00 dir=1 range=1"),
+            Str("firefly 105.50 7.50"),
+            Str("firefly 107.00 9.00"),
+            Str("firefly 108.50 7.50"),
+            Str("hint 110.50 5.50 w=3 h=4 | Соберите светлячков — арка выхода загорится."),
+            Str("firefly 112.50 6.50"),
+            Str("firefly 114.50 6.50"),
+            Str("firefly 116.50 6.50"),
+            Str("firefly 118.50 6.50"),
+            Str("exit 121.50 5.00"),
+                    ]),
+                }),
+            ],
+        ),
+    ],
+)

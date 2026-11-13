@@ -1,0 +1,29 @@
+[package]
+name = "lantern"
+description = "Хранитель фонаря: 2D-платформер на Piska Engine."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[package.metadata.piska]
+title = "Хранитель фонаря"
+
+[dependencies]
+# Редактор в игру не входит: экспорт собирает только рантайм. Подсистемы — только те,
+# что игра использует (docs/design/engine-features.md): остальные не попадают в exe.
+engine = { path = "../../crates/engine", default-features = false, features = ["audio", "ui", "gamepad"] }
+log.workspace = true
+
+[build-dependencies]
+# Значок приложения в exe на Windows (см. build.rs).
+engine-build = { path = "../../crates/engine-build" }
+
+[features]
+# Программа редактора: `cargo run -p lantern --features editor --bin lantern-editor`.
+# В экспорт и обычную сборку игры редактор не входит.
+editor = ["engine/editor"]
+
+[[bin]]
+name = "lantern-editor"
+required-features = ["editor"]

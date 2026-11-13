@@ -1,0 +1,22 @@
+// Падающая звезда: картинка, физическое тело с лёгкой гравитацией, триггер и скрипт.
+(
+    name: "Star",
+    tag: "Star",
+    components: [
+        (kind: "SpriteRenderer", fields: {
+            "texture": Asset("1a2b3c4d5e6f40718293a4b5c6d7e802"),
+            "size": Vec2(0.9, 0.9),
+            "order": Int(2),
+        }),
+        (kind: "Rigidbody2D", fields: {
+            "body_type": Enum("Dynamic"),
+            "gravity_scale": Float(0.25),
+        }),
+        (kind: "Collider2D", fields: {
+            "shape": Enum("Circle"),
+            "radius": Float(0.35),
+            "is_trigger": Bool(true),
+        }),
+        (kind: "Star", fields: {}),
+    ],
+)

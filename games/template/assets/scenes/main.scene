@@ -1,0 +1,66 @@
+// Единственная сцена шаблона: камера, небо, земля со стенками, корзина и менеджер игры.
+// Интерфейс (счёт, жизни, экран «Game over») строит скрипт GameManager.
+(
+    name: "Main",
+    objects: [
+        (
+            name: "Main Camera",
+            tag: "MainCamera",
+            components: [
+                (kind: "Camera", fields: {
+                    "ortho_size": Float(6.0),
+                    "clear_color": Color(0.07, 0.086, 0.21, 1.0),
+                }),
+            ],
+        ),
+        (
+            name: "Sky",
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("1a2b3c4d5e6f40718293a4b5c6d7e803"),
+                    "size": Vec2(40.0, 12.0),
+                    "sorting_layer": Int(-10),
+                }),
+            ],
+        ),
+        (
+            name: "Ground",
+            transform: (position: (0.0, -6.5, 0.0)),
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "color": Color(0.12, 0.3, 0.16, 1.0),
+                    "size": Vec2(40.0, 2.0),
+                }),
+                (kind: "Collider2D", fields: { "size": Vec2(40.0, 2.0) }),
+            ],
+        ),
+        (
+            name: "Player",
+            tag: "Player",
+            transform: (position: (0.0, -5.0, 0.0)),
+            components: [
+                (kind: "SpriteRenderer", fields: {
+                    "texture": Asset("1a2b3c4d5e6f40718293a4b5c6d7e801"),
+                    "size": Vec2(1.6, 1.0),
+                    "order": Int(1),
+                }),
+                (kind: "Rigidbody2D", fields: {
+                    "body_type": Enum("Dynamic"),
+                    "lock_rotation": Bool(true),
+                }),
+                (kind: "Collider2D", fields: { "size": Vec2(1.5, 0.9) }),
+                (kind: "Basket", fields: { "speed": Float(9.0) }),
+            ],
+        ),
+        (
+            name: "Game",
+            components: [
+                (kind: "GameManager", fields: {}),
+                // Интро на языке Scenario: отсчёт, «Лови!», подсказка после первой звезды.
+                (kind: "ScenarioRunner", fields: {
+                    "script": Asset("1a2b3c4d5e6f40718293a4b5c6d7e807"),
+                }),
+            ],
+        ),
+    ],
+)
