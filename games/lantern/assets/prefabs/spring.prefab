@@ -1,0 +1,35 @@
+(
+    name: "Spring",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.0),
+                "sheet_columns": Int(2),
+                "sheet_rows": Int(1),
+                "size": Vec2(1.0, 1.0),
+                "sorting_layer": Int(1),
+                "texture": Asset("a52615c3d0320ee847684c6140d0b166"),
+                "uv_offset": Vec2(0.0, 0.0),
+                "uv_size": Vec2(1.0, 1.0),
+            },
+        ),
+        (
+            kind: "Spring",
+            fields: {
+                "anim": Float(0.0),
+                "power": Float(21.0),
+            },
+        ),
+    ],
+)

@@ -1,6 +1,7 @@
 //! Окно Profiler: график времени кадра по частям с осью в миллисекундах,
 //! средние / худшие значения и счётчики рендера.
 
+use crate::i18n::{n_, tr_s, trf};
 use std::collections::VecDeque;
 
 use egui::{pos2, vec2, Align2, Color32, Rect, Sense, Stroke};
@@ -131,12 +132,12 @@ type Part = (&'static str, Color32, fn(&FrameTimings) -> f32);
 
 // Приглушённые цвета серий: различимы, но не «конфетные».
 const PARTS: [Part; 6] = [
-    ("Game (scripts, physics)", Color32::from_rgb(0xc9, 0x86, 0x52), |t| t.update_ms),
-    ("Scene render", Color32::from_rgb(0x5b, 0x86, 0xc4), |t| t.render_ms),
-    ("Editor UI", Color32::from_rgb(0x6a, 0xa8, 0x74), |t| t.ui_ms),
-    ("Tessellation", Color32::from_rgb(0x8f, 0x7b, 0xc0), |t| t.tessellate_ms),
-    ("GPU submit", Color32::from_rgb(0x4c, 0x9c, 0xa3), |t| t.submit_ms),
-    ("Waiting for GPU / vsync", Color32::from_rgb(0x6c, 0x6c, 0x6c), |t| t.wait_ms),
+    (n_("Game (scripts, physics)"), Color32::from_rgb(0xc9, 0x86, 0x52), |t| t.update_ms),
+    (n_("Scene render"), Color32::from_rgb(0x5b, 0x86, 0xc4), |t| t.render_ms),
+    (n_("Editor UI"), Color32::from_rgb(0x6a, 0xa8, 0x74), |t| t.ui_ms),
+    (n_("Tessellation"), Color32::from_rgb(0x8f, 0x7b, 0xc0), |t| t.tessellate_ms),
+    (n_("GPU submit"), Color32::from_rgb(0x4c, 0x9c, 0xa3), |t| t.submit_ms),
+    (n_("Waiting for GPU / vsync"), Color32::from_rgb(0x6c, 0x6c, 0x6c), |t| t.wait_ms),
 ];
 
 /// «Красивые» шаги оси: 0.5, 1, 2, 5, 10… мс.
@@ -161,17 +162,17 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     let mut clear_selection = false;
     theme::toolbar_strip(ui, |ui| {
         let headline = if continuous {
-            format!("{:.0} fps   {:.2} ms", profiler.fps(), average.frame_ms)
+            trf!("{} fps   {} ms", format!("{:.0}", profiler.fps()), format!("{:.2}", average.frame_ms))
         } else {
-            format!("{:.2} ms of work per frame   (redrawing on demand)", average.work_ms())
+            trf!("{} ms of work per frame   (redrawing on demand)", format!("{:.2}", average.work_ms()))
         };
         ui.label(egui::RichText::new(headline).font(theme::mono()).color(theme::TEXT));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if selected.is_some() && theme::icon_text_button(ui, Icon::Close, "Clear Selection").clicked() {
+            if selected.is_some() && theme::icon_text_button(ui, Icon::Close, tr_s("Clear Selection")).clicked() {
                 clear_selection = true;
             }
             ui.label(
-                egui::RichText::new(format!("worst {worst:.1} ms  ·  1% low {one_percent:.1} ms"))
+                egui::RichText::new(trf!("worst {worst} ms  ·  1% low {one_percent} ms", worst = format!("{:.1}", worst), one_percent = format!("{:.1}", one_percent)))
                     .font(theme::mono())
                     .color(theme::TEXT_MUTED),
             );
@@ -197,9 +198,10 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
         .auto_shrink([false, false])
         .show(&mut summary, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            let title = if profiler.selected.is_some() { "Selected frame" } else { "Average of 60 frames" };
+            let title = if profiler.selected.is_some() { tr_s("Selected frame") } else { tr_s("Average of 60 frames") };
             table_row(ui, None, title, "ms", "%", true);
             for (index, (label, color, value)) in PARTS.iter().enumerate() {
+                let label = tr_s(label);
                 let ms = value(&shown);
                 let hidden = profiler.hidden[index];
                 let row = table_row(
@@ -210,17 +212,17 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                     &format!("{:.0}", ms / total * 100.0),
                     false,
                 );
-                if row.on_hover_text("Click to hide or show this part on the graph").clicked() {
+                if row.on_hover_text(tr_s("Click to hide or show this part on the graph")).clicked() {
                     profiler.hidden[index] = !hidden;
                 }
             }
-            table_row(ui, None, "Frame", &format!("{:.2}", shown.frame_ms), "", false);
+            table_row(ui, None, tr_s("Frame"), &format!("{:.2}", shown.frame_ms), "", false);
             ui.add_space(theme::SP_M);
-            table_row(ui, None, "Rendering", "", "", true);
-            table_row(ui, None, "Objects", &profiler.objects.to_string(), "", false);
-            table_row(ui, None, "Draw calls", &profiler.stats.draw_calls.to_string(), "", false);
-            table_row(ui, None, "Sprites", &profiler.stats.sprites.to_string(), "", false);
-            table_row(ui, None, "Textures", &profiler.stats.textures.to_string(), "", false);
+            table_row(ui, None, tr_s("Rendering"), "", "", true);
+            table_row(ui, None, tr_s("Objects"), &profiler.objects.to_string(), "", false);
+            table_row(ui, None, tr_s("Draw calls"), &profiler.stats.draw_calls.to_string(), "", false);
+            table_row(ui, None, tr_s("Sprites"), &profiler.stats.sprites.to_string(), "", false);
+            table_row(ui, None, tr_s("Textures"), &profiler.stats.textures.to_string(), "", false);
         });
 
     // --- График ---
@@ -230,7 +232,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     let painter = ui.painter().with_clip_rect(graph.expand(2.0));
     let axis_width = 44.0;
     let plot = Rect::from_min_max(pos2(graph.left() + axis_width, graph.top() + 2.0), pos2(graph.right(), graph.bottom() - 16.0));
-    painter.rect(plot, theme::R_S, theme::BG_INSET, Stroke::new(1.0_f32, theme::LINE_STRONG));
+    crate::controls::paint_frame(&painter, plot, theme::R_S, theme::BG_INSET, theme::LINE_STRONG);
 
     // Шкала: по 95-му перцентилю, чтобы один долгий кадр не сплющил всё остальное.
     let mut frames: Vec<f32> = profiler
@@ -318,7 +320,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     painter.text(
         pos2(plot.left(), graph.bottom()),
         Align2::LEFT_BOTTOM,
-        format!("last {} frames · click a frame to inspect it", profiler.samples.len()),
+        trf!("last {} frames · click a frame to inspect it", profiler.samples.len()),
         theme::caption(),
         theme::TEXT_DISABLED,
     );
@@ -326,8 +328,9 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
         if response.clicked() {
             profiler.selected = Some(sample);
         }
-        let mut text = format!("Frame {:.2} ms\n", sample.frame_ms);
+        let mut text = format!("{}\n", trf!("Frame {} ms", format!("{:.2}", sample.frame_ms)));
         for (label, _, value) in PARTS {
+            let label = tr_s(label);
             text.push_str(&format!("{label}: {:.2} ms\n", value(&sample)));
         }
         egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), egui::Id::new("profiler_tip"), |ui| {

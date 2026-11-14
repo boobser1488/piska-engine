@@ -245,11 +245,13 @@ pub(crate) fn nil_value() -> EngineValue {
 }
 
 /// `Value` движка → значение ABI. Строки идут через кольцо [`intern`].
-/// `Value::List` через границу не ходит: он превращается в `Nil`.
+/// `Value::List` через границу не ходит: он превращается в `Nil`. Поле-ссылку
+/// (`Value::Object`) без сцены не разрешить — тоже `Nil`; `get_field` разрешает его сам
+/// и отдаёт `ENGINE_VALUE_OBJECT`.
 pub(crate) fn to_engine_value(value: &Value) -> EngineValue {
     let mut out = nil_value();
     match value {
-        Value::Nil | Value::List(_) => {}
+        Value::Nil | Value::List(_) | Value::Object(_) => {}
         Value::Bool(b) => {
             out.kind = ENGINE_VALUE_BOOL;
             out.i = *b as i64;

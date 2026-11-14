@@ -242,10 +242,26 @@ pub fn load_mesh(path: impl AsRef<Path>) -> Result<MeshData, AssetError> {
             })?;
             piska_model(&bytes).map_err(import)?.validate(path)
         }
-        other => Err(import(format!(
-            "`.{other}` is not a mesh format; supported: .obj, .gltf, .glb"
-        ))),
+        _ if crate::formats::is_model_format(&path.to_string_lossy()) => {
+            let bytes = std::fs::read(path).map_err(|source| AssetError::Io {
+                path: path.display().to_string(),
+                source,
+            })?;
+            // Без базы ассетов — только файлы рядом с моделью и глубже, не выше.
+            let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            let resolve = move |p: &str| (!p.starts_with("..")).then(|| std::fs::read(dir.join(p)).ok()).flatten();
+            let name = path.to_string_lossy();
+            crate::formats::load(&name, &bytes, &resolve, &Default::default()).map_err(import)?.validate(path)
+        }
+        other => Err(import(not_a_mesh(other))),
     }
+}
+
+/// Ошибка «не меш»: для известных чужих форматов (`.fbx`, `.blend`…) — что делать.
+fn not_a_mesh(extension: &str) -> String {
+    engine_model_formats::unsupported_message(&format!("x.{extension}")).unwrap_or_else(|| {
+        format!("`.{extension}` is not a mesh format; supported: .obj, .gltf, .glb, .pmodel, .bbmodel, .model.json, .vox, .ply, .stl")
+    })
 }
 
 /// Разобрать Wavefront OBJ: `v`, `vt`, `vn`, `f` (многоугольники режутся веером,
@@ -431,10 +447,29 @@ pub fn load_mesh_bytes(
         }
         "gltf" | "glb" => gltf_from_slice(bytes, resolve).map_err(import)?.validate(path),
         "pmodel" => piska_model(bytes).map_err(import)?.validate(path),
-        other => Err(import(format!(
-            "`.{other}` is not a mesh format; supported: .obj, .gltf, .glb"
-        ))),
+        // Сторонние форматы; `.json` — если это модель Minecraft (её явно грузят как меш).
+        _ if engine_model_formats::Format::detect(name, bytes).is_some() => {
+            crate::formats::load(name, bytes, resolve, &Default::default()).map_err(import)?.validate(path)
+        }
+        other => Err(import(not_a_mesh(other))),
     }
+}
+
+/// Как [`load_mesh_bytes`], с настройками импорта из `.meta` (для сторонних форматов:
+/// масштаб, ось вверх, отражение, части по текстурам, двусторонность).
+pub fn load_mesh_bytes_with(
+    name: &str,
+    bytes: &[u8],
+    resolve: &dyn Fn(&str) -> Option<Vec<u8>>,
+    settings: &std::collections::BTreeMap<String, engine_core::reflect::Value>,
+) -> Result<MeshData, AssetError> {
+    if engine_model_formats::Format::detect(name, bytes).is_none() {
+        return load_mesh_bytes(name, bytes, resolve);
+    }
+    let options = crate::formats::import_options(settings);
+    crate::formats::load(name, bytes, resolve, &options)
+        .map_err(|reason| AssetError::Import { path: name.to_string(), reason })?
+        .validate(Path::new(name))
 }
 
 /// Раздел `baked` файла Piska Modeler (`.pmodel`): модель, уже собранная редактором
@@ -704,6 +739,8 @@ pub fn mesh_extras(name: &str, bytes: &[u8], resolve: &dyn Fn(&str) -> Option<Ve
         .is_some_and(|e| e.eq_ignore_ascii_case("obj"));
     let (submeshes, materials, files) = if is_obj {
         obj_extras(&String::from_utf8_lossy(bytes), resolve)
+    } else if engine_model_formats::Format::detect(name, bytes).is_some() {
+        (1, Vec::new(), engine_model_formats::dependencies(name, bytes))
     } else {
         gltf_extras(bytes)
     };

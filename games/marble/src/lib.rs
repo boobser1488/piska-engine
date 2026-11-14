@@ -1,85 +1,61 @@
 //! «Шаровой завод» — 3D-игра на Piska Engine: катите стальной шар по цехам заброшенного
-//! завода в небе. Ядро (шар, камера, меню, правила) написано на Rust, механизмы цехов —
-//! платформы, метлы, конвейеры, вентиляторы, прессы, бамперы, хрупкие плиты — на C++
-//! (`cpp/*.cpp`, статически слинкованы через `engine-cpp-build`).
+//! завода в небе.
 //!
-//! Игра рассчитана на Windows, Linux и Android: C++ в браузер не собирается
-//! (`docs/api/export.md`, раздел 7).
+//! Игра — образец того, как устроен проект: **содержимое лежит в ассетах** (сцены
+//! `assets/scenes/`, префабы `assets/prefabs/`, интерфейс `assets/ui/`, материалы
+//! `assets/materials/`, модели `assets/models/`, звуки `assets/audio/`, данные
+//! `assets/data/`, настройки `assets/project.settings`), а **код — это скрипты**
+//! (`src/scripts/`, по одному компоненту в файле: механизмы цехов, шар, камера, менеджер
+//! игры). Здесь ничего не строится из кода: `build()` подключает ассеты, регистрирует
+//! скрипты и загружает сцену меню. Всё остальное — объекты в сценах: откройте любую в
+//! редакторе (`cargo run -p marble --features editor --bin marble-editor`).
 //!
-//! Одна функция [`build`] собирает приложение; `engine::game_main!` делает из неё
-//! программу. Тесты зовут [`build_with`] с сохранениями в памяти.
+//! Игра целиком на Rust (C++ по умолчанию выключен), поэтому собирается и для браузера.
+//! Сцены и префабы пишет инструмент `examples/bake_assets.rs` (`tools/bake/`); он нужен
+//! только для перегенерации и в игре не используется.
 
-/// Скрипты на Rust, созданные в редакторе (New Rust Script).
+/// Ядро без компонентов: данные из ассетов, состояние, поток игры.
+pub mod game;
+/// Скрипты на Rust (редактор: Assets → New Rust Script).
 pub mod scripts;
 
 use engine::prelude::*;
 
-pub mod ball;
-pub mod courses;
-pub mod game;
-pub mod kit;
-pub mod sounds;
-pub mod ui;
+pub use game::data::{CourseInfo, Route, Waypoint, WpKind, COUNT};
+pub use game::state::{medal_for, Action, Boot, GameState, Options, Progress, RunResult, Screen};
+pub use game::view::{BallStatus, ViewState, BALL_RADIUS, GRAVITY};
 
-pub use ball::{Ball, BallStatus, CameraRig, ViewState, GRAVITY};
-pub use game::{Action, Boot, GameManager, GameState, Options, Progress, Screen};
-
-/// Имя игры: каталог сохранений на десктопе.
+/// Имя игры: каталог сохранений на десктопе, ключ `localStorage` в браузере.
 pub const GAME_NAME: &str = "Marble Factory";
 
-/// Зарегистрировать компоненты игры на Rust. Механизмы на C++ регистрирует
-/// `engine::add_static_cpp` в [`build_with`].
+/// Зарегистрировать компоненты игры.
 pub fn register(app: &mut App) {
     scripts::register(app);
-    app.register::<Ball>().register::<CameraRig>().register::<GameManager>().register::<kit::SeesawRig>();
 }
 
-/// Собрать игру с заданными сохранениями и режимом запуска.
+/// Собрать игру с заданными сохранениями и режимом запуска: ассеты, скрипты, ресурсы,
+/// сцена меню. Объекты не создаются — они в `assets/scenes/menu.scene`.
 pub fn build_with(save: SaveData, boot: Boot) -> Result<App, EngineError> {
-    let mut app = engine::app();
-    // Механизмы цехов на C++ линкуются в крейт статически (build.rs → engine-cpp-build).
-    engine::add_static_cpp(&mut app, engine::cpp_scripts!())?;
-    register(&mut app);
+    build_in(save, boot, engine::assets_dir!())
+}
 
-    // Ввод: пауза — Esc или Start. Остальное (оси, прыжок) — стандартные действия движка.
-    app.world.input.set_button_bindings("Pause", vec![Key::Escape.into(), GamepadButton::Start.into()]);
+/// То же, но с каталогом ассетов `assets` (копия проекта после правок в редакторе — в тестах).
+pub fn build_in(save: SaveData, boot: Boot, assets: impl AsRef<std::path::Path>) -> Result<App, EngineError> {
+    let mut app = engine::app();
+    register(&mut app);
+    #[cfg(feature = "cpp-example")]
+    engine::add_static_cpp(&mut app, engine::cpp_scripts!())?;
 
     let state = GameState::new(&save, boot);
     app.world.resources.insert(save);
     app.world.resources.insert(state);
     app.world.resources.insert(ViewState::default());
     app.world.resources.insert(BallStatus::default());
-    app.world.resources.insert(ball::RollVoice::default());
+    app.world.resources.insert(game::view::RollVoice::default());
 
-    engine::mount_assets(&mut app, engine::assets_dir!())?;
-
-    if let Some(audio) = app.world.resources.get_mut::<Audio>() {
-        sounds::register(audio);
-        audio.add_clip(sounds::MUSIC_MENU, sounds::music_menu());
-        audio.add_clip(sounds::MUSIC_FACTORY_A, sounds::music_factory_a());
-        audio.add_clip(sounds::MUSIC_FACTORY_B, sounds::music_factory_b());
-    }
-
-    // Камера с «ушами», солнце, атмосфера и менеджер игры. Всё остальное — цех, шар и
-    // интерфейс — создаёт менеджер.
-    app.spawn("Camera")
-        .tag("MainCamera")
-        .at3(0.0, 8.0, 14.0)
-        .with(Camera { background: Background::Sky, far: 1800.0, ..Camera::perspective(62.0) })
-        .with(CameraRig { orbit: true, ..CameraRig::default() })
-        .with(AudioListener::default());
-    app.spawn("Sun")
-        .rotation(Quat::from_euler(EulerRot::YXZ, 0.6, -0.62, 0.0))
-        .with(Light { color: Color::rgb(1.0, 0.86, 0.68), ..Light::directional(4.6) });
-    app.spawn("Environment").with(Environment {
-        ambient: 0.32,
-        fog_density: 0.0004,
-        exposure: 1.0,
-        bloom: 0.1,
-        vignette: 0.2,
-        shadow_distance: 80.0,
-    });
-    app.spawn("Game").with(GameManager::default());
+    // Настройки проекта (ввод, гравитация, слои, окно) читаются отсюда же.
+    engine::mount_assets(&mut app, assets)?;
+    engine::load_scene(&mut app, "scenes/menu.scene")?;
     Ok(app)
 }
 

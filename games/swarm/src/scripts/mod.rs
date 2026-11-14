@@ -7,7 +7,30 @@
 //!
 //! Игра вызывает один раз: `scripts::register(&mut app);`
 
+pub mod bosses;
+pub mod drone;
+pub mod enemy_kinds;
+pub mod game_manager;
+pub mod hud;
+pub mod menus;
+pub mod reactor;
+pub mod stress;
+pub mod touch_controls;
+pub mod upgrades;
+pub mod waves;
+pub mod weapons;
+
 /// Зарегистрировать компоненты всех скриптов каталога.
 pub fn register(app: &mut engine::prelude::App) {
-    let _ = app;
+    app.register::<bosses::Boss>();
+    app.register::<drone::Drone>();
+    app.register::<enemy_kinds::EnemyKind>();
+    app.register::<game_manager::GameManager>();
+    app.register::<hud::Hud>();
+    app.register::<menus::Menus>();
+    app.register::<reactor::ReactorCore>();
+    app.register::<touch_controls::TouchControls>();
+    app.register::<upgrades::Upgrades>();
+    app.register::<waves::Waves>();
+    app.register::<weapons::Weapons>();
 }

@@ -4,8 +4,9 @@
 //! статус — в строке окна. После удачной веб-сборки окно предлагает открыть игру в
 //! браузере (локальный сервер `piska-export serve`).
 
+use crate::i18n::{tr_s, trf};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 
 use egui::{vec2, RichText};
 
@@ -33,7 +34,7 @@ fn linux_buildable() -> bool {
     static CACHE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *CACHE.get_or_init(|| {
         let runs = |program: &str, args: &[&str]| {
-            Command::new(program)
+            engine_build::host::command(program)
                 .args(args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -74,10 +75,10 @@ impl ExportPlatform {
 
     pub fn label(self) -> &'static str {
         match self {
-            ExportPlatform::Web => "Web",
-            ExportPlatform::Windows => "Windows",
-            ExportPlatform::Android => "Android",
-            ExportPlatform::Linux => "Linux",
+            ExportPlatform::Web => tr_s("Web"),
+            ExportPlatform::Windows => tr_s("Windows"),
+            ExportPlatform::Android => tr_s("Android"),
+            ExportPlatform::Linux => tr_s("Linux"),
         }
     }
 }
@@ -114,6 +115,8 @@ pub(crate) struct ExportState {
     pub last: Option<(ExportPlatform, PathBuf)>,
     /// Работающий `piska-export serve`.
     server: Option<(Child, PathBuf)>,
+    /// Открытое системное окно «Папка» для каталога результата.
+    browse: Option<engine_build::file_dialog::Dialog>,
 }
 
 impl Drop for ExportState {
@@ -170,11 +173,11 @@ impl Editor {
         if !ExportPlatform::available().contains(&settings.platform) {
             return Err(EditorError::Other(match settings.platform {
                 ExportPlatform::Linux => {
-                    "Linux builds need a Linux machine, or zig for cross-compiling (PISKA_ZIG or PATH) \
-                     (see docs/api/export.md)"
+                    tr_s("Linux builds need a Linux machine, or zig for cross-compiling (PISKA_ZIG or PATH) \
+                     (see docs/api/export.md)")
                         .to_string()
                 }
-                other => format!("{} builds can only be made on {}", other.label(), other.label()),
+                other => trf!("{} builds can only be made on {}", other.label(), other.label()),
             }));
         }
         let out = self.export_out_dir(settings).expect("game crate is set");
@@ -198,7 +201,7 @@ impl Editor {
             args.push("--tar".to_string());
         }
         Ok(self.with_tools(
-            BuildCommand::new(format!("Export {}", settings.platform.label()), "cargo")
+            BuildCommand::new(trf!("Export {}", settings.platform.label()), "cargo")
                 .args(args)
                 .dir(self.workspace()),
         ))
@@ -234,7 +237,7 @@ impl Editor {
     pub(crate) fn run_in_browser(&mut self) -> Result<(), EditorError> {
         let dir = match &self.export.last {
             Some((ExportPlatform::Web, dir)) if dir.join("index.html").is_file() => dir.clone(),
-            _ => return Err(EditorError::Other("export the game for the Web first".to_string())),
+            _ => return Err(EditorError::Other(tr_s("export the game for the Web first").to_string())),
         };
         let url = format!("http://127.0.0.1:{SERVE_PORT}/");
         // Сервер уже раздаёт этот каталог — достаточно открыть страницу.
@@ -246,7 +249,7 @@ impl Editor {
             let _ = child.kill();
             self.export.server = None;
         }
-        let child = Command::new("cargo")
+        let child = engine_build::host::command("cargo")
             .args(["run", "-q", "-p", "piska-export", "--", "serve"])
             .arg(&dir)
             .args(["--port", &SERVE_PORT.to_string(), "--open"])
@@ -255,7 +258,7 @@ impl Editor {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|e| EditorError::Other(format!("cannot start `piska-export serve`: {e}. Is cargo on PATH?")))?;
+            .map_err(|e| EditorError::Other(trf!("cannot start `piska-export serve`: {e}. Is cargo on PATH?", e = e)))?;
         log::info!(target: "build", "serving {} at {url}", dir.display());
         self.export.server = Some((child, dir));
         Ok(())
@@ -293,51 +296,56 @@ impl Editor {
             "" => "dist".to_string(),
             folder => folder.trim_end_matches(['/', '\\']).to_string(),
         };
+        // Ответ системного окна «Папка» (кнопка «Browse…» у каталога результата).
+        if let Some(outcome) = self.export.browse.as_ref().and_then(|d| d.poll()) {
+            self.export.browse = None;
+            if let engine_build::file_dialog::Outcome::Chosen(path) = outcome {
+                self.export.settings.out_dir = path.display().to_string();
+            }
+        } else if self.export.browse.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        let browse_start = self.workspace().join(&export_folder);
+        let can_browse = engine_build::file_dialog::available() && self.export.browse.is_none();
+        let mut browse = false;
         let mut settings = self.export.settings.clone();
         let mut actions: Vec<ExportAction> = Vec::new();
-        egui::Window::new("Build")
-            .id(egui::Id::new("editor_export"))
-            .open(&mut open)
-            .collapsible(false)
+        crate::window_kit::tool_window(egui::Id::new("editor_export"), tr_s("Build"))
             .resizable(false)
-            .default_width(480.0)
-            .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
-            .frame(
-                theme::window_frame(&ctx.style()),
-            )
-            .show(ctx, |ui| {
+            .default_size(vec2(480.0, 360.0))
+            .show(ctx, &mut open, |ui| {
                 ui.set_width(480.0);
                 let Some(game) = game.as_deref() else {
                     theme::empty_state(
                         ui,
                         Icon::Build,
-                        "No game crate",
+                        tr_s("No game crate"),
                         "Start the editor with EditorConfig::default().game_crate(\"<name>\") \
                          for a game in games/<name> to export it.",
                     );
                     return;
                 };
-                section(ui, "Target");
+                section(ui, tr_s("Target"));
                 egui::Grid::new("export_target")
                     .num_columns(2)
                     .spacing(vec2(theme::SP_L, theme::SP_M))
                     .min_col_width(120.0)
                     .show(ui, |ui| {
-                        muted(ui, "Game");
+                        muted(ui, tr_s("Game"));
                         ui.label(RichText::new(format!("games/{game}")).font(theme::mono()).color(theme::TEXT));
                         ui.end_row();
-                        muted(ui, "Platform");
+                        muted(ui, tr_s("Platform"));
                         let options: Vec<(ExportPlatform, &str, &str)> = ExportPlatform::available()
                             .into_iter()
                             .map(|p| {
                                 let tip = match p {
-                                    ExportPlatform::Web => "WebAssembly page for browsers (WebGPU, WebGL2 fallback)",
-                                    ExportPlatform::Windows => "Windows program: .exe with the assets folder next to it",
+                                    ExportPlatform::Web => tr_s("WebAssembly page for browsers (WebGPU, WebGL2 fallback)"),
+                                    ExportPlatform::Windows => tr_s("Windows program: .exe with the assets folder next to it"),
                                     ExportPlatform::Android => {
-                                        "Signed APK for phones and tablets (Android 8.0+); needs the Android SDK, NDK, Java and cargo-ndk"
+                                        tr_s("Signed APK for phones and tablets (Android 8.0+); needs the Android SDK, NDK, Java and cargo-ndk")
                                     }
                                     ExportPlatform::Linux => {
-                                        "Linux x86_64 program with assets, .desktop entry and a .tar.gz"
+                                        tr_s("Linux x86_64 program with assets, .desktop entry and a .tar.gz")
                                     }
                                 };
                                 (p, p.label(), tip)
@@ -345,32 +353,37 @@ impl Editor {
                             .collect();
                         ui.add_enabled_ui(!running, |ui| theme::segmented(ui, &mut settings.platform, &options));
                         ui.end_row();
-                        muted(ui, "Configuration");
+                        muted(ui, tr_s("Configuration"));
                         ui.add_enabled_ui(!running, |ui| {
                             theme::segmented(
                                 ui,
                                 &mut settings.release,
                                 &[
-                                    (false, "Debug", "Faster to build; larger and slower"),
-                                    (true, "Release", "Optimized: smaller and faster, takes longer to build"),
+                                    (false, tr_s("Debug"), tr_s("Faster to build; larger and slower")),
+                                    (true, tr_s("Release"), tr_s("Optimized: smaller and faster, takes longer to build")),
                                 ],
                             )
                         });
                         ui.end_row();
                     });
                 ui.add_space(theme::SP_L);
-                section(ui, "Output");
+                section(ui, tr_s("Output"));
                 let default_out = format!("{export_folder}/{game}/{}", settings.platform.command());
-                ui.add_enabled(
-                    !running,
-                    egui::TextEdit::singleline(&mut settings.out_dir)
-                        .hint_text(&default_out)
-                        .font(theme::mono())
-                        .desired_width(f32::INFINITY),
-                );
+                ui.horizontal(|ui| {
+                    // Поле на всю ширину, справа — «Browse…» (системное окно выбора папки).
+                    let button_w = 92.0;
+                    let field_w = ui.available_width() - button_w - ui.spacing().item_spacing.x;
+                    ui.add_enabled_ui(!running, |ui| crate::controls::text_field(ui, &mut settings.out_dir, &default_out, field_w));
+                    let button = ui
+                        .add_enabled_ui(!running && can_browse, |ui| crate::controls::button_sized(ui, crate::controls::Kind::Normal, None, tr_s("Browse…"), button_w))
+                        .inner;
+                    if button.clicked() {
+                        browse = true;
+                    }
+                });
                 ui.add_space(theme::SP_XS);
                 ui.label(
-                    RichText::new("Relative to the workspace, or an absolute path. Empty — the default above.")
+                    RichText::new(tr_s("Relative to the workspace, or an absolute path. Empty — the default above."))
                         .size(theme::FONT_CAPTION)
                         .color(theme::TEXT_MUTED),
                 );
@@ -382,17 +395,17 @@ impl Editor {
                     (BuildStatus::Running, _) => (
                         Icon::Build,
                         theme::WARN,
-                        Self::export_step().unwrap_or_else(|| "Starting the export tool…".to_string()),
+                        Self::export_step().unwrap_or_else(|| tr_s("Starting the export tool…").to_string()),
                     ),
                     (BuildStatus::Succeeded { seconds }, Some((platform, dir))) => (
                         Icon::Check,
                         theme::OK,
-                        format!("{} build ready in {seconds:.0} s: {}", platform.label(), dir.display()),
+                        trf!("{p0} build ready in {seconds} s: {p1}", p0 = platform.label(), p1 = dir.display(), seconds = format!("{:.0}", seconds)),
                     ),
                     (BuildStatus::Failed { .. }, Some(_)) => {
-                        (Icon::Error, theme::ERROR, "Export failed — see the Console for the compiler output".to_string())
+                        (Icon::Error, theme::ERROR, tr_s("Export failed — see the Console for the compiler output").to_string())
                     }
-                    _ => (Icon::Info, theme::TEXT_MUTED, "Ready to build".to_string()),
+                    _ => (Icon::Info, theme::TEXT_MUTED, tr_s("Ready to build").to_string()),
                 };
                 ui.horizontal(|ui| {
                     icons::inline(ui, icon, color);
@@ -401,29 +414,35 @@ impl Editor {
                 ui.add_space(theme::SP_L);
 
                 let succeeded = matches!(status, BuildStatus::Succeeded { .. });
-                ui.horizontal(|ui| {
-                    if let (true, Some((platform, _))) = (succeeded, &last) {
-                        if theme::icon_text_button(ui, Icon::FolderOpen, "Reveal in File Manager").clicked() {
-                            actions.push(ExportAction::Reveal);
-                        }
-                        if *platform == ExportPlatform::Web
-                            && theme::icon_text_button(ui, Icon::Globe, "Run in Browser").clicked()
-                        {
-                            actions.push(ExportAction::RunInBrowser);
-                        }
+                // Общая строка кнопок: Build справа, Close левее; действия с результатом — слева.
+                crate::window_kit::dialog_actions(ui, |ui| {
+                    let build = ui.add_enabled_ui(!running, |ui| theme::primary_button(ui, tr_s("Build"))).inner;
+                    if build.clicked() {
+                        actions.push(ExportAction::Build);
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let build = ui.add_enabled_ui(!running, |ui| theme::primary_button(ui, "Build")).inner;
-                        if build.clicked() {
-                            actions.push(ExportAction::Build);
-                        }
-                        if theme::secondary_button(ui, "Close").clicked() {
-                            actions.push(ExportAction::Close);
+                    if theme::secondary_button(ui, tr_s("Close")).clicked() {
+                        actions.push(ExportAction::Close);
+                    }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        if let (true, Some((platform, _))) = (succeeded, &last) {
+                            if theme::icon_text_button(ui, Icon::FolderOpen, tr_s("Reveal in File Manager")).clicked() {
+                                actions.push(ExportAction::Reveal);
+                            }
+                            if *platform == ExportPlatform::Web
+                                && theme::icon_text_button(ui, Icon::Globe, tr_s("Run in Browser")).clicked()
+                            {
+                                actions.push(ExportAction::RunInBrowser);
+                            }
                         }
                     });
                 });
             });
         self.export.settings = settings.clone();
+        if browse {
+            let request = engine_build::file_dialog::Request::new(engine_build::file_dialog::Kind::Folder, tr_s("Choose the Output Folder"))
+                .folder(&browse_start);
+            self.export.browse = Some(engine_build::file_dialog::Dialog::spawn(request));
+        }
         if !open {
             self.export.open = false;
         }
@@ -459,11 +478,11 @@ fn muted(ui: &mut egui::Ui, text: &str) {
 
 fn open_url(url: &str) {
     let result = if cfg!(windows) {
-        Command::new("cmd").args(["/C", "start", "", url]).spawn()
+        engine_build::host::command("cmd").args(["/C", "start", "", url]).spawn()
     } else if cfg!(target_os = "macos") {
-        Command::new("open").arg(url).spawn()
+        engine_build::host::command("open").arg(url).spawn()
     } else {
-        Command::new("xdg-open").arg(url).spawn()
+        engine_build::host::command("xdg-open").arg(url).spawn()
     };
     if let Err(err) = result {
         log::warn!("open {url} in a browser ({err})");

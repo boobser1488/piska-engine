@@ -506,3 +506,22 @@ fn documentation_snippets_work() {
         assert_eq!(text(src), *want, "`{src}`");
     }
 }
+
+/// Поля значений, которые даёт движок (`self`, `scene`…), можно менять: имя не объявлено
+/// в скрипте, но присваивание идёт в поле, а не в саму переменную.
+#[test]
+fn fields_of_host_values_can_be_assigned() {
+    let mut vm = Vm::new();
+    let host = vm.run_source("host.scenario", "return {rotation: 0, pos: vec2(1, 2)}").unwrap();
+    let origin = vm.run_source("host.scenario", "return vec2(1, 2)").unwrap();
+    vm.register_value("me", host);
+    vm.register_value("origin", origin);
+    let src = "me.rotation = 90\nme.rotation += 1\nme.pos.x = 5\nme[\"tag\"] = \"a\"\norigin.x = 7\n\
+               function turn() me.rotation = me.rotation + 1 end\nturn()\n\
+               return [me.rotation, me.pos.x, me.tag, origin.x]";
+    let v = vm.run_source("test.scenario", src).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(v.to_text(), "[92, 5, \"a\", 7]");
+    // Сама переменная движка по-прежнему не переназначается.
+    let err = vm.run_source("test.scenario", "me = 1").unwrap_err().to_string();
+    assert!(err.contains("is not declared"), "{err}");
+}

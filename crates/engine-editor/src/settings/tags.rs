@@ -5,6 +5,7 @@
 //! спрашивает подтверждение — объекты сохраняют текст, а Inspector показывает его как
 //! «missing».
 
+use crate::i18n::{tr_s, trf};
 use egui::{vec2, Rect, Sense};
 use engine_core::settings::{TagsAndLayers, LAYER_COUNT};
 
@@ -44,11 +45,11 @@ pub(super) fn tags_and_layers(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     let tags = editor.project_settings_draft().tags_and_layers.tags;
     let counts: Vec<usize> = tags.iter().map(|t| editor.app.world.scene.count_with_tag(t)).collect();
 
-    s.group("Tags");
+    s.group(tr_s("Tags"));
     let settings = &mut editor.settings;
     let row = s.block(
-        "Tag list",
-        "Find objects by tag in code: scene.find_by_tag(\"Enemy\"). Untagged is built in.",
+        tr_s("Tag list"),
+        tr_s("Find objects by tag in code: scene.find_by_tag(\"Enemy\"). Untagged is built in."),
         tags != defaults.tags,
         |ui| {
             let mut op = None;
@@ -57,14 +58,14 @@ pub(super) fn tags_and_layers(s: &mut SettingsUi<'_>, editor: &mut Editor) {
             ui.painter().text(
                 builtin.left_center() + vec2(theme::SP_S, 0.0),
                 egui::Align2::LEFT_CENTER,
-                "Untagged",
+                tr_s("Untagged"),
                 theme::body(),
                 theme::TEXT_DISABLED,
             );
             ui.painter().text(
                 builtin.right_center() - vec2(theme::SP_S, 0.0),
                 egui::Align2::RIGHT_CENTER,
-                "built in",
+                tr_s("built in"),
                 theme::caption(),
                 theme::TEXT_DISABLED,
             );
@@ -77,13 +78,11 @@ pub(super) fn tags_and_layers(s: &mut SettingsUi<'_>, editor: &mut Editor) {
                 let field = Rect::from_min_size(rect.min + vec2(0.0, 2.0), vec2(WIDE_W, theme::FIELD_H));
                 let editing = settings.tag_edit.as_ref().is_some_and(|(i, _)| *i == index);
                 let mut text = if editing { settings.tag_edit.as_ref().map(|(_, t)| t.clone()).unwrap_or_default() } else { tag.clone() };
-                let edit = ui.put(
-                    field,
-                    egui::TextEdit::singleline(&mut text)
-                        .id(egui::Id::new(("settings_tag", index)))
-                        .vertical_align(egui::Align::Center)
-                        .desired_width(WIDE_W),
-                );
+                let edit = ui
+                    .allocate_new_ui(egui::UiBuilder::new().max_rect(field), |ui| {
+                        crate::controls::text_field_with_id(ui, Some(egui::Id::new(("settings_tag", index))), &mut text, "", WIDE_W)
+                    })
+                    .inner;
                 if edit.changed() || (edit.has_focus() && !editing) {
                     settings.tag_edit = Some((index, text.clone()));
                 }
@@ -98,7 +97,7 @@ pub(super) fn tags_and_layers(s: &mut SettingsUi<'_>, editor: &mut Editor) {
                     ui.painter().text(
                         egui::pos2(field.right() + theme::SP_M, rect.center().y),
                         egui::Align2::LEFT_CENTER,
-                        format!("{used} in this scene"),
+                        trf!("{used} in this scene", used = used),
                         theme::caption(),
                         theme::TEXT_MUTED,
                     );
@@ -109,23 +108,16 @@ pub(super) fn tags_and_layers(s: &mut SettingsUi<'_>, editor: &mut Editor) {
                     ui.painter().rect_filled(remove, theme::R_S, theme::BG_HOVER);
                 }
                 icons::paint(ui.painter(), remove.shrink(5.0), Icon::Close, if click.hovered() { theme::TEXT_STRONG } else { theme::TEXT_MUTED });
-                if click.on_hover_text("Remove this tag").clicked() {
+                if click.on_hover_text(tr_s("Remove this tag")).clicked() {
                     op = Some(TagOp::Remove(index));
                 }
             }
             hairline(ui);
             ui.add_space(theme::SP_S);
             ui.horizontal(|ui| {
-                let edit = ui.add(
-                    egui::TextEdit::singleline(&mut settings.new_tag)
-                        .id(Editor::new_tag_field_id())
-                        .hint_text(egui::RichText::new("New tag").color(theme::TEXT_DISABLED))
-                        .vertical_align(egui::Align::Center)
-                        .min_size(vec2(0.0, theme::FIELD_H))
-                        .desired_width(WIDE_W),
-                );
+                let edit = crate::controls::text_field_with_id(ui, Some(Editor::new_tag_field_id()), &mut settings.new_tag, tr_s("New tag"), WIDE_W);
                 let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                let add = ui.add_enabled_ui(!settings.new_tag.trim().is_empty(), |ui| theme::icon_text_button(ui, Icon::Plus, "Add Tag")).inner;
+                let add = ui.add_enabled_ui(!settings.new_tag.trim().is_empty(), |ui| theme::icon_text_button(ui, Icon::Plus, tr_s("Add Tag"))).inner;
                 if (add.clicked() || enter) && !settings.new_tag.trim().is_empty() {
                     op = Some(TagOp::Add(std::mem::take(&mut settings.new_tag)));
                 }
@@ -140,7 +132,7 @@ pub(super) fn tags_and_layers(s: &mut SettingsUi<'_>, editor: &mut Editor) {
         Some(TagOp::Add(tag)) => {
             if !editor.project_draft_mut().tags_and_layers.add_tag(&tag) {
                 editor.settings.status[super::SettingsScope::Project.index()] =
-                    Some((format!("Tag “{}” already exists or is reserved", tag.trim()), true));
+                    Some((trf!("Tag “{}” already exists or is reserved", tag.trim()), true));
             }
         }
         Some(TagOp::Rename(index, new)) => rename_tag(editor, index, &new),
@@ -157,16 +149,16 @@ pub(super) fn tags_and_layers(s: &mut SettingsUi<'_>, editor: &mut Editor) {
         None => {}
     }
 
-    s.group("Layers");
-    s.note("Objects keep a layer number (0–31); the name is what the Inspector and the collision matrix show.");
+    s.group(tr_s("Layers"));
+    s.note(tr_s("Objects keep a layer number (0–31); the name is what the Inspector and the collision matrix show."));
     let layers = &mut editor.project_draft_mut().tags_and_layers;
     if layers.layers.len() != LAYER_COUNT {
         layers.layers.resize(LAYER_COUNT, String::new());
     }
     // Как в Unity: 0–7 — встроенные, 8–31 — свои.
     for index in 0..LAYER_COUNT {
-        let label = if index < 8 { format!("Builtin Layer {index}") } else { format!("User Layer {index}") };
-        let hint = if index == 0 { "Default" } else { "Unnamed" };
+        let label = if index < 8 { trf!("Builtin Layer {index}", index = index) } else { trf!("User Layer {index}", index = index) };
+        let hint = if index == 0 { tr_s("Default") } else { tr_s("Unnamed") };
         s.text(&label, "", &mut layers.layers[index], &defaults.layers[index], hint);
     }
 }
@@ -179,7 +171,7 @@ fn rename_tag(editor: &mut Editor, index: usize, new: &str) {
     };
     if new.is_empty() || new == "Untagged" || draft.tags.iter().any(|t| t == new) {
         editor.settings.status[super::SettingsScope::Project.index()] =
-            Some((format!("Cannot rename “{old}” to “{new}”: the name is empty, reserved or taken"), true));
+            Some((trf!("Cannot rename “{old}” to “{new}”: the name is empty, reserved or taken", old = old, new = new), true));
         return;
     }
     draft.tags[index] = new.to_string();
@@ -236,13 +228,10 @@ impl Editor {
 pub(crate) fn tag_combo(ui: &mut egui::Ui, tag: &mut String, names: &TagsAndLayers, open_tags: &mut bool) -> bool {
     let before = tag.clone();
     let missing = !names.has_tag(tag);
-    let shown = if tag.is_empty() { "Untagged".to_string() } else if missing { format!("{tag} (missing)") } else { tag.clone() };
-    let response = egui::ComboBox::from_id_salt(Editor::inspector_tag_combo_id())
-        .selected_text(egui::RichText::new(shown).color(if missing { theme::WARN } else { theme::TEXT }))
-        .width(ui.available_width())
-        .height(320.0)
-        .show_ui(ui, |ui| {
-            if ui.selectable_label(tag.is_empty() || tag == "Untagged", "Untagged").clicked() {
+    let shown = if tag.is_empty() { tr_s("Untagged").to_string() } else if missing { trf!("{tag} (missing)", tag = tag) } else { tag.clone() };
+    let shown = egui::RichText::new(shown).color(if missing { theme::WARN } else { theme::TEXT });
+    let response = crate::controls::combo_ex(ui, Editor::inspector_tag_combo_id(), shown, ui.available_width(), |ui| {
+            if ui.selectable_label(tag.is_empty() || tag == "Untagged", tr_s("Untagged")).clicked() {
                 tag.clear();
             }
             for name in &names.tags {
@@ -251,14 +240,14 @@ pub(crate) fn tag_combo(ui: &mut egui::Ui, tag: &mut String, names: &TagsAndLaye
                 }
             }
             if missing {
-                let _ = ui.selectable_label(true, egui::RichText::new(format!("{before} (missing)")).color(theme::WARN));
+                let _ = ui.selectable_label(true, egui::RichText::new(trf!("{before} (missing)", before = before)).color(theme::WARN));
             }
             ui.separator();
-            if ui.selectable_label(false, "Add Tag…").clicked() {
+            if ui.selectable_label(false, tr_s("Add Tag…")).clicked() {
                 *open_tags = true;
             }
         });
-    response.response.on_hover_text("Tag: find objects by tag in code. Edit the list in Project Settings → Tags and Layers");
+    response.response.on_hover_text(tr_s("Tag: find objects by tag in code. Edit the list in Project Settings → Tags and Layers"));
     *tag != before
 }
 
@@ -266,11 +255,7 @@ pub(crate) fn tag_combo(ui: &mut egui::Ui, tag: &mut String, names: &TagsAndLaye
 pub(crate) fn layer_combo(ui: &mut egui::Ui, layer: &mut u32, names: &TagsAndLayers, open_tags: &mut bool) -> bool {
     let before = *layer;
     let label = |i: u32| format!("{i}: {}", names.layer_name(i));
-    let response = egui::ComboBox::from_id_salt(Editor::inspector_layer_combo_id())
-        .selected_text(names.layer_name(*layer))
-        .width(ui.available_width())
-        .height(360.0)
-        .show_ui(ui, |ui| {
+    let response = crate::controls::combo_ex(ui, Editor::inspector_layer_combo_id(), names.layer_name(*layer), ui.available_width(), |ui| {
             for i in 0..LAYER_COUNT as u32 {
                 let named = names.layers.get(i as usize).is_some_and(|n| !n.is_empty());
                 if named || i == *layer {
@@ -278,10 +263,10 @@ pub(crate) fn layer_combo(ui: &mut egui::Ui, layer: &mut u32, names: &TagsAndLay
                 }
             }
             ui.separator();
-            if ui.selectable_label(false, "Add Layer…").clicked() {
+            if ui.selectable_label(false, tr_s("Add Layer…")).clicked() {
                 *open_tags = true;
             }
         });
-    response.response.on_hover_text("Layer 0–31: camera culling and the physics collision matrix. Name layers in Project Settings → Tags and Layers");
+    response.response.on_hover_text(tr_s("Layer 0–31: camera culling and the physics collision matrix. Name layers in Project Settings → Tags and Layers"));
     *layer != before
 }

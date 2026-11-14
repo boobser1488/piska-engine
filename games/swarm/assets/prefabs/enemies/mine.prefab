@@ -1,0 +1,38 @@
+(
+    name: "Mine",
+    id: 142492772750588,
+    tag: "Enemy",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.5),
+                "sheet_columns": Int(1),
+                "sheet_rows": Int(1),
+                "size": Vec2(1.0, 1.0),
+                "sorting_layer": Int(1),
+                "texture": Asset("e3e1852cdcfddfa538e7955ea1db931d"),
+                "uv_offset": Vec2(0.14208984, 0.63720703),
+                "uv_size": Vec2(0.053710938, 0.053710938),
+            },
+        ),
+        (
+            kind: "EnemyKind",
+            fields: {
+                "kind": Str("Mine"),
+                "spawn_pop": Float(0.3),
+                "wobble": Float(0.04),
+            },
+        ),
+    ],
+)

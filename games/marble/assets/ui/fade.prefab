@@ -1,0 +1,70 @@
+(
+    name: "Fade",
+    id: 109457640213254,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Canvas",
+            fields: {
+                "keyboard_navigation": Bool(false),
+                "match_width_or_height": Float(0.5),
+                "reference_resolution": Vec2(1280.0, 720.0),
+                "scale_factor": Float(1.0),
+                "scale_mode": Enum("ScaleWithScreenSize"),
+                "sort_order": Int(50),
+            },
+        ),
+        (
+            kind: "RectTransform",
+            fields: {
+                "anchor_max": Vec2(1.0, 1.0),
+                "anchor_min": Vec2(0.0, 0.0),
+                "pivot": Vec2(0.5, 0.5),
+                "position": Vec2(0.0, 0.0),
+                "size": Vec2(0.0, 0.0),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "FadeImage",
+            id: 64981775471616,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(1.0, 1.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.5, 0.5),
+                        "position": Vec2(0.0, 0.0),
+                        "size": Vec2(0.0, 0.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(0.0, 0.0, 0.0, 0.0),
+                        "corner_radius": Float(0.0),
+                        "raycast_target": Bool(false),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset(""),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

@@ -18,6 +18,7 @@ mod rtmacro;
 mod animation;
 mod camera2d;
 mod components;
+pub mod depth;
 mod draw2d;
 mod grid;
 mod overlay;
@@ -27,12 +28,16 @@ mod trail;
 mod post;
 mod primitives;
 mod renderer;
+mod fog;
+mod grading;
+mod sky_colors;
 mod terrain;
 mod terrain_data;
 mod terrain_mesh;
 mod terrain_noise;
 mod terrain_textures;
 mod appicon;
+pub mod frame_time;
 mod window;
 
 pub use components::{
@@ -52,11 +57,15 @@ pub use overlay::{Overlay, OverlayBatch, OverlayImage, OverlayTexture, OverlayVe
 /// Версия wgpu, на которой собран рендер: для своих целей отрисовки (`render_with`).
 pub use wgpu;
 pub use post::PostSettings;
+pub use depth::{orthographic, perspective};
 pub use primitives::MeshShape;
 pub use renderer::{read_texture, transform_bounds, CameraView, Gpu, RenderStats, Renderer};
 pub use appicon::{decode_icon, with_window_icon, ENGINE_ICON_PNG, ENGINE_ICON_SMALL_PNG};
 pub use window::{run, WindowConfig, WEB_CANVAS_ID};
 pub use renderer::TerrainStats;
+pub use fog::Fog;
+pub use grading::ColorGrading;
+pub use sky_colors::SkyColors;
 pub use terrain::{
     snap_to_terrain, terrain_at, terrain_height, terrain_normal, terrain_raycast, BrushTool, Terrain,
     TerrainBrush, TerrainEdits, TerrainHit, TerrainSource, Water, TERRAIN_LAYERS, TERRAIN_SHAPE_FIELDS,
@@ -80,6 +89,9 @@ pub fn register_components(registry: &mut TypeRegistry) {
         .register::<Tilemap>()
         .register::<TrailRenderer>()
         .register::<CameraController2D>()
+        .register::<Fog>()
+        .register::<ColorGrading>()
+        .register::<SkyColors>()
         .register::<Terrain>()
         .register::<Water>();
     // Категории меню Add Component в редакторе.
@@ -87,7 +99,7 @@ pub fn register_components(registry: &mut TypeRegistry) {
         .categorize(
             &[
                 "SpriteRenderer", "Camera", "MeshRenderer", "Light", "Environment", "Tilemap", "CameraController2D",
-                "Terrain", "Water",
+                "Terrain", "Water", "ColorGrading", "SkyColors",
             ],
             "Rendering",
         )

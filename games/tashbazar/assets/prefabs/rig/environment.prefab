@@ -1,0 +1,52 @@
+(
+    name: "Environment",
+    id: 27512100353887,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Environment",
+            fields: {
+                "ambient": Float(0.5),
+                "bloom": Float(0.035),
+                "exposure": Float(1.0),
+                "fog_density": Float(0.0022),
+                "shadow_distance": Float(70.0),
+                "vignette": Float(0.16),
+            },
+        ),
+        (
+            kind: "SkyColors",
+            fields: {
+                "blend": Float(0.9),
+                "enabled": Bool(true),
+                "horizon": Color(0.8, 0.78, 0.7, 1.0),
+                "zenith": Color(0.16, 0.36, 0.74, 1.0),
+            },
+        ),
+        (
+            kind: "Fog",
+            fields: {
+                "enabled": Bool(true),
+                "height": Float(0.0),
+                "height_falloff": Float(0.03),
+                "start": Float(35.0),
+            },
+        ),
+        (
+            kind: "ColorGrading",
+            fields: {
+                "contrast": Float(1.06),
+                "enabled": Bool(true),
+                "highlights": Color(1.0, 0.98, 0.94, 1.0),
+                "saturation": Float(0.96),
+                "shadows": Color(0.02, 0.025, 0.05, 1.0),
+                "temperature": Float(0.12),
+                "tint": Float(0.0),
+            },
+        ),
+    ],
+)

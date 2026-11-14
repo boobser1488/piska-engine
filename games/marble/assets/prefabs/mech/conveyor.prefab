@@ -1,0 +1,161 @@
+(
+    name: "Conveyor",
+    id: 214211399385338,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Conveyor",
+            fields: {
+                "grip": Float(12.0),
+                "scroll": Float(0.0),
+                "size": Vec3(4.0, 0.4, 10.0),
+                "slat_spacing": Float(1.2),
+                "speed": Float(4.0),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Belt",
+            id: 1116920031306,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (4.0, 0.4, 10.0),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("552dfe753e0aed8fae03ad861bcc65b9"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.4),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Box"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Side L",
+            id: 104226060396087,
+            transform: (
+                position: (-2.15, 0.05, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.3, 0.5, 10.0),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("9c37ec0f4fa131b8c5fb067814a82027"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.3),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Box"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Side R",
+            id: 145460094259649,
+            transform: (
+                position: (2.15, 0.05, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.3, 0.5, 10.0),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("9c37ec0f4fa131b8c5fb067814a82027"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.3),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Box"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

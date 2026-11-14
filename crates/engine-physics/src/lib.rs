@@ -28,8 +28,8 @@ mod physics3d;
 
 #[cfg(feature = "3d")]
 pub use physics3d::{
-    apply_project_settings_3d, CharacterController, Collider, HeightfieldTile, JointId, Physics3D, Physics3DSystem,
-    RaycastHit3D, Rigidbody, Shape3D,
+    apply_project_settings_3d, CastShape3D, CharacterController, Collider, HeightfieldTile, JointId, Physics3D,
+    Physics3DSystem, QueryFilter3D, RaycastHit3D, Rigidbody, Shape3D, ShapeHit3D,
 };
 
 #[cfg(feature = "2d")]

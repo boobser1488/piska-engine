@@ -165,24 +165,28 @@ fn preferences_has_appearance_and_game_view_pages_that_edit_the_preferences() {
     // Game View щелчком в списке слева; флажок VSync — щелчком по нему.
     hands.click_id(&mut editor, Editor::settings_page_id(PREFS, "game-view"));
     assert_eq!(editor.settings_page(PREFS), "game-view");
-    assert_eq!(editor.settings_visible_rows(PREFS), ["Vertical sync", "Play mode limit", "Redraw on demand"]);
+    // Ввод в Play (фокус окна Game) и звук игры в редакторе — тоже на этой странице.
+    assert_eq!(
+        editor.settings_visible_rows(PREFS),
+        ["Vertical sync", "Play mode limit", "Focus Game view on Play", "Redraw on demand", "Mute audio in editor", "Editor volume"]
+    );
     let row = editor.settings_row_rect(PREFS, "Vertical sync").unwrap();
-    assert!(!editor.preferences().vsync);
+    assert!(editor.preferences().vsync, "vertical sync is on by default");
     assert!(!hands.drawn(Editor::settings_reset_id(PREFS, "Vertical sync")), "no reset arrow at the default");
     // Флажок — первый контрол справа от колонки подписей: ищем его по строке.
     let mut toggled = false;
     for x in (row.left() as i32 + 140..row.left() as i32 + 260).step_by(6) {
         hands.click(&mut editor, egui::pos2(x as f32, row.top() + 13.0));
-        if editor.preferences().vsync {
+        if !editor.preferences().vsync {
             toggled = true;
             break;
         }
     }
-    assert!(toggled, "clicking the checkbox turns VSync on");
+    assert!(toggled, "clicking the checkbox turns VSync off");
 
     // Стрелка сброса появилась и возвращает значение по умолчанию.
     hands.click_id(&mut editor, Editor::settings_reset_id(PREFS, "Vertical sync"));
-    assert!(!editor.preferences().vsync);
+    assert!(editor.preferences().vsync);
     assert!(!hands.drawn(Editor::settings_reset_id(PREFS, "Vertical sync")));
 }
 
@@ -222,7 +226,7 @@ fn reset_all_preferences_asks_first_and_keeps_window_layouts() {
     let mut editor = editor_over(&sandbox.assets());
     let mut prefs = editor.preferences().clone();
     prefs.ui_scale = 1.5;
-    prefs.vsync = true;
+    prefs.vsync = false; // не по умолчанию: сброс должен вернуть «включено»
     prefs.play_fps_cap = 60;
     prefs.accent = 2;
     prefs.saved_layouts = vec![("Mine".to_string(), "piska-layout 1; main -; maxplay 0".to_string())];

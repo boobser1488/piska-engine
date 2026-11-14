@@ -1,0 +1,53 @@
+(
+    name: "Crawler",
+    tag: "Enemy",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.0),
+                "sheet_columns": Int(4),
+                "sheet_rows": Int(1),
+                "size": Vec2(1.0, 1.0),
+                "sorting_layer": Int(2),
+                "texture": Asset("d07bc2e9b93a3dd16fda7c41c779c4c0"),
+                "uv_offset": Vec2(0.0, 0.0),
+                "uv_size": Vec2(1.0, 1.0),
+            },
+        ),
+        (
+            kind: "SpriteAnimator",
+            fields: {
+                "clip": Str("walk"),
+                "clips": List([
+                    Str("walk: 0-3 @8"),
+                ]),
+                "finished": Bool(false),
+                "frame": Int(0),
+                "playing": Bool(true),
+                "speed": Float(1.0),
+                "time": Float(0.0),
+            },
+        ),
+        (
+            kind: "Crawler",
+            fields: {
+                "dir": Float(-1.0),
+                "home_x": Float(NaN),
+                "range": Float(0.0),
+                "speed": Float(1.6),
+                "vy": Float(0.0),
+            },
+        ),
+    ],
+)

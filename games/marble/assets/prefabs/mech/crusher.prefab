@@ -1,0 +1,185 @@
+(
+    name: "Crusher",
+    id: 217000672135919,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Crusher",
+            fields: {
+                "clock": Float(0.0),
+                "head": Object(270995402767791),
+                "hold_down": Float(0.5),
+                "last_depth": Float(0.0),
+                "period": Float(3.6),
+                "phase": Float(0.0),
+                "shaft": Object(254686452313858),
+                "slam_time": Float(0.14),
+                "squashed_this_cycle": Bool(false),
+                "stroke": Float(3.0),
+                "thudded": Bool(false),
+                "wait_up": Float(1.6),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Head",
+            id: 270995402767791,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (4.2, 1.0, 2.2),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("9c37ec0f4fa131b8c5fb067814a82027"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Rigidbody",
+                    fields: {
+                        "angular_damping": Float(0.05),
+                        "angular_velocity": Vec3(0.0, 0.0, 0.0),
+                        "body_type": Enum("Kinematic"),
+                        "ccd": Bool(false),
+                        "gravity_scale": Float(1.0),
+                        "interpolate": Bool(true),
+                        "linear_damping": Float(0.0),
+                        "lock_rotation": Bool(false),
+                        "velocity": Vec3(0.0, 0.0, 0.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.9),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Box"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+            children: [
+                (
+                    name: "Lip",
+                    id: 251991533197644,
+                    transform: (
+                        position: (0.0, -0.52, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.94, 0.04, 0.94),
+                    ),
+                    components: [
+                        (
+                            kind: "MeshRenderer",
+                            fields: {
+                                "cast_shadows": Bool(true),
+                                "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                                "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                                "grid": Bool(false),
+                                "materials": List([
+                                    Asset("ca4f8c39d230ff94d2ff0fcfa40f9650"),
+                                ]),
+                                "mesh": Asset(""),
+                                "metallic": Float(0.0),
+                                "model_materials": Bool(false),
+                                "roughness": Float(0.6),
+                                "shape": Enum("Cube"),
+                                "texture": Asset(""),
+                                "tiling": Float(0.0),
+                                "tint": Color(1.0, 1.0, 1.0, 1.0),
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        (
+            name: "Shaft",
+            id: 254686452313858,
+            transform: (
+                position: (0.0, 5.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.7, 9.0, 0.7),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("a5719af2801376f8fb2f448f61ab76f7"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Housing",
+            id: 55510364147776,
+            transform: (
+                position: (0.0, 10.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (5.0, 1.2, 3.0),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("78490ab630c0fee226782e9685561a63"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

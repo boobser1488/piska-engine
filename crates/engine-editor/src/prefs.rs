@@ -5,6 +5,7 @@
 //! Хранятся в `%APPDATA%/PiskaEngine/editor.ron` (Linux, macOS —
 //! `~/.config/PiskaEngine/editor.ron`), по строке `ключ: значение` на настройку.
 
+use crate::i18n::{tr_s, trf};
 use std::path::PathBuf;
 
 /// Настройки редактора. Меняются в окне Preferences и переживают перезапуск.
@@ -19,15 +20,26 @@ pub struct Preferences {
     pub vsync: bool,
     /// Ограничение частоты кадров в режиме Play; 0 — без ограничения.
     pub play_fps_cap: u32,
+    /// Заглушить звук игры в редакторе (кнопка-динамик окна Game, Preferences → Game View).
+    pub editor_audio_muted: bool,
+    /// Громкость игры в редакторе, 0..1 (поверх шин самой игры).
+    pub editor_volume: f32,
     /// В режиме Edit перерисовывать окно только когда что-то меняется (ввод, сборка,
     /// новые сообщения в консоли), а в покое — несколько раз в секунду.
     /// Выключено — редактор рисует непрерывно, как в Play.
     pub redraw_on_demand: bool,
+    /// Play отдаёт фокус (и ввод игры) окну Game. Игра получает клавиатуру, мышь и
+    /// геймпады, только пока фокус у окна Game (Preferences → Game View → Input).
+    pub focus_game_on_play: bool,
     /// Раскладка окон (док, плавающие окна) — текст [`crate::Editor::layout_text`].
     /// `None` — не задана: редактор оставляет свою (Default).
     pub layout: Option<String>,
     /// Именованные раскладки из Window → Layouts → Save Layout…: (имя, текст).
     pub saved_layouts: Vec<(String, String)>,
+    /// Где пользователь оставил окна Build, Preferences, Project Settings и Undo History:
+    /// (имя окна, смещение от центра экрана). Остальные окна помнят место до закрытия
+    /// редактора.
+    pub window_offsets: Vec<(String, [f32; 2])>,
     /// Сортировка в окне Project: `name`, `type`, `modified` или `size`.
     pub project_sort: String,
     /// Сортировка по убыванию.
@@ -36,12 +48,18 @@ pub struct Preferences {
     pub project_types: String,
     /// Недавно добавленные компоненты (меню Add Component), новые первыми.
     pub recent_components: Vec<String>,
+    /// Недавние сцены по проектам (File → Open Recent Scene): (каталог ассетов, сцены —
+    /// новые первыми, не больше 10).
+    pub recent_scenes: Vec<(String, Vec<String>)>,
     /// Окно Project: избранное, сохранённые поиски, ширины столбцов, вид (см. `project_nav`).
     pub project_ui: crate::project_nav::ProjectPrefs,
     /// Переназначенные горячие клавиши (Preferences → Shortcuts), только отличия.
     pub shortcuts: crate::shortcuts::Keymap,
 
     // --- General ---
+    /// Язык интерфейса (Preferences → General → Language; общий для редактора, хаба и
+    /// редактора моделей). `None` — «Auto»: язык системы (русский, если система русская).
+    pub language: Option<engine_i18n::Language>,
     /// Сколько шагов помнит Undo сцены.
     pub undo_limit: usize,
     /// Сохранять сцену (если у неё уже есть файл) перед входом в Play.
@@ -76,6 +94,10 @@ pub struct Preferences {
     pub zoom_speed: f32,
     /// Перевернуть вращение 3D-камеры по вертикали.
     pub invert_orbit_y: bool,
+    /// Скорость полёта в виде Scene (ПКМ + W/A/S/D), м/с; колесо при полёте меняет её.
+    pub fly_speed: f32,
+    /// Туман сцены в виде Scene (по умолчанию выключен, как переключатель Fog в Unity).
+    pub scene_fog: bool,
 
     // --- Console & Diagnostics ---
     /// Console при запуске показывает сообщения / предупреждения / ошибки.
@@ -112,17 +134,24 @@ impl Default for Preferences {
         Self {
             ui_scale: 1.0,
             accent: 0,
-            vsync: false,
+            // В такт монитору: без этого движение в режиме Play идёт рывками при любом FPS.
+            vsync: true,
             play_fps_cap: 0,
+            editor_audio_muted: false,
+            editor_volume: 0.5,
             redraw_on_demand: true,
+            focus_game_on_play: true,
             layout: None,
             saved_layouts: Vec::new(),
+            window_offsets: Vec::new(),
             project_sort: "name".to_string(),
             project_sort_desc: false,
             project_types: String::new(),
             recent_components: Vec::new(),
+            recent_scenes: Vec::new(),
             project_ui: Default::default(),
             shortcuts: Default::default(),
+            language: None,
             undo_limit: 100,
             autosave_on_play: false,
             autosave_minutes: 0.0,
@@ -137,6 +166,8 @@ impl Default for Preferences {
             orbit_speed: 1.0,
             zoom_speed: 1.0,
             invert_orbit_y: false,
+            fly_speed: 5.0,
+            scene_fog: false,
             console_info: true,
             console_warn: true,
             console_error: true,
@@ -216,6 +247,14 @@ impl Preferences {
                 if !name.trim().is_empty() && !value.is_empty() {
                     prefs.saved_layouts.push((name.trim().to_string(), value.to_string()));
                 }
+            } else if let Some(name) = key.strip_prefix("window.") {
+                // `window.<имя>: x y` — место окна (смещение от центра экрана).
+                let numbers: Vec<f32> = value.split_whitespace().filter_map(|n| n.parse().ok()).collect();
+                if let [x, y] = numbers[..] {
+                    if x.is_finite() && y.is_finite() && !name.trim().is_empty() {
+                        prefs.window_offsets.push((name.trim().to_string(), [x, y]));
+                    }
+                }
             } else {
                 rest.push_str(line);
                 rest.push('\n');
@@ -237,13 +276,16 @@ impl Preferences {
                         prefs.accent = v;
                     }
                 }
-                "vsync" => prefs.vsync = value == "true",
+                // Ключ `vsync` из старых файлов не читается: там всегда стояло прежнее
+                // значение по умолчанию (выключено), которое давало рывки камеры.
+                "play_vsync" => prefs.vsync = value != "false",
                 "play_fps_cap" => {
                     if let Ok(v) = value.parse() {
                         prefs.play_fps_cap = v;
                     }
                 }
                 "redraw_on_demand" => prefs.redraw_on_demand = value != "false",
+                "focus_game_on_play" => prefs.focus_game_on_play = value != "false",
                 "project_sort" => {
                     if crate::sorting::SortKey::parse(value).is_some() {
                         prefs.project_sort = value.to_string();
@@ -257,13 +299,30 @@ impl Preferences {
                     prefs.recent_components =
                         value.split('+').map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).collect();
                 }
+                // `recent_scenes: <каталог ассетов>|сцена+сцена` — строка на проект.
+                "recent_scenes" => {
+                    if let Some((root, scenes)) = value.split_once('|') {
+                        let scenes: Vec<String> = scenes
+                            .split('+')
+                            .map(|s| unescape(s.trim()).replace("%2B", "+"))
+                            .filter(|s| !s.is_empty())
+                            .take(crate::scene_picker::RECENT_MAX)
+                            .collect();
+                        if !root.trim().is_empty() && !scenes.is_empty() {
+                            prefs.recent_scenes.push((unescape(root.trim()), scenes));
+                        }
+                    }
+                }
                 other if other.starts_with("pj_") => prefs.project_ui.set(other, value),
                 other if other.starts_with("shortcut.") => prefs.shortcuts.parse_entry(&other["shortcut.".len()..], value),
+                "language" => prefs.language = engine_i18n::Language::from_code(value),
                 "undo_limit" => set_num(&mut prefs.undo_limit, value, 1, 10_000),
                 "autosave_on_play" => prefs.autosave_on_play = value == "true",
                 "autosave_minutes" => set_num(&mut prefs.autosave_minutes, value, 0.0, 600.0),
                 "external_editor" => prefs.external_editor = unescape(value),
                 "play_tint" => set_num(&mut prefs.play_tint, value, 0.0, 1.0),
+                "editor_audio_muted" => prefs.editor_audio_muted = value == "true",
+                "editor_volume" => set_num(&mut prefs.editor_volume, value, 0.0, 1.0),
                 "grid_color" => prefs.grid_color = parse_color(value).unwrap_or(prefs.grid_color),
                 "grid_opacity" => set_num(&mut prefs.grid_opacity, value, 0.0, 1.0),
                 "scene_background" => prefs.scene_background = parse_color(value).unwrap_or(prefs.scene_background),
@@ -273,6 +332,8 @@ impl Preferences {
                 "orbit_speed" => set_num(&mut prefs.orbit_speed, value, 0.05, 10.0),
                 "zoom_speed" => set_num(&mut prefs.zoom_speed, value, 0.05, 10.0),
                 "invert_orbit_y" => prefs.invert_orbit_y = value == "true",
+                "fly_speed" => set_num(&mut prefs.fly_speed, value, 0.1, 200.0),
+                "scene_fog" => prefs.scene_fog = value == "true",
                 "console_info" => prefs.console_info = value != "false",
                 "console_warn" => prefs.console_warn = value != "false",
                 "console_error" => prefs.console_error = value != "false",
@@ -298,7 +359,7 @@ impl Preferences {
     /// Текст файла настроек (то, что пишет [`Preferences::save`]; читает [`Preferences::parse`]).
     pub fn to_text(&self) -> String {
         let mut text = format!(
-            "(\n    ui_scale: {:.2},\n    accent: {},\n    vsync: {},\n    play_fps_cap: {},\n    redraw_on_demand: {},\n",
+            "(\n    ui_scale: {:.2},\n    accent: {},\n    play_vsync: {},\n    play_fps_cap: {},\n    redraw_on_demand: {},\n",
             self.ui_scale, self.accent, self.vsync, self.play_fps_cap, self.redraw_on_demand
         );
         text.push_str(&format!(
@@ -315,11 +376,19 @@ impl Preferences {
         text.push_str(&self.project_ui.to_text());
         text.push_str(&self.shortcuts.to_text());
         let mut line = |key: &str, value: String| text.push_str(&format!("    {key}: {value},\n"));
+        line("language", self.language.map_or("auto", |l| l.code()).to_string());
         line("undo_limit", self.undo_limit.to_string());
         line("autosave_on_play", self.autosave_on_play.to_string());
         line("autosave_minutes", self.autosave_minutes.to_string());
         line("external_editor", escape(&self.external_editor));
         line("play_tint", self.play_tint.to_string());
+        line("focus_game_on_play", self.focus_game_on_play.to_string());
+        for (root, scenes) in &self.recent_scenes {
+            let scenes: Vec<String> = scenes.iter().map(|s| escape(s).replace('+', "%2B")).collect();
+            line("recent_scenes", format!("{}|{}", escape(root), scenes.join("+")));
+        }
+        line("editor_audio_muted", self.editor_audio_muted.to_string());
+        line("editor_volume", self.editor_volume.to_string());
         line("grid_color", color_text(self.grid_color));
         line("grid_opacity", self.grid_opacity.to_string());
         line("scene_background", color_text(self.scene_background));
@@ -329,6 +398,8 @@ impl Preferences {
         line("orbit_speed", self.orbit_speed.to_string());
         line("zoom_speed", self.zoom_speed.to_string());
         line("invert_orbit_y", self.invert_orbit_y.to_string());
+        line("fly_speed", self.fly_speed.to_string());
+        line("scene_fog", self.scene_fog.to_string());
         line("console_info", self.console_info.to_string());
         line("console_warn", self.console_warn.to_string());
         line("console_error", self.console_error.to_string());
@@ -353,16 +424,33 @@ impl Preferences {
         for (name, layout) in &self.saved_layouts {
             text.push_str(&format!("    layout.{}: {},\n", one_line(name), one_line(layout)));
         }
+        for (name, [x, y]) in &self.window_offsets {
+            text.push_str(&format!("    window.{}: {x} {y},\n", one_line(name)));
+        }
         text.push_str(")\n");
         text
     }
 
-    /// Прочитать с диска; нет файла — значения по умолчанию.
+    /// Язык интерфейса с учётом «Auto»: выбранный явно либо язык системы.
+    pub fn resolved_language(&self) -> engine_i18n::Language {
+        engine_i18n::resolve(self.language)
+    }
+
+    /// Применить язык настроек ко всему процессу (интерфейс перерисуется на нём
+    /// в следующем кадре). Вызывается при загрузке и при смене в Preferences.
+    pub fn apply_language(&self) {
+        engine_i18n::set(self.resolved_language());
+    }
+
+    /// Прочитать с диска; нет файла — значения по умолчанию. Заодно ставит язык
+    /// интерфейса процесса ([`Preferences::apply_language`]).
     pub fn load() -> Self {
-        Self::file()
+        let prefs = Self::file()
             .and_then(|file| std::fs::read_to_string(file).ok())
             .map(|text| Self::parse(&text))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        prefs.apply_language();
+        prefs
     }
 
     /// Записать на диск. Ошибка записи не мешает работе — она попадает в лог.
@@ -485,10 +573,10 @@ impl crate::state::Editor {
     pub fn open_in_external_editor(&self, file: &std::path::Path, line: usize) -> Result<(), crate::EditorError> {
         let (program, args) = external_command(&self.prefs.external_editor, file, line).ok_or_else(|| {
             crate::EditorError::Other(
-                "no external code editor is set: enter its command in Preferences → General".to_string(),
+                tr_s("no external code editor is set: enter its command in Preferences → General").to_string(),
             )
         })?;
-        std::process::Command::new(&program)
+        engine_build::host::command(&program)
             .args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -496,9 +584,9 @@ impl crate::state::Editor {
             .spawn()
             .map(|_| ())
             .map_err(|e| {
-                crate::EditorError::Other(format!(
+                crate::EditorError::Other(trf!(
                     "cannot start the external editor `{program}`: {e}. Check the command in Preferences → General"
-                ))
+                , program = program, e = e))
             })
     }
 }
@@ -534,7 +622,7 @@ impl crate::state::Editor {
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_default();
         let status = match self.open_in_external_editor(&target, 1) {
-            Ok(()) => (format!("Started the external editor with {}", target.display()), false),
+            Ok(()) => (trf!("Started the external editor with {}", target.display()), false),
             Err(error) => (error.to_string(), true),
         };
         self.set_preferences_status(status.0, status.1);
@@ -680,6 +768,8 @@ mod tests {
             autosave_minutes: 2.5,
             external_editor: "code -g {file}:{line}, --wait".to_string(),
             play_tint: 0.25,
+            editor_audio_muted: true,
+            editor_volume: 0.3,
             grid_color: egui::Color32::from_rgba_unmultiplied(10, 200, 30, 255),
             grid_opacity: 0.5,
             scene_background: egui::Color32::from_rgb(40, 50, 60),

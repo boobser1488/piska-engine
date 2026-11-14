@@ -2,7 +2,6 @@
 
 use crate::data::Progress;
 use engine::prelude::*;
-use std::collections::HashMap;
 
 /// Слои сортировки: фон → декор → тайлы → предметы → враги → игрок → эффекты.
 pub mod layer {
@@ -17,35 +16,15 @@ pub mod layer {
     pub const FX: i32 = 5;
 }
 
-/// Все картинки игры по имени файла без расширения (`"player"` → `sprites/player.png`).
-pub const TEXTURES: &[&str] = &[
-    "player", "crawler", "bat", "spitter", "brute", "boss", "firefly", "checkpoint", "gate", "exit", "spring",
-    "platform", "crumble", "projectile", "rock", "glow", "tiles", "bg_far", "bg_mid", "bg_near", "ui_heart",
-    "ui_heart_empty", "ui_star", "ui_star_empty", "ui_lantern_dim", "ui_lantern_lit", "ui_firefly",
-    "title_lantern", "touch_left", "touch_right", "touch_jump", "touch_dash", "ui_dark",
-];
-
-/// Дескрипторы текстур: заполняются при старте игры из базы ассетов.
-#[derive(Default, Clone)]
-pub struct Gfx {
-    map: HashMap<&'static str, AssetHandle<Texture>>,
-}
-
-impl Gfx {
-    pub fn load(db: &AssetDatabase) -> Result<Gfx, engine::assets::AssetError> {
-        let mut map = HashMap::new();
-        for name in TEXTURES {
-            map.insert(*name, db.handle::<Texture>(&format!("sprites/{name}.png"))?);
-        }
-        Ok(Gfx { map })
-    }
-
-    /// Текстура по имени; неизвестное имя — программистская ошибка, а не повод падать.
-    pub fn tex(&self, name: &str) -> AssetHandle<Texture> {
-        self.map.get(name).cloned().unwrap_or_else(|| {
-            log::error!("unknown texture `{name}`: add it to common::TEXTURES");
+/// Текстура из `assets/sprites/<имя>.png` по имени файла без расширения.
+pub fn tex(ctx: &Ctx, name: &str) -> AssetHandle<Texture> {
+    let path = format!("sprites/{name}.png");
+    match ctx.resource::<AssetDatabase>().and_then(|db| db.handle::<Texture>(&path).ok()) {
+        Some(handle) => handle,
+        None => {
+            log::error!("texture `{path}` is not in the assets");
             AssetHandle::none()
-        })
+        }
     }
 }
 
@@ -68,13 +47,13 @@ pub struct PlayerView {
 
 pub fn player_view(ctx: &Ctx) -> Option<PlayerView> {
     let id = ctx.find_by_tag("Player")?;
-    let p = ctx.get_on::<crate::player::Player>(id)?;
+    let p = ctx.get_on::<crate::scripts::player::Player>(id)?;
     let feet = ctx.scene().world_position(id).truncate();
     Some(PlayerView {
         id,
         feet,
-        center: feet + Vec2::new(0.0, crate::player::HALF.y),
-        half: crate::player::HALF,
+        center: feet + Vec2::new(0.0, crate::scripts::player::HALF.y),
+        half: crate::scripts::player::HALF,
         vel: p.vel,
         dashing: p.dash_time > 0.0,
         invulnerable: p.invuln > 0.0 || p.dash_time > 0.0,
@@ -102,35 +81,64 @@ pub fn shake(ctx: &mut Ctx, amount: f32) {
     }
 }
 
-/// Разовый эффект частиц в точке мира.
-pub fn spawn_fx(ctx: &mut Ctx, at: Vec2, fx: ParticleSystem) {
-    ctx.world.scene.build("Fx").at(at.x, at.y).with(fx).id();
+/// Разовый эффект из префаба `prefabs/<имя>.prefab` в точке мира: частицы удаляются сами.
+/// `tune` подстраивает систему частиц экземпляра (цвет, масштаб).
+fn fx(ctx: &mut Ctx, prefab: &str, at: Vec2, tune: impl FnOnce(&mut ParticleSystem)) {
+    match ctx.instantiate_at(&format!("prefabs/{prefab}.prefab"), at.extend(0.0)) {
+        Ok(id) => {
+            if let Some(ps) = ctx.scene_mut().get_component_mut::<ParticleSystem>(id) {
+                tune(ps);
+            }
+        }
+        Err(err) => log::error!("effect `{prefab}`: {err}"),
+    }
 }
 
 pub fn dust(ctx: &mut Ctx, at: Vec2, scale: f32) {
-    let mut p = ParticleSystem::dust().scaled(scale);
-    p.sorting_layer = layer::FX;
-    spawn_fx(ctx, at, p);
+    fx(ctx, "fx_dust", at, |ps| *ps = ps.clone().scaled(scale));
 }
 
 pub fn sparkle(ctx: &mut Ctx, at: Vec2, color: Color) {
-    let mut p = ParticleSystem::pickup_sparkle();
-    p.start_color = color;
-    p.start_color_max = color.scaled(0.7);
-    p.sorting_layer = layer::FX;
-    spawn_fx(ctx, at, p);
+    fx(ctx, "fx_sparkle", at, |ps| {
+        ps.start_color = color;
+        ps.start_color_max = color.scaled(0.7);
+    });
 }
 
 /// Взрыв-«искры» гибели врага.
 pub fn burst(ctx: &mut Ctx, at: Vec2, color: Color, scale: f32) {
-    let mut p = ParticleSystem::explosion().scaled(scale);
-    p.start_color = color;
-    p.start_color_max = color.scaled(0.6);
-    p.sorting_layer = layer::FX;
-    spawn_fx(ctx, at, p);
+    fx(ctx, "fx_burst", at, |ps| {
+        let mut scaled = ps.clone().scaled(scale);
+        scaled.start_color = color;
+        scaled.start_color_max = color.scaled(0.6);
+        *ps = scaled;
+    });
 }
 
 /// Столкнулись ли два объекта (по центрам и половинкам).
 pub fn touching(a: Vec2, ha: Vec2, b: Vec2, hb: Vec2) -> bool {
     crate::phys::overlap(a, ha, b, hb)
+}
+
+/// Состояние менеджера уровня, нужное предметам: (светлячки, выход открыт, игра идёт).
+pub fn level_state(ctx: &Ctx) -> Option<(i32, bool, bool)> {
+    let id = ctx.find_by_name("Level")?;
+    let l = ctx.get_on::<crate::scripts::level_manager::LevelManager>(id)?;
+    Some((l.fireflies, l.exit_ready(), l.is_playing()))
+}
+
+/// Выпустить плевок из префаба `prefabs/projectile.prefab`.
+pub fn fire_projectile(ctx: &mut Ctx, at: Vec2, vel: Vec2, scale: f32) {
+    match ctx.instantiate_at("prefabs/projectile.prefab", at.extend(0.0)) {
+        Ok(id) => {
+            if let Some(o) = ctx.scene_mut().get_mut(id) {
+                o.transform.scale = Vec3::splat(scale);
+            }
+            if let Some(p) = ctx.scene_mut().get_component_mut::<crate::scripts::projectile::Projectile>(id) {
+                p.vel = vel;
+                p.radius *= scale;
+            }
+        }
+        Err(err) => log::error!("projectile: {err}"),
+    }
 }

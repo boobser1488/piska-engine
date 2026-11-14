@@ -1,0 +1,35 @@
+[package]
+name = "piska-installer"
+description = "Графический установщик движка: мастер поверх install/install.ps1 и install/install.sh (скрипты вшиты в программу и запускаются в машиночитаемом режиме -Json / --json)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Палитра, шрифты, виджеты, иконки и перевод — те же, что у редактора и хаба.
+engine-editor.workspace = true
+# Устройство wgpu и чтение текстуры для снимков без окна.
+engine-render.workspace = true
+# Запуск дочерних процессов без окна консоли, подключение к консоли для --help.
+engine-build.workspace = true
+# Встроенный обзор каталогов хаба (выбор каталога установки и исходников).
+piska-hub = { path = "../piska-hub" }
+egui.workspace = true
+egui-wgpu.workspace = true
+egui-winit.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+pollster.workspace = true
+image.workspace = true
+serde.workspace = true
+ron.workspace = true
+log.workspace = true
+# События скриптов (-Json) и диагностика (`doctor.rs` из piska-export, вшитая сюда же).
+serde_json = "1"
+# packages.toml — те же данные, что читают скрипты и doctor.
+toml = "0.8"
+
+[build-dependencies]
+# Значок движка в exe на Windows.
+engine-build.workspace = true

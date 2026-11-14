@@ -278,7 +278,8 @@ fn prefab_instances_keep_link_and_overrides() {
 
     // Instantiate в рантайме.
     let c = app.world.instantiate("coin.prefab").unwrap();
-    assert_eq!(app.world.scene.get(c).unwrap().name, "coin");
+    // Имя экземпляра — имя корня префаба (раньше бралось имя файла).
+    assert_eq!(app.world.scene.get(c).unwrap().name, "Coin");
     assert_eq!(app.world.scene.get(c).unwrap().children().len(), 1);
 }
 
@@ -428,7 +429,7 @@ fn snapshot_restores_the_scene_and_invalidates_old_ids() {
     assert_eq!(app.world.scene.world_position(hat), Vec3::new(1.0, 3.0, 0.0));
 
     // Экземпляр префаба вернулся вместе с тем, что добавили поверх префаба.
-    let coin = app.world.scene.find_by_name("coin").unwrap();
+    let coin = app.world.scene.find_by_name("Coin").unwrap();
     let object = app.world.scene.get(coin).unwrap();
     assert_eq!(object.prefab(), Some("coin.prefab"));
     assert!(object.has::<Unit>() && object.has::<Health>());

@@ -1,5 +1,6 @@
 //! 3D-вид сцены: орбитальная камера, выбор объекта лучом, гизмо по трём осям.
 
+use crate::i18n::{tr_s, trf};
 use std::collections::HashMap;
 
 use egui::{pos2, vec2, Color32, PointerButton, Pos2, Rect, Shape, Stroke};
@@ -8,6 +9,7 @@ use engine_core::prelude::*;
 use engine_render::{CameraView, Light, LightKind, MeshRenderer, SpriteRenderer};
 
 use crate::hierarchy::object_icon;
+use crate::selection::GizmoOp;
 use crate::icons;
 use crate::state::{Action, Editor, Tool};
 use crate::theme;
@@ -100,25 +102,29 @@ impl Projector {
         )
     }
 
-    /// Точка мира на экране; `None`, если она позади камеры.
+    /// Точка мира на экране; `None`, если она позади камеры (или у самой камеры) или
+    /// координаты не числа.
     pub fn project(&self, world: Vec3) -> Option<Pos2> {
         let clip = self.view_proj * world.extend(1.0);
-        (clip.w > 1e-3).then(|| self.clip_to_screen(clip))
+        (clip.is_finite() && clip.w >= crate::lines::NEAR)
+            .then(|| self.clip_to_screen(clip))
+            .filter(|p| crate::lines::finite(*p))
     }
 
-    /// Отрезок мира на экране, обрезанный плоскостью камеры.
+    /// Отрезок мира на экране, обрезанный плоскостью у камеры (lines.rs).
     pub fn segment(&self, a: Vec3, b: Vec3) -> Option<[Pos2; 2]> {
-        const NEAR: f32 = 1e-2;
-        let (mut ca, mut cb) = (self.view_proj * a.extend(1.0), self.view_proj * b.extend(1.0));
-        if ca.w < NEAR && cb.w < NEAR {
-            return None;
+        crate::lines::project_segment(&self.view_proj, self.rect, a, b)
+    }
+
+    /// Ломаная мира (замкнутая, если `closed`) — по рёбрам, каждое обрезано у камеры.
+    pub fn polyline(&self, painter: &egui::Painter, points: &[Vec3], closed: bool, stroke: Stroke) {
+        let n = points.len();
+        let edges = if closed { n } else { n.saturating_sub(1) };
+        for i in 0..edges {
+            if let Some([a, b]) = self.segment(points[i], points[(i + 1) % n]) {
+                crate::lines::segment(painter, a, b, stroke);
+            }
         }
-        if ca.w < NEAR {
-            ca = ca.lerp(cb, (NEAR - ca.w) / (cb.w - ca.w));
-        } else if cb.w < NEAR {
-            cb = cb.lerp(ca, (NEAR - cb.w) / (ca.w - cb.w));
-        }
-        Some([self.clip_to_screen(ca), self.clip_to_screen(cb)])
     }
 
     /// Луч взгляда через точку окна: начало и единичное направление.
@@ -127,7 +133,10 @@ impl Projector {
         let y = -(screen.y - self.rect.center().y) / (self.rect.height() * 0.5);
         let near = self.inverse * Vec4::new(x, y, 0.0, 1.0);
         let far = self.inverse * Vec4::new(x, y, 1.0, 1.0);
-        let (near, far) = (near.truncate() / near.w, far.truncate() / far.w);
+        let (a, b) = (near.truncate() / near.w, far.truncate() / far.w);
+        // Глубина в рендере обратная (z = 1 у камеры): начало луча — тот конец, что ближе
+        // к глазу, так луч верен при любом соглашении о глубине.
+        let (near, far) = if a.distance_squared(self.eye) <= b.distance_squared(self.eye) { (a, b) } else { (b, a) };
         (near, (far - near).normalize_or_zero())
     }
 }
@@ -180,8 +189,11 @@ impl Editor {
         let assets = world.resources.get::<AssetDatabase>();
         let scene = &world.scene;
         let mut best: Option<(f32, GameObjectId)> = None;
+        let locked = |id: GameObjectId| !self.hierarchy.locked.is_empty() && {
+            crate::state::path_of(scene, id).is_some_and(|path| (1..=path.len()).any(|n| self.hierarchy.locked.contains(&path[..n])))
+        };
         for id in scene.ids() {
-            if !scene.is_active(id) {
+            if !scene.is_active(id) || locked(id) {
                 continue;
             }
             let Some(object) = scene.get(id) else { continue };
@@ -242,17 +254,104 @@ impl Editor {
 
 /// Перетаскивание ручки гизмо в 3D.
 pub(crate) struct Drag3D {
+    /// Активный объект в момент нажатия.
     object: GameObjectId,
+    /// Все двигаемые объекты выделения.
+    moved: Vec<crate::selection::Moved>,
     axis: usize,
     /// Мировая ось ручки.
     direction: Vec3,
     /// Параметр вдоль оси под курсором в момент нажатия.
     grab: f32,
     pointer_start: Pos2,
+    /// Точка гизмо в начале.
     origin: Vec3,
-    start: Transform,
-    parent_inverse: Mat4,
-    parent_rotation: Quat,
+    /// Поворот: касательная к кольцу в точке захвата на экране — пикселей на радиан.
+    /// Сдвиг мыши вдоль неё поворачивает так, что точка кольца идёт за курсором.
+    tangent: egui::Vec2,
+    /// Поворот: центр гизмо на экране и знак оси к камере — запасной способ, когда
+    /// касательная смотрит в камеру (кольцо видно ребром в точке захвата).
+    screen_center: Pos2,
+    facing: f32,
+    /// Поворот: точка кольца, за которую взялись (мир).
+    grab_point: Option<Vec3>,
+}
+
+/// Угол поворота вокруг `axis` через `origin`, при котором точка `grab` встаёт под луч
+/// курсора: пересечение луча с плоскостью кольца. `None` — кольцо видно почти ребром
+/// (тогда точнее касательная, [`ring_angle`]).
+fn plane_angle(origin: Vec3, axis: Vec3, grab: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> Option<f32> {
+    let facing = ray_direction.dot(axis);
+    if facing.abs() < 0.25 {
+        return None;
+    }
+    let t = (origin - ray_origin).dot(axis) / facing;
+    if t <= 0.0 {
+        return None;
+    }
+    let hit = ray_origin + ray_direction * t;
+    let a = (grab - origin) - axis * axis.dot(grab - origin);
+    let b = (hit - origin) - axis * axis.dot(hit - origin);
+    if a.length_squared() < 1e-10 || b.length_squared() < 1e-10 {
+        return None;
+    }
+    Some(axis.dot(a.cross(b)).atan2(a.dot(b)))
+}
+
+/// Отрезков в кольце поворота.
+const RING_SEGMENTS: usize = 72;
+
+/// Точки кольца поворота вокруг `axis` (единичная) радиуса `radius`, по кругу.
+fn ring_points(origin: Vec3, axis: Vec3, radius: f32) -> Vec<Vec3> {
+    let u = axis.any_orthonormal_vector();
+    let v = axis.cross(u);
+    (0..RING_SEGMENTS)
+        .map(|i| {
+            let t = i as f32 / RING_SEGMENTS as f32 * std::f32::consts::TAU;
+            origin + (u * t.cos() + v * t.sin()) * radius
+        })
+        .collect()
+}
+
+/// Кольцо под курсором: (ось, точка кольца в мире). Передняя половина кольца (к камере)
+/// важнее задней — где кольца пересекаются, берётся видимое.
+fn hit_ring(projector: &Projector, origin: Vec3, axes: &[Vec3; 3], radius: f32, pointer: Pos2) -> Option<(usize, Vec3)> {
+    let toward_eye = (projector.eye - origin).normalize_or_zero();
+    let mut best: Option<(f32, usize, Vec3)> = None;
+    for (axis, direction) in axes.iter().enumerate() {
+        let points = ring_points(origin, *direction, radius);
+        for i in 0..points.len() {
+            let (a, b) = (points[i], points[(i + 1) % points.len()]);
+            let Some([sa, sb]) = projector.segment(a, b) else {
+                continue;
+            };
+            let behind = ((a + b) * 0.5 - origin).dot(toward_eye) < 0.0;
+            let distance = distance_to_segment(pointer, sa, sb) + if behind { 3.0 } else { 0.0 };
+            if distance <= HANDLE_REACH && best.map_or(true, |(d, _, _)| distance < d) {
+                // Точка отрезка, ближайшая к курсору, — по доле на экране.
+                let along = sb - sa;
+                let t = if along.length_sq() > 1e-6 { ((pointer - sa).dot(along) / along.length_sq()).clamp(0.0, 1.0) } else { 0.0 };
+                best = Some((distance, axis, a.lerp(b, t)));
+            }
+        }
+    }
+    best.map(|(_, axis, point)| (axis, point))
+}
+
+/// Угол поворота (радианы) по сдвигу мыши: вдоль касательной к кольцу в точке захвата,
+/// так что эта точка следует за курсором; если касательная на экране вырождена — по углу
+/// вокруг центра гизмо с учётом того, смотрит ли ось на камеру.
+fn ring_angle(tangent: egui::Vec2, screen_center: Pos2, facing: f32, start: Pos2, now: Pos2) -> f32 {
+    if tangent.length_sq() >= 4.0 {
+        return (now - start).dot(tangent) / tangent.length_sq();
+    }
+    let (from, to) = (start - screen_center, now - screen_center);
+    if from.length_sq() < 1e-6 || to.length_sq() < 1e-6 {
+        return 0.0;
+    }
+    // Экран: y вниз, угол atan2 растёт по часовой; ось к камере — поворот «+» против часовой.
+    let screen = (from.x * to.y - from.y * to.x).atan2(from.dot(to));
+    if facing > 0.0 { -screen } else { screen }
 }
 
 /// Параметр точки на прямой `point + s · axis`, ближайшей к лучу.
@@ -275,11 +374,25 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
     // Кисть рельефа забирает левую кнопку себе (terrain_tools.rs).
     let terrain_brush = crate::terrain_tools::brush_active(editor);
 
-    // --- Навигация: ПКМ — вращение, СКМ или ЛКМ по пустому месту — сдвиг, колесо — ближе/дальше ---
+    // --- Навигация, как в Unity:
+    // ПКМ — обзор мышью и полёт W/A/S/D (Q / E — вниз / вверх, Shift — быстрее, колесо —
+    // скорость полёта); Alt+ЛКМ — вращение вокруг точки взгляда; Alt+ПКМ — ближе / дальше;
+    // СКМ или Space+ЛКМ — сдвиг; колесо — ближе / дальше; ЛКМ по пустому месту — рамка.
+    let (alt, space) = ui.input(|i| (i.modifiers.alt, i.key_down(egui::Key::Space)));
+    let rmb = ui.input(|i| i.pointer.secondary_down());
+    let flying = rmb && !alt && (response.hovered() || editor.viewport.flying);
+    editor.viewport.flying = flying;
     if response.hovered() {
         let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
-        let factor = (-scroll * 0.0025 * editor.prefs.zoom_speed).exp() / pinch;
-        editor.orbit.distance = (editor.orbit.distance * factor).clamp(0.3, 2000.0);
+        if flying {
+            if scroll.abs() > 0.0 {
+                editor.prefs.fly_speed = (editor.prefs.fly_speed * (scroll * 0.003).exp()).clamp(0.1, 200.0);
+                editor.viewport.fly_speed_shown_until = ui.input(|i| i.time) + 1.2;
+            }
+        } else {
+            let factor = (-scroll * 0.0025 * editor.prefs.zoom_speed).exp() / pinch;
+            editor.orbit.distance = (editor.orbit.distance * factor).clamp(0.3, 2000.0);
+        }
     }
     let delta = response.drag_delta();
     // Значок ориентации: потянуть за него — вращать вид, щёлкнуть по оси — встать вдоль неё.
@@ -289,17 +402,30 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
     } else if !response.dragged_by(PointerButton::Primary) {
         editor.viewport.compass_drag = false;
     }
-    if response.dragged_by(PointerButton::Secondary) || editor.viewport.compass_drag {
-        // Скорость и направление — Preferences → Scene View.
-        let speed = 0.008 * editor.prefs.orbit_speed;
-        let vertical = if editor.prefs.invert_orbit_y { -speed } else { speed };
+    // Скорость и направление — Preferences → Scene View.
+    let speed = 0.008 * editor.prefs.orbit_speed;
+    let vertical = if editor.prefs.invert_orbit_y { -speed } else { speed };
+    let orbiting = editor.viewport.compass_drag
+        || (response.dragged_by(PointerButton::Primary) && alt && editor.viewport.drag_3d.is_none());
+    if orbiting {
         editor.orbit.yaw -= delta.x * speed;
         editor.orbit.pitch = (editor.orbit.pitch + delta.y * vertical).clamp(-PITCH_LIMIT, PITCH_LIMIT);
         editor.viewport.orbit_goal = None;
+    } else if response.dragged_by(PointerButton::Secondary) && !alt {
+        // Обзор мышью: глаз на месте, поворачивается направление взгляда.
+        let eye = editor.orbit.eye();
+        editor.orbit.yaw -= delta.x * speed;
+        editor.orbit.pitch = (editor.orbit.pitch + delta.y * vertical).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        let moved = editor.orbit.eye();
+        editor.orbit.target += eye - moved;
+        editor.viewport.orbit_goal = None;
+    } else if response.dragged_by(PointerButton::Secondary) && alt {
+        editor.orbit.distance = (editor.orbit.distance * (delta.y * 0.01).exp()).clamp(0.3, 2000.0);
     }
+    fly_3d(editor, ui, flying);
     // Плавный доворот к виду, выбранному щелчком по значку.
     if let Some((yaw, pitch)) = editor.viewport.orbit_goal {
-        let dt = ui.input(|i| i.stable_dt).clamp(1.0 / 240.0, 0.05);
+        let dt = motion_dt(ui);
         let k = 1.0 - (-dt * 16.0).exp();
         let turn = wrap_angle(yaw - editor.orbit.yaw);
         let tilt = pitch - editor.orbit.pitch;
@@ -316,7 +442,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
     }
     let panning = response.dragged_by(PointerButton::Middle)
         || (response.dragged_by(PointerButton::Primary)
-            && !response.drag_started_by(PointerButton::Primary)
+            && space
             && !editor.viewport.compass_drag
             && !terrain_brush
             && editor.viewport.drag_3d.is_none());
@@ -332,8 +458,8 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
 
     let projector = Projector::new(&editor.orbit, rect);
     let line = |painter: &egui::Painter, a: Vec3, b: Vec3, stroke: Stroke| {
-        if let Some(points) = projector.segment(a, b) {
-            painter.line_segment(points, stroke);
+        if let Some([a, b]) = projector.segment(a, b) {
+            crate::lines::segment(painter, a, b, stroke);
         }
     };
 
@@ -360,7 +486,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
             let Some(screen) = projector.project(position).filter(|p| rect.expand(12.0).contains(*p)) else {
                 continue;
             };
-            let selected = selection == Some(id);
+            let selected = editor.is_selected(id);
             let color = if selected { theme::accent() } else { Color32::from_white_alpha(170) };
             let (icon, _) = object_icon(object);
             icons::paint(painter, Rect::from_center_size(screen, vec2(14.0, 14.0)), icon, color);
@@ -379,8 +505,9 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
         }
     }
 
-    // --- Выделение: каркас границ ---
-    if let Some(id) = selection {
+    // --- Выделение: каркас границ каждого выделенного объекта ---
+    for id in editor.selected() {
+        let outline = if selection == Some(id) { theme::accent() } else { theme::mix(theme::accent(), Color32::WHITE, 0.35) };
         let world = &editor.app.world;
         let scene = &world.scene;
         let matrix = scene.world_matrix(id);
@@ -406,7 +533,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
                 ))
             };
             for (a, b) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
-                line(painter, corner(a), corner(b), Stroke::new(1.5_f32, theme::accent()));
+                line(painter, corner(a), corner(b), Stroke::new(1.5_f32, outline));
             }
         }
     }
@@ -465,8 +592,30 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
     }
 
     crate::terrain_tools::scene_view(editor, ui, painter, response, &projector);
-    if !terrain_brush {
-        gizmo(editor, ui, painter, response, &projector, selection, pointer);
+    let missed = if terrain_brush {
+        false
+    } else {
+        gizmo(editor, ui, painter, response, &projector, selection, pointer)
+    };
+    // ЛКМ мимо ручек и значка ориентации, без Alt / Space — рамка выделения.
+    if missed && !alt && !space && !editor.viewport.compass_drag {
+        editor.viewport.box_select = ui.input(|i| i.pointer.press_origin());
+    }
+    let pick_box = |editor: &Editor, area: Rect| -> Vec<GameObjectId> {
+        let projector = Projector::new(&editor.orbit, editor.viewport.rect);
+        let scene = &editor.app.world.scene;
+        crate::selection::tree_order(scene)
+            .into_iter()
+            .filter(|id| scene.is_active(*id) && !editor.pick_locked(*id))
+            .filter(|id| projector.project(scene.world_position(*id)).is_some_and(|p| area.contains(p)))
+            .collect()
+    };
+    crate::viewport::box_select(editor, ui, painter, response, pick_box);
+    if ui.input(|i| i.time) < editor.viewport.fly_speed_shown_until {
+        let text = trf!("Fly speed  {} m/s", format!("{:.1}", editor.prefs.fly_speed));
+        let galley_width = text.len() as f32 * 6.5;
+        theme::chip(painter, pos2(rect.center().x - galley_width * 0.5, rect.bottom() - 40.0), &text, theme::TEXT);
+        ui.ctx().request_repaint();
     }
     let handles = compass_handles(&editor.orbit, rect);
     let hovered = pointer
@@ -487,12 +636,15 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
             } else if !over_compass(rect, pointer) && !terrain_brush {
                 let (origin, direction) = projector.ray(pointer);
                 let picked = editor.pick_3d(origin, direction);
-                editor.actions.push(Action::Select(picked));
+                let modifiers = ui.input(|i| i.modifiers);
+                editor.pick_with_modifiers(picked.into_iter().collect(), modifiers);
             }
         }
     }
 }
 
+/// Гизмо 3D: действует на всё выделение вокруг точки гизмо (Pivot / Center).
+/// `true` — левую кнопку нажали мимо ручек.
 fn gizmo(
     editor: &mut Editor,
     ui: &egui::Ui,
@@ -501,22 +653,33 @@ fn gizmo(
     projector: &Projector,
     selection: Option<GameObjectId>,
     pointer: Option<Pos2>,
-) {
+) -> bool {
+    let pressed = response.drag_started_by(PointerButton::Primary);
     let Some(id) = selection else {
         editor.viewport.drag_3d = None;
-        return;
+        return pressed;
     };
     let scene = &editor.app.world.scene;
-    let (_, world_rotation, origin) = scene.world_matrix(id).to_scale_rotation_translation();
+    let (_, world_rotation, active_position) = scene.world_matrix(id).to_scale_rotation_translation();
+    let origin = editor.gizmo_pivot().unwrap_or(active_position);
     // Ручки одинакового размера на экране, как бы далеко ни был объект.
     let length = origin.distance(projector.eye) * 0.16;
-    // Перемещение — по осям мира, масштаб и поворот — по осям объекта.
+    // Перемещение и поворот — по осям мира (Global) или объекта (Local); масштаб — всегда
+    // по осям объекта.
+    let local = [world_rotation * Vec3::X, world_rotation * Vec3::Y, world_rotation * Vec3::Z];
     let axes: [Vec3; 3] = match editor.tool {
-        Tool::Move if !editor.gizmo_local => [Vec3::X, Vec3::Y, Vec3::Z],
-        _ => [world_rotation * Vec3::X, world_rotation * Vec3::Y, world_rotation * Vec3::Z],
+        Tool::Scale => local,
+        _ if editor.gizmo_local => local,
+        _ => [Vec3::X, Vec3::Y, Vec3::Z],
     };
+    // Кольца поворота — чуть больше стрелок, чтобы не путались с ними.
+    let ring_radius = length * 0.9;
     let colors = [theme::AXIS_X, theme::AXIS_Y, theme::AXIS_Z];
+    let tool = editor.tool;
     let hit = |point: Pos2| {
+        if tool == Tool::Rotate {
+            return hit_ring(projector, origin, &axes, ring_radius, point).map(|(axis, _)| axis);
+        }
         (0..3)
             .filter_map(|axis| {
                 let [a, b] = projector.segment(origin, origin + axes[axis] * length)?;
@@ -528,90 +691,125 @@ fn gizmo(
     };
 
     // --- Начало перетаскивания ---
-    if response.drag_started_by(PointerButton::Primary) {
+    let mut on_handle = false;
+    if pressed {
         let press = ui.input(|i| i.pointer.press_origin());
-        if let (Some(press), Some(object)) = (press, scene.get(id)) {
-            if let Some(axis) = hit(press) {
-                let (ray_origin, ray_direction) = projector.ray(press);
-                let parent = object.parent().map(|parent| scene.world_matrix(parent));
-                editor.viewport.drag_3d = Some(Drag3D {
-                    object: id,
-                    axis,
-                    direction: axes[axis],
-                    grab: closest_on_axis(origin, axes[axis], ray_origin, ray_direction).unwrap_or(0.0),
-                    pointer_start: press,
-                    origin,
-                    start: object.transform,
-                    parent_inverse: parent.map_or(Mat4::IDENTITY, |m| m.inverse()),
-                    parent_rotation: parent.map_or(Quat::IDENTITY, |m| m.to_scale_rotation_translation().1),
-                });
+        if let Some((press, axis)) = press.and_then(|press| Some((press, hit(press)?))) {
+            on_handle = true;
+            // Alt + перетаскивание перемещения — сначала дублировать выделение.
+            if editor.tool == Tool::Move && ui.input(|i| i.modifiers.alt) {
+                editor.apply(Action::DuplicateSelection);
             }
+            let (ray_origin, ray_direction) = projector.ray(press);
+            // Поворот: касательная к кольцу в точке захвата, пикселей на радиан.
+            let grab_point = hit_ring(projector, origin, &axes, ring_radius, press).map(|(_, p)| p);
+            let tangent = grab_point
+                .and_then(|grab| {
+                    const STEP: f32 = 0.01;
+                    let a = projector.project(grab)?;
+                    let b = projector.project(origin + Quat::from_axis_angle(axes[axis], STEP) * (grab - origin))?;
+                    Some((b - a) / STEP)
+                })
+                .unwrap_or(egui::Vec2::ZERO);
+            editor.viewport.drag_3d = Some(Drag3D {
+                object: editor.selection.unwrap_or(id),
+                moved: editor.capture_moved(),
+                axis,
+                direction: axes[axis],
+                grab: closest_on_axis(origin, axes[axis], ray_origin, ray_direction).unwrap_or(0.0),
+                pointer_start: press,
+                origin,
+                tangent,
+                screen_center: projector.project(origin).unwrap_or(press),
+                facing: axes[axis].dot(projector.eye - origin).signum(),
+                grab_point,
+            });
         }
     }
-    if response.drag_stopped() || editor.viewport.drag_3d.as_ref().is_some_and(|d| d.object != id) {
+    let active_now = editor.selection;
+    if response.drag_stopped() || editor.viewport.drag_3d.as_ref().is_some_and(|d| Some(d.object) != active_now) {
         editor.viewport.drag_3d = None;
     }
 
     // --- Само перетаскивание: всё считается от состояния на момент нажатия ---
     let snap = ui.input(|i| i.modifiers.command) != editor.snap;
     let (snap_move, snap_turn, snap_scale) = editor.snap_steps();
+    let mut op = None;
     if let (Some(drag), Some(pointer)) = (editor.viewport.drag_3d.as_ref(), pointer) {
         let (ray_origin, ray_direction) = projector.ray(pointer);
         let along = closest_on_axis(drag.origin, drag.direction, ray_origin, ray_direction);
-        let mut transform = drag.start;
         match (editor.tool, along) {
             (Tool::Move, Some(along)) => {
                 let mut shift = along - drag.grab;
                 if snap {
                     shift = (shift / snap_move).round() * snap_move;
                 }
-                transform.position = drag
-                    .parent_inverse
-                    .transform_point3(drag.origin + drag.direction * shift);
+                op = Some(GizmoOp::Move(drag.direction * shift));
             }
             (Tool::Scale, Some(along)) if drag.grab.abs() > 1e-4 => {
                 let mut factor = (along / drag.grab).max(0.01);
                 if snap {
                     factor = (factor / snap_scale).round() * snap_scale;
                 }
-                transform.scale[drag.axis] = drag.start.scale[drag.axis] * factor;
+                let mut factors = Vec3::ONE;
+                factors[drag.axis] = factor;
+                op = Some(GizmoOp::Scale { factor: factors, axes, pivot: drag.origin });
             }
             (Tool::Rotate, _) => {
-                // Поворот вокруг оси ручки: движение мыши по горизонтали.
-                let mut angle = (pointer.x - drag.pointer_start.x) * 0.012;
+                // Поворот вокруг оси кольца: точка кольца под курсором идёт за мышью
+                // (раньше — только горизонталь мыши, без учёта того, как ось видна на экране).
+                // Кольцо видно не ребром — точка кольца ровно под курсором (пересечение луча с
+                // плоскостью кольца); почти ребром — по касательной.
+                let mut angle = drag
+                    .grab_point
+                    .and_then(|grab| plane_angle(drag.origin, drag.direction, grab, ray_origin, ray_direction))
+                    .unwrap_or_else(|| ring_angle(drag.tangent, drag.screen_center, drag.facing, drag.pointer_start, pointer));
                 if snap {
-                    let step = snap_turn;
-                    angle = (angle / step).round() * step;
+                    angle = (angle / snap_turn).round() * snap_turn;
                 }
-                let world = Quat::from_axis_angle(drag.direction, angle) * (drag.parent_rotation * drag.start.rotation);
-                transform.rotation = drag.parent_rotation.inverse() * world;
+                op = Some(GizmoOp::Rotate { rotation: Quat::from_axis_angle(drag.direction, angle), pivot: drag.origin });
             }
             _ => {}
         }
-        let changed = editor
-            .app
-            .world
-            .scene
-            .get(id)
-            .is_some_and(|object| object.transform != transform);
-        if changed {
-            editor.touch();
-            if let Some(object) = editor.app.world.scene.get_mut(id) {
-                object.transform = transform;
-            }
-        }
+    }
+    if let (Some(op), Some(drag)) = (op, editor.viewport.drag_3d.take()) {
+        editor.apply_gizmo_op(&drag.moved, op);
+        editor.viewport.drag_3d = Some(drag);
     }
 
     // --- Отрисовка ---
     let active = editor.viewport.drag_3d.as_ref().map(|drag| drag.axis);
     let hovered = active.or_else(|| pointer.filter(|_| response.hovered()).and_then(hit));
+    if editor.tool == Tool::Rotate {
+        // Три кольца в плоскостях, перпендикулярных осям; задняя половина бледнее.
+        let toward_eye = (projector.eye - origin).normalize_or_zero();
+        for axis in 0..3 {
+            let highlighted = hovered == Some(axis);
+            let color = if highlighted { Color32::WHITE } else { colors[axis] };
+            let width = if highlighted { 3.0_f32 } else { 2.0_f32 };
+            let points = ring_points(origin, axes[axis], ring_radius);
+            for i in 0..points.len() {
+                let (a, b) = (points[i], points[(i + 1) % points.len()]);
+                let Some([sa, sb]) = projector.segment(a, b) else {
+                    continue;
+                };
+                let behind = ((a + b) * 0.5 - origin).dot(toward_eye) < 0.0;
+                let stroke = if behind { Stroke::new(1.0_f32, color.gamma_multiply(0.35)) } else { Stroke::new(width, color) };
+                crate::lines::segment(painter, sa, sb, stroke);
+            }
+        }
+        if let Some(center) = projector.project(origin) {
+            painter.circle_filled(center, 3.5, Color32::WHITE);
+        }
+        return pressed && !on_handle;
+    }
     for axis in 0..3 {
         let Some([a, b]) = projector.segment(origin, origin + axes[axis] * length) else {
             continue;
         };
         let highlighted = hovered == Some(axis);
         let color = if highlighted { Color32::WHITE } else { colors[axis] };
-        painter.line_segment([a, b], Stroke::new(if highlighted { 3.0_f32 } else { 2.0_f32 }, color));
+        crate::lines::segment(painter, a, b, Stroke::new(if highlighted { 3.0_f32 } else { 2.0_f32 }, color));
         let direction = (b - a).normalized();
         let side = vec2(-direction.y, direction.x) * 5.0;
         match editor.tool {
@@ -629,6 +827,56 @@ fn gizmo(
     if let Some(center) = projector.project(origin) {
         painter.circle_filled(center, 3.5, Color32::WHITE);
     }
+    pressed && !on_handle
+}
+
+/// Полёт: пока зажата правая кнопка, W / A / S / D — вперёд / влево / назад / вправо,
+/// Q / E — вниз / вверх, Shift — втрое быстрее; разгон и торможение плавные. Когда вид
+/// Scene в фокусе — стрелки двигают камеру и без правой кнопки.
+fn fly_3d(editor: &mut Editor, ui: &egui::Ui, flying: bool) {
+    let focused = editor.focused_panel() == Some(crate::dock::Panel::Scene) && !ui.ctx().wants_keyboard_input();
+    let (input, fast, dt) = ui.input(|i| {
+        let key = |k: egui::Key| if i.key_down(k) { 1.0 } else { 0.0 };
+        let mut v = Vec3::ZERO; // (вправо, вверх, вперёд)
+        if flying {
+            v += Vec3::new(
+                key(egui::Key::D) - key(egui::Key::A),
+                key(egui::Key::E) - key(egui::Key::Q),
+                key(egui::Key::W) - key(egui::Key::S),
+            );
+        }
+        if focused && !flying && i.modifiers.is_none() {
+            v += Vec3::new(
+                key(egui::Key::ArrowRight) - key(egui::Key::ArrowLeft),
+                0.0,
+                key(egui::Key::ArrowUp) - key(egui::Key::ArrowDown),
+            );
+        }
+        (v, i.modifiers.shift, i.unstable_dt.clamp(MOTION_DT.0, MOTION_DT.1))
+    });
+    let orbit = editor.orbit;
+    let forward = (orbit.target - orbit.eye()).normalize_or_zero();
+    let right = forward.cross(Vec3::Y).normalize_or_zero();
+    let speed = editor.prefs.fly_speed * if fast { 3.0 } else { 1.0 };
+    let desired = (right * input.x + Vec3::Y * input.y + forward * input.z).normalize_or_zero() * speed;
+    let k = 1.0 - (-dt * 12.0).exp();
+    let velocity = editor.viewport.fly_velocity + (desired - editor.viewport.fly_velocity) * k;
+    editor.viewport.fly_velocity = if desired == Vec3::ZERO && velocity.length() < 0.01 { Vec3::ZERO } else { velocity };
+    if editor.viewport.fly_velocity != Vec3::ZERO {
+        editor.orbit.target += editor.viewport.fly_velocity * dt;
+        ui.ctx().request_repaint();
+    }
+}
+
+/// Границы шага времени для движения камеры (с).
+pub(crate) const MOTION_DT: (f32, f32) = (1.0 / 500.0, 0.05);
+
+/// Шаг времени для движения камеры — настоящее время с прошлого кадра. `stable_dt` egui
+/// для этого не годится: это сглаженная оценка (а после простоя — просто 1/60), и когда
+/// кадр длится дольше или короче, камера за него проходит не то расстояние — движение
+/// выходит рывками.
+pub(crate) fn motion_dt(ui: &egui::Ui) -> f32 {
+    ui.input(|i| i.unstable_dt).clamp(MOTION_DT.0, MOTION_DT.1)
 }
 
 /// Наклон камеры ограничен: ровно сверху `look_at` с осью «вверх» по Y вырождается.
@@ -674,9 +922,9 @@ pub(crate) fn compass_handles(orbit: &Orbit3D, rect: Rect) -> Vec<CompassHandle>
     let right = forward.cross(Vec3::Y).normalize_or_zero();
     let up = right.cross(forward);
     let mut handles: Vec<(f32, CompassHandle)> = [
-        (Vec3::X, theme::AXIS_X, "X"),
-        (Vec3::Y, theme::AXIS_Y, "Y"),
-        (Vec3::Z, theme::AXIS_Z, "Z"),
+        (Vec3::X, theme::AXIS_X, tr_s("X")),
+        (Vec3::Y, theme::AXIS_Y, tr_s("Y")),
+        (Vec3::Z, theme::AXIS_Z, tr_s("Z")),
     ]
     .into_iter()
     .flat_map(|(axis, color, label)| [(axis, color, label, true), (-axis, color, label, false)])

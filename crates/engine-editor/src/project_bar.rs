@@ -1,6 +1,7 @@
 //! Полоса фильтров окна Project (чипы по типу и выбор сортировки) и заголовки столбцов
 //! списка. Логика сортировки — в `sorting.rs`, выбор хранится в настройках редактора.
 
+use crate::i18n::{tr_s, trf};
 use std::collections::BTreeSet;
 
 use egui::{pos2, vec2, Align2, Color32, Rect, Sense, Stroke};
@@ -166,13 +167,13 @@ pub(crate) fn list_header(ui: &mut egui::Ui, spec: SortSpec, widths: &mut [f32; 
         };
         let response = ui
             .interact(cell, header_id(key.id()), Sense::click())
-            .on_hover_text(format!("Sort by {}", key.label().to_lowercase()));
+            .on_hover_text(trf!("Sort by {}", key.label().to_lowercase()));
         let active = spec.key == key;
         if response.hovered() {
             ui.painter().rect_filled(cell, 0.0, theme::BG_HOVER);
         }
         let color = if active { theme::TEXT_STRONG } else { theme::TEXT_MUTED };
-        let label = if key == SortKey::Modified { "Modified" } else { key.label() };
+        let label = if key == SortKey::Modified { tr_s("Modified") } else { key.label() };
         let align = if key == SortKey::Name { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER };
         let anchor = if key == SortKey::Name { pos2(cell.left(), cell.center().y) } else { pos2(cell.right() - 14.0, cell.center().y) };
         ui.painter().with_clip_rect(cell).text(anchor, align, label, theme::caption(), color);
@@ -219,17 +220,20 @@ pub(crate) fn filter_bar(editor: &mut Editor, ui: &mut egui::Ui, show_chips: boo
 
     // Сортировка — справа, чипы занимают остальное.
     let spec = editor.project_sort_spec();
-    let sort_label = format!("Sort: {} {}", spec.key.label(), if spec.descending { "\u{2193}" } else { "\u{2191}" });
+    let sort_label = trf!("Sort: {} {}", spec.key.label(), if spec.descending { "\u{2193}" } else { "\u{2191}" });
     let button_width = 150.0_f32;
     let chips_rect = Rect::from_min_max(bar.max_rect().min, pos2(bar.max_rect().right() - button_width - theme::SP_M, bar.max_rect().bottom()));
     let mut chips_ui = bar.new_child(
         egui::UiBuilder::new().max_rect(chips_rect).layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     chips_ui.spacing_mut().item_spacing.x = theme::SP_S;
+    // Узкое окно (или крупный масштаб): чипы, не влезшие до кнопки сортировки, обрезаются,
+    // а не наезжают на неё.
+    chips_ui.set_clip_rect(chips_rect.intersect(ui.clip_rect()));
     if show_chips {
         let mut filters = editor.project_type_set();
         let before = filters.clone();
-        if chip(&mut chips_ui, "all", "All", filters.is_empty()).clicked() {
+        if chip(&mut chips_ui, "all", tr_s("All"), filters.is_empty()).clicked() {
             filters.clear();
         }
         for filter in TypeFilter::ALL {
@@ -242,36 +246,35 @@ pub(crate) fn filter_bar(editor: &mut Editor, ui: &mut egui::Ui, show_chips: boo
             editor.prefs.project_types = filters_text(&filters);
         }
     } else {
-        chips_ui.label(egui::RichText::new("Scripts grouped by language").size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
+        chips_ui.label(egui::RichText::new(tr_s("Scripts grouped by language")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
     }
 
     let sort_rect = Rect::from_min_max(pos2(bar.max_rect().right() - button_width, bar.max_rect().top() + 4.0), pos2(bar.max_rect().right(), bar.max_rect().bottom() - 4.0));
     let mut sort_ui = bar.new_child(egui::UiBuilder::new().max_rect(sort_rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
     let mut chosen = None;
-    let response = egui::menu::menu_custom_button(
+    let response = crate::controls::menu_button(
         &mut sort_ui,
-        egui::Button::new(egui::RichText::new(sort_label).size(theme::FONT_CAPTION).color(theme::TEXT))
-            .fill(theme::BG_FIELD)
-            .min_size(vec2(button_width, 24.0)),
+        egui::RichText::new(sort_label).size(theme::FONT_CAPTION).color(theme::TEXT),
+        button_width,
         |ui| {
             theme::menu_body(ui);
-            theme::menu_section(ui, "Sort by");
+            theme::menu_section(ui, tr_s("Sort by"));
             for key in SortKey::ALL {
                 if item(key.label()).checked(spec.key == key).show(ui) {
                     chosen = Some(SortSpec { key, descending: spec.descending });
                 }
             }
             theme::menu_separator(ui);
-            if item("Ascending").checked(!spec.descending).show(ui) {
+            if item(tr_s("Ascending")).checked(!spec.descending).show(ui) {
                 chosen = Some(SortSpec { descending: false, ..spec });
             }
-            if item("Descending").checked(spec.descending).show(ui) {
+            if item(tr_s("Descending")).checked(spec.descending).show(ui) {
                 chosen = Some(SortSpec { descending: true, ..spec });
             }
         },
     )
     .response;
-    response.on_hover_text("Folders are always listed first");
+    response.on_hover_text(tr_s("Folders are always listed first"));
     if let Some(spec) = chosen {
         editor.set_project_sort_spec(spec);
     }
@@ -289,8 +292,8 @@ fn chip(ui: &mut egui::Ui, id: &str, label: &str, on: bool) -> egui::Response {
     } else {
         theme::BG_FIELD
     };
-    ui.painter().rect(rect, theme::R_S, fill, Stroke::new(1.0_f32, theme::LINE_STRONG));
+    crate::controls::paint_frame(ui.painter(), rect, theme::R_S, fill, theme::LINE_STRONG);
     let color = if on { theme::TEXT_STRONG } else { theme::TEXT_MUTED };
     ui.painter().galley(rect.center() - galley.size() * 0.5, galley, color);
-    response.on_hover_text(if id == "all" { "Show every type" } else { "Show only this type (click several to combine)" })
+    response.on_hover_text(if id == "all" { tr_s("Show every type") } else { tr_s("Show only this type (click several to combine)") })
 }

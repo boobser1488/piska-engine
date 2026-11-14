@@ -18,12 +18,13 @@ mod audio;
 mod backend;
 mod clip;
 mod components;
+pub mod dsp;
 mod mixer;
 pub mod synth;
 mod system;
 
 pub use audio::{spatialize, Audio, ClipRef, DeviceStatus, ListenerState, PlayParams};
-pub use clip::{AudioClip, ClipError};
+pub use clip::{AudioClip, ClipError, Level};
 pub use components::{AudioListener, AudioSource};
 pub use mixer::{pan_gains, Bus, Mixer, VoiceId, VoiceParams};
 pub use system::AudioSystem;

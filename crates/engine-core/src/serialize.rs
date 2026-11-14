@@ -32,6 +32,11 @@ pub struct SceneData {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NodeData {
     pub name: String,
+    /// Стабильный номер объекта (см. [`crate::objref`]): по нему поля-ссылки находят
+    /// объект после загрузки. 0 (в старых файлах его нет) — номер выдаётся при загрузке.
+    /// У узла префаба — номер внутри префаба.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub id: u64,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub tag: String,
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -55,12 +60,37 @@ pub struct NodeData {
     /// Дети. Для экземпляра префаба — только *добавленные* поверх префаба.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<NodeData>,
+    /// Только для экземпляра префаба: компоненты, добавленные к детям префаба и удалённые
+    /// у них (у корня для этого — `components` и `removed`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub child_components: Vec<ChildComponents>,
 }
+
+/// Изменение состава компонентов ребёнка префаба в экземпляре.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ChildComponents {
+    /// Путь до ребёнка по именам: `"Body/Wheel"`.
+    pub path: String,
+    /// Компоненты, добавленные поверх префаба.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added: Vec<ComponentData>,
+    /// Компоненты префаба (имена типов), удалённые у этого ребёнка.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+}
+
+/// Псевдокомпонент в [`Override`]: свойства самого объекта-ребёнка префаба —
+/// `active` (`Bool`), `name` (`Str`), `tag` (`Str`), `layer` (`Int`), `id` (`Int`, стабильный
+/// номер). Путь переопределений всегда строится по именам *из префаба*: переименование (`name`)
+/// применяется последним.
+pub const GAME_OBJECT: &str = "GameObject";
 
 impl Default for NodeData {
     fn default() -> Self {
         Self {
             name: String::new(),
+            id: 0,
+            child_components: Vec::new(),
             tag: String::new(),
             layer: 0,
             active: true,
@@ -144,6 +174,15 @@ pub struct Override {
 fn is_zero(v: &u32) -> bool {
     *v == 0
 }
+fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
+}
+
+/// Ребёнок префаба `base` — это живой ребёнок экземпляра (по номеру, а если номеров нет —
+/// по имени): переименованный ребёнок остаётся своим, а не «добавленным».
+fn same_child(base: &NodeData, uid: u64, name: &str) -> bool {
+    (base.id != 0 && base.id == uid) || base.name == name
+}
 fn yes() -> bool {
     true
 }
@@ -183,10 +222,24 @@ pub struct Prefab {
 impl Prefab {
     /// Снять префаб с живого объекта сцены.
     pub fn from_object(scene: &Scene, id: GameObjectId) -> Option<Self> {
+        Self::from_object_report(scene, id).map(|(prefab, _)| prefab)
+    }
+
+    /// Как [`from_object`](Self::from_object), плюс список полей-ссылок на объекты вне
+    /// префаба: в ассете они становятся «не назначено» (ассет не может ссылаться на
+    /// объекты сцены). Редактор показывает этот список пользователю.
+    pub fn from_object_report(scene: &Scene, id: GameObjectId) -> Option<(Self, Vec<String>)> {
         scene.get(id)?;
         let mut root = snapshot_node(scene, id);
         root.transform.position = [0.0; 3]; // позиция принадлежит экземпляру
-        Some(Self { root })
+        let cleared = crate::objref::localize_prefab_ids(&mut root);
+        for field in &cleared {
+            log::warn!(
+                "prefab `{}`: {field} refers to an object outside the prefab; in the prefab asset it is None",
+                root.name
+            );
+        }
+        Some((Self { root }, cleared))
     }
 
     pub fn from_ron(text: &str, origin: &str) -> Result<Self, SceneError> {
@@ -298,6 +351,7 @@ pub fn snapshot_node(scene: &Scene, id: GameObjectId) -> NodeData {
     };
     NodeData {
         name: obj.name.clone(),
+        id: obj.uid(),
         tag: obj.tag.clone(),
         layer: obj.layer,
         active: obj.active,
@@ -311,6 +365,7 @@ pub fn snapshot_node(scene: &Scene, id: GameObjectId) -> NodeData {
             .iter()
             .map(|child| snapshot_node(scene, *child))
             .collect(),
+        child_components: Vec::new(),
     }
 }
 
@@ -389,18 +444,12 @@ pub fn save_node(
     };
 
     if let Some(reference) = obj.prefab() {
-        let base = prefabs
-            .load(reference)
-            .and_then(|prefab| resolve_node(&prefab.root, prefabs, 0))
-            .map(|mut base| {
-                complete_node(&mut base, registry);
-                base
-            });
-        match base {
+        match instance_base(reference, obj.uid(), prefabs, registry) {
             Ok(base) => {
                 let instance = snapshot_node(scene, id);
                 let mut overrides = Vec::new();
-                diff_nodes(&base, &instance, "", true, &mut overrides);
+                let mut child_components = Vec::new();
+                diff_nodes(&base, &instance, "", true, &mut overrides, &mut child_components);
                 // Компоненты корня, которых нет в префабе, и наоборот.
                 let added = instance
                     .components
@@ -420,12 +469,14 @@ pub fn save_node(
                     .filter(|child| {
                         scene
                             .get(**child)
-                            .is_some_and(|c| !base.children.iter().any(|b| b.name == c.name))
+                            .is_some_and(|c| !base.children.iter().any(|b| same_child(b, c.uid(), &c.name)))
                     })
                     .map(|child| save_node(scene, *child, prefabs, registry))
                     .collect();
                 return NodeData {
                     name: instance.name,
+                    id: instance.id,
+                    child_components,
                     tag: if instance.tag == base.tag { String::new() } else { instance.tag },
                     layer: if instance.layer == base.layer { 0 } else { instance.layer },
                     active: instance.active,
@@ -460,6 +511,7 @@ fn snapshot_node_shallow(scene: &Scene, id: GameObjectId) -> NodeData {
     };
     NodeData {
         name: obj.name.clone(),
+        id: obj.uid(),
         tag: obj.tag.clone(),
         layer: obj.layer,
         active: obj.active,
@@ -467,6 +519,87 @@ fn snapshot_node_shallow(scene: &Scene, id: GameObjectId) -> NodeData {
         components: obj.components().map(component_data).collect(),
         ..NodeData::default()
     }
+}
+
+/// Префаб `reference`, развёрнутый так, как загрузчик развернёт его для экземпляра с
+/// номером `uid`, но **до** переопределений экземпляра: номера детей уже производные,
+/// все поля компонентов дописаны. С ним сравнивается живой экземпляр (сохранение,
+/// подсветка переопределённых полей и Revert в инспекторе).
+pub fn instance_base(
+    reference: &str,
+    uid: u64,
+    prefabs: &dyn PrefabSource,
+    registry: &TypeRegistry,
+) -> Result<NodeData, SceneError> {
+    let mut prefab = prefabs.load(reference)?;
+    crate::objref::fill_path_ids(&mut prefab.root, "");
+    let mut base = resolve_node(&prefab.root, prefabs, 1)?;
+    complete_node(&mut base, registry);
+    crate::objref::derive_instance_ids(&mut base, uid, reference);
+    Ok(base)
+}
+
+/// Узел префаба, из которого получился объект `id` — корень экземпляра префаба или его
+/// ребёнок (ближайший предок с префабом — экземпляр), развёрнутый как при загрузке, но без
+/// переопределений экземпляра. По нему инспектор отмечает переопределённые поля и делает
+/// Revert. `None` — объект не из префаба (или префаб не читается).
+pub fn prefab_source_node(
+    scene: &Scene,
+    id: GameObjectId,
+    prefabs: &dyn PrefabSource,
+    registry: &TypeRegistry,
+) -> Option<NodeData> {
+    let object = scene.get(id)?;
+    let mut root = id;
+    let mut names = Vec::new();
+    while scene.get(root)?.prefab().is_none() {
+        names.push(scene.get(root)?.name.clone());
+        root = scene.parent_of(root)?;
+    }
+    let instance = scene.get(root)?;
+    let base = instance_base(instance.prefab()?, instance.uid(), prefabs, registry).ok()?;
+    if root == id {
+        return Some(base);
+    }
+    fn by_id(node: &NodeData, uid: u64) -> Option<&NodeData> {
+        if node.id == uid {
+            return Some(node);
+        }
+        node.children.iter().find_map(|c| by_id(c, uid))
+    }
+    if let Some(found) = by_id(&base, object.uid()) {
+        return Some(found.clone());
+    }
+    // Номера не совпали (старый префаб или перенумерация): по пути имён.
+    let mut node = &base;
+    for name in names.iter().rev() {
+        node = node.children.iter().find(|c| &c.name == name)?;
+    }
+    Some(node.clone())
+}
+
+/// Переопределения экземпляра префаба `id` — то, что записалось бы в файл сцены
+/// (поля, Transform детей, свойства детей `GameObject.*`). Пусто — объект не экземпляр
+/// или ничем не отличается от префаба.
+pub fn instance_overrides(
+    scene: &Scene,
+    id: GameObjectId,
+    prefabs: &dyn PrefabSource,
+    registry: &TypeRegistry,
+) -> Vec<Override> {
+    let Some(reference) = scene.get(id).and_then(|o| o.prefab()) else {
+        return Vec::new();
+    };
+    let Some(uid) = scene.get(id).map(|o| o.uid()) else {
+        return Vec::new();
+    };
+    let Ok(base) = instance_base(reference, uid, prefabs, registry) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut changes = Vec::new();
+    diff_nodes(&base, &snapshot_node(scene, id), "", true, &mut out, &mut changes);
+    out
 }
 
 pub fn scene_data(scene: &Scene, prefabs: &dyn PrefabSource, registry: &TypeRegistry) -> SceneData {
@@ -488,11 +621,60 @@ fn vec3_value(v: [f32; 3]) -> Value {
     Value::Vec3(v[0], v[1], v[2])
 }
 
-/// Найти отличия экземпляра от префаба: значения полей и Transform'ы детей.
-/// Добавленные и удалённые компоненты корня учитывает [`save_node`]; у детей
-/// префаба они пока не отслеживаются (см. DESIGN.md).
-fn diff_nodes(base: &NodeData, instance: &NodeData, path: &str, is_root: bool, out: &mut Vec<Override>) {
+/// Найти отличия экземпляра от префаба: значения полей, Transform'ы и свойства детей
+/// (`GameObject.active` / `tag` / `layer` / `id`), добавленные и удалённые компоненты
+/// детей (в `changes`). Добавленные и удалённые компоненты корня учитывает [`save_node`].
+fn diff_nodes(
+    base: &NodeData,
+    instance: &NodeData,
+    path: &str,
+    is_root: bool,
+    out: &mut Vec<Override>,
+    changes: &mut Vec<ChildComponents>,
+) {
     // Transform корня всегда принадлежит экземпляру и хранится в самом узле.
+    if !is_root {
+        let object = |field: &str, value: Value| Override {
+            path: path.to_string(),
+            component: GAME_OBJECT.to_string(),
+            field: field.to_string(),
+            value,
+        };
+        if base.active != instance.active {
+            out.push(object("active", Value::Bool(instance.active)));
+        }
+        if base.name != instance.name {
+            out.push(object("name", Value::Str(instance.name.clone())));
+        }
+        if base.tag != instance.tag {
+            out.push(object("tag", Value::Str(instance.tag.clone())));
+        }
+        if base.layer != instance.layer {
+            out.push(object("layer", Value::Int(instance.layer as i64)));
+        }
+        if instance.id != 0 && base.id != instance.id {
+            out.push(object("id", Value::Int(instance.id as i64)));
+        }
+        let added: Vec<ComponentData> = instance
+            .components
+            .iter()
+            .filter(|c| !base.components.iter().any(|b| b.kind == c.kind))
+            .cloned()
+            .collect();
+        let removed: Vec<String> = base
+            .components
+            .iter()
+            .filter(|b| !instance.components.iter().any(|c| c.kind == b.kind))
+            .map(|b| b.kind.clone())
+            .collect();
+        if !added.is_empty() || !removed.is_empty() {
+            changes.push(ChildComponents {
+                path: path.to_string(),
+                added,
+                removed,
+            });
+        }
+    }
     if !is_root {
         let pairs = [
             ("position", base.transform.position, instance.transform.position),
@@ -532,13 +714,15 @@ fn diff_nodes(base: &NodeData, instance: &NodeData, path: &str, is_root: bool, o
     }
 
     for base_child in &base.children {
-        if let Some(inst_child) = instance.children.iter().find(|c| c.name == base_child.name) {
+        let found = instance.children.iter().find(|c| base_child.id != 0 && c.id == base_child.id);
+        let found = found.or_else(|| instance.children.iter().find(|c| c.name == base_child.name));
+        if let Some(inst_child) = found {
             let child_path = if path.is_empty() {
                 base_child.name.clone()
             } else {
                 format!("{path}/{}", base_child.name)
             };
-            diff_nodes(base_child, inst_child, &child_path, false, out);
+            diff_nodes(base_child, inst_child, &child_path, false, out, changes);
         }
     }
 }
@@ -561,15 +745,57 @@ pub fn resolve_node(
                     reference: reference.clone(),
                 });
             }
-            let prefab = prefabs.load(reference)?;
+            let mut prefab = prefabs.load(reference)?;
+            crate::objref::fill_path_ids(&mut prefab.root, "");
             let mut root = resolve_node(&prefab.root, prefabs, depth + 1)?;
-            for ov in &node.overrides {
+            // Номера: корень — номер экземпляра (новый, если в файле его нет), дети —
+            // производные от него; ссылки внутри префаба переходят на них.
+            let instance = if node.id != 0 { node.id } else { crate::objref::fresh_uid() };
+            crate::objref::derive_instance_ids(&mut root, instance, reference);
+            // Сначала номера детей (`GameObject.id`), потом остальные переопределения:
+            // ссылки префаба на переименованных детей следуют за номером.
+            let mut renumbered = HashMap::new();
+            for ov in node.overrides.iter().filter(|ov| ov.component == GAME_OBJECT && ov.field == "id") {
+                let target = find_override_target(&mut root, ov, reference, &node.name)?;
+                if let Value::Int(new) = ov.value {
+                    let new = new as u64 & crate::objref::UID_MASK;
+                    if new != 0 {
+                        renumbered.insert(target.id, new);
+                        target.id = new;
+                    }
+                }
+            }
+            if !renumbered.is_empty() {
+                crate::objref::visit_node_refs(&mut root, &mut |_, _, uid| {
+                    if let Some(new) = renumbered.get(uid) {
+                        *uid = *new;
+                    }
+                });
+            }
+            let late = |ov: &&Override| ov.component == GAME_OBJECT && (ov.field == "id" || ov.field == "name");
+            for ov in node.overrides.iter().filter(|ov| !late(ov)) {
+                apply_override(&mut root, ov, reference, &node.name)?;
+            }
+            for change in &node.child_components {
+                let target = find_child_path(&mut root, &change.path, reference, &node.name)?;
+                target.components.retain(|c| !change.removed.contains(&c.kind));
+                target.components.extend(change.added.iter().cloned());
+            }
+            // Переименования детей — последними: пути выше записаны именами из префаба.
+            // Сначала самые глубокие, чтобы имя родителя ещё не поменялось.
+            let mut renames: Vec<&Override> =
+                node.overrides.iter().filter(|ov| ov.component == GAME_OBJECT && ov.field == "name").collect();
+            renames.sort_by_key(|ov| std::cmp::Reverse(ov.path.matches('/').count()));
+            for ov in renames {
                 apply_override(&mut root, ov, reference, &node.name)?;
             }
             root.components
                 .retain(|c| !node.removed.contains(&c.kind));
             root.components.extend(node.components.iter().cloned());
-            root.name = node.name.clone();
+            // Имя экземпляра — обычное переопределение: пустое — имя корня префаба.
+            if !node.name.is_empty() {
+                root.name = node.name.clone();
+            }
             root.transform = node.transform;
             if !node.tag.is_empty() {
                 root.tag = node.tag.clone();
@@ -594,6 +820,39 @@ pub fn resolve_node(
     Ok(out)
 }
 
+/// Узел по пути из имён (`"Body/Wheel"`; пусто — сам корень).
+fn find_child_path<'a>(
+    root: &'a mut NodeData,
+    path: &str,
+    prefab: &str,
+    object: &str,
+) -> Result<&'a mut NodeData, SceneError> {
+    let mut node = root;
+    for part in path.split('/').filter(|p| !p.is_empty()) {
+        let hint = did_you_mean(part, node.children.iter().map(|c| c.name.as_str()));
+        node = node
+            .children
+            .iter_mut()
+            .find(|c| c.name == part)
+            .ok_or_else(|| SceneError::BadOverride {
+                object: object.to_string(),
+                prefab: prefab.to_string(),
+                target: format!("child `{part}` (path `{path}`)"),
+                hint,
+            })?;
+    }
+    Ok(node)
+}
+
+fn find_override_target<'a>(
+    root: &'a mut NodeData,
+    ov: &Override,
+    prefab: &str,
+    object: &str,
+) -> Result<&'a mut NodeData, SceneError> {
+    find_child_path(root, &ov.path, prefab, object)
+}
+
 fn apply_override(
     root: &mut NodeData,
     ov: &Override,
@@ -607,14 +866,24 @@ fn apply_override(
         hint,
     };
 
-    let mut node = root;
-    for part in ov.path.split('/').filter(|p| !p.is_empty()) {
-        let hint = did_you_mean(part, node.children.iter().map(|c| c.name.as_str()));
-        node = node
-            .children
-            .iter_mut()
-            .find(|c| c.name == part)
-            .ok_or_else(|| bad(format!("child `{part}` (path `{}`)", ov.path), hint))?;
+    let node = find_override_target(root, ov, prefab, object)?;
+
+    if ov.component == GAME_OBJECT {
+        match (ov.field.as_str(), &ov.value) {
+            ("active", Value::Bool(active)) => node.active = *active,
+            ("tag", Value::Str(tag)) => node.tag = tag.clone(),
+            ("name", Value::Str(name)) => node.name = name.clone(),
+            ("layer", Value::Int(layer)) => node.layer = (*layer).clamp(0, 31) as u32,
+            ("id", Value::Int(_)) => {} // номера применяет `resolve_node` до остальных переопределений
+            (field, value) => {
+                return Err(bad(
+                    format!("GameObject.{field} = {}", value.kind_name()),
+                    " GameObject overrides are `active` (Bool), `name` (Str), `tag` (Str), `layer` (Int) and `id` (Int)."
+                        .to_string(),
+                ))
+            }
+        }
+        return Ok(());
     }
 
     if ov.component == "Transform" {
@@ -677,6 +946,11 @@ fn fill_object(
 ) -> Result<(), SceneError> {
     if parent.is_some() {
         scene.set_parent(id, parent)?;
+    }
+    if node.id != 0 && !scene.set_uid(id, node.id) {
+        // Номер занят (копия рядом с оригиналом без перенумерации): объект остаётся с
+        // новым номером, ссылки на прежний указывают на оригинал.
+        log::debug!("object `{}`: id {} is taken in this scene; a new id is assigned", node.name, node.id);
     }
     let obj = scene.get_mut(id).ok_or(SceneError::DeadObject(id))?;
     obj.tag = node.tag.clone();

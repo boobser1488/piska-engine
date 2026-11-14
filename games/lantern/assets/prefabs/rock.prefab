@@ -1,0 +1,37 @@
+(
+    name: "Rock",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 1.0),
+                "sheet_columns": Int(1),
+                "sheet_rows": Int(1),
+                "size": Vec2(1.0, 2.0),
+                "sorting_layer": Int(2),
+                "texture": Asset("c97726feb991cb82ebcdbfed85fd676b"),
+                "uv_offset": Vec2(0.0, 0.0),
+                "uv_size": Vec2(1.0, 1.0),
+            },
+        ),
+        (
+            kind: "Rock",
+            fields: {
+                "falling": Bool(false),
+                "home_x": Float(NaN),
+                "vy": Float(0.0),
+                "warn": Float(0.9),
+            },
+        ),
+    ],
+)

@@ -1,0 +1,555 @@
+(
+    name: "OptionsScreen",
+    id: 25229110394386,
+    active: false,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Canvas",
+            fields: {
+                "keyboard_navigation": Bool(true),
+                "match_width_or_height": Float(0.5),
+                "reference_resolution": Vec2(1280.0, 720.0),
+                "scale_factor": Float(1.0),
+                "scale_mode": Enum("ScaleWithScreenSize"),
+                "sort_order": Int(20),
+            },
+        ),
+        (
+            kind: "RectTransform",
+            fields: {
+                "anchor_max": Vec2(1.0, 1.0),
+                "anchor_min": Vec2(0.0, 0.0),
+                "pivot": Vec2(0.5, 0.5),
+                "position": Vec2(0.0, 0.0),
+                "size": Vec2(0.0, 0.0),
+            },
+        ),
+        (
+            kind: "CanvasGroup",
+            fields: {
+                "alpha": Float(1.0),
+                "blocks_raycasts": Bool(true),
+                "interactable": Bool(true),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Dim",
+            id: 66514091516916,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(1.0, 1.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.5, 0.5),
+                        "position": Vec2(0.0, 0.0),
+                        "size": Vec2(0.0, 0.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(0.0, 0.01, 0.04, 0.6),
+                        "corner_radius": Float(0.0),
+                        "raycast_target": Bool(true),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset(""),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Panel",
+            id: 253909516443277,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.5, 0.5),
+                        "anchor_min": Vec2(0.5, 0.5),
+                        "pivot": Vec2(0.5, 0.5),
+                        "position": Vec2(0.0, 0.0),
+                        "size": Vec2(560.0, 320.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.06847818, 0.23839766, 0.9),
+                        "border_width": Float(1.5),
+                        "color": Color(0.0033465356, 0.0060488326, 0.019382361, 0.93),
+                        "corner_radius": Float(18.0),
+                        "raycast_target": Bool(true),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(36.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset(""),
+                    },
+                ),
+                (
+                    kind: "LayoutGroup",
+                    fields: {
+                        "child_alignment": Enum("TopLeft"),
+                        "direction": Enum("Vertical"),
+                        "expand_children": Bool(false),
+                        "fit_content": Bool(true),
+                        "padding_bottom": Float(34.0),
+                        "padding_left": Float(34.0),
+                        "padding_right": Float(34.0),
+                        "padding_top": Float(34.0),
+                        "spacing": Float(14.0),
+                        "stretch_children": Bool(true),
+                    },
+                ),
+            ],
+            children: [
+                (
+                    name: "Text",
+                    id: 131110996840294,
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.5),
+                                "anchor_min": Vec2(0.5, 0.5),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(320.0, 62.0),
+                            },
+                        ),
+                        (
+                            kind: "Text",
+                            fields: {
+                                "align": Enum("Center"),
+                                "bold": Bool(true),
+                                "color": Color(0.10946172, 0.8713672, 1.0, 1.0),
+                                "font": Asset(""),
+                                "line_spacing": Float(1.0),
+                                "outline_color": Color(0.0, 0.0, 0.02, 0.92),
+                                "outline_width": Float(2.0),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                "shadow_offset": Vec2(0.0, 0.0),
+                                "size": Float(44.0),
+                                "text": Str("НАСТРОЙКИ"),
+                                "vertical_align": Enum("Middle"),
+                                "wrap": Bool(true),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "MusicLabel",
+                    id: 232906300989872,
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.5),
+                                "anchor_min": Vec2(0.5, 0.5),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(320.0, 31.0),
+                            },
+                        ),
+                        (
+                            kind: "Text",
+                            fields: {
+                                "align": Enum("Center"),
+                                "bold": Bool(false),
+                                "color": Color(0.70837593, 0.79129803, 1.0, 1.0),
+                                "font": Asset(""),
+                                "line_spacing": Float(1.0),
+                                "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                                "outline_width": Float(0.0),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                "shadow_offset": Vec2(0.0, 0.0),
+                                "size": Float(22.0),
+                                "text": Str("Музыка"),
+                                "vertical_align": Enum("Middle"),
+                                "wrap": Bool(true),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "music",
+                    id: 126121700056343,
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.5),
+                                "anchor_min": Vec2(0.5, 0.5),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(260.0, 32.0),
+                            },
+                        ),
+                        (
+                            kind: "Slider",
+                            fields: {
+                                "fill_color": Color(0.07818743, 0.26225072, 1.0, 1.0),
+                                "handle_color": Color(0.90466136, 0.9301109, 0.9646863, 1.0),
+                                "interactable": Bool(true),
+                                "max": Float(1.0),
+                                "message": Str("music"),
+                                "min": Float(0.0),
+                                "track_color": Color(0.004391442, 0.006512091, 0.010960094, 1.0),
+                                "value": Float(0.6),
+                                "whole_numbers": Bool(false),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "SfxLabel",
+                    id: 219606847417065,
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.5),
+                                "anchor_min": Vec2(0.5, 0.5),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(320.0, 31.0),
+                            },
+                        ),
+                        (
+                            kind: "Text",
+                            fields: {
+                                "align": Enum("Center"),
+                                "bold": Bool(false),
+                                "color": Color(0.70837593, 0.79129803, 1.0, 1.0),
+                                "font": Asset(""),
+                                "line_spacing": Float(1.0),
+                                "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                                "outline_width": Float(0.0),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                "shadow_offset": Vec2(0.0, 0.0),
+                                "size": Float(22.0),
+                                "text": Str("Звуки"),
+                                "vertical_align": Enum("Middle"),
+                                "wrap": Bool(true),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "sfx",
+                    id: 214796056374251,
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.5),
+                                "anchor_min": Vec2(0.5, 0.5),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(260.0, 32.0),
+                            },
+                        ),
+                        (
+                            kind: "Slider",
+                            fields: {
+                                "fill_color": Color(0.07818743, 0.26225072, 1.0, 1.0),
+                                "handle_color": Color(0.90466136, 0.9301109, 0.9646863, 1.0),
+                                "interactable": Bool(true),
+                                "max": Float(1.0),
+                                "message": Str("sfx"),
+                                "min": Float(0.0),
+                                "track_color": Color(0.004391442, 0.006512091, 0.010960094, 1.0),
+                                "value": Float(0.8),
+                                "whole_numbers": Bool(false),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "shake",
+                    id: 248693912726480,
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.5),
+                                "anchor_min": Vec2(0.5, 0.5),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(260.0, 38.0),
+                            },
+                        ),
+                        (
+                            kind: "Toggle",
+                            fields: {
+                                "check_color": Color(0.90466136, 0.9301109, 0.9646863, 1.0),
+                                "interactable": Bool(true),
+                                "is_on": Bool(true),
+                                "message": Str("shake"),
+                                "off_color": Color(0.004391442, 0.006512091, 0.010960094, 1.0),
+                                "on_color": Color(0.07818743, 0.26225072, 1.0, 1.0),
+                                "style": Enum("Switch"),
+                            },
+                        ),
+                    ],
+                    children: [
+                        (
+                            name: "Label",
+                            id: 170670563711525,
+                            transform: (
+                                position: (0.0, 0.0, 0.0),
+                                rotation: (0.0, 0.0, 0.0),
+                                scale: (1.0, 1.0, 1.0),
+                            ),
+                            components: [
+                                (
+                                    kind: "RectTransform",
+                                    fields: {
+                                        "anchor_max": Vec2(1.0, 1.0),
+                                        "anchor_min": Vec2(0.0, 0.0),
+                                        "pivot": Vec2(0.5, 0.5),
+                                        "position": Vec2(28.0, 0.0),
+                                        "size": Vec2(-56.0, -0.0),
+                                    },
+                                ),
+                                (
+                                    kind: "Text",
+                                    fields: {
+                                        "align": Enum("Left"),
+                                        "bold": Bool(false),
+                                        "color": Color(0.8549927, 0.8879232, 0.9386859, 1.0),
+                                        "font": Asset(""),
+                                        "line_spacing": Float(1.0),
+                                        "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                                        "outline_width": Float(0.0),
+                                        "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                        "shadow_offset": Vec2(0.0, 0.0),
+                                        "size": Float(20.0),
+                                        "text": Str("Тряска камеры"),
+                                        "vertical_align": Enum("Middle"),
+                                        "wrap": Bool(false),
+                                    },
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                (
+                    name: "numbers",
+                    id: 194099599208157,
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.5),
+                                "anchor_min": Vec2(0.5, 0.5),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(260.0, 38.0),
+                            },
+                        ),
+                        (
+                            kind: "Toggle",
+                            fields: {
+                                "check_color": Color(0.90466136, 0.9301109, 0.9646863, 1.0),
+                                "interactable": Bool(true),
+                                "is_on": Bool(true),
+                                "message": Str("numbers"),
+                                "off_color": Color(0.004391442, 0.006512091, 0.010960094, 1.0),
+                                "on_color": Color(0.07818743, 0.26225072, 1.0, 1.0),
+                                "style": Enum("Switch"),
+                            },
+                        ),
+                    ],
+                    children: [
+                        (
+                            name: "Label",
+                            id: 84151349878348,
+                            transform: (
+                                position: (0.0, 0.0, 0.0),
+                                rotation: (0.0, 0.0, 0.0),
+                                scale: (1.0, 1.0, 1.0),
+                            ),
+                            components: [
+                                (
+                                    kind: "RectTransform",
+                                    fields: {
+                                        "anchor_max": Vec2(1.0, 1.0),
+                                        "anchor_min": Vec2(0.0, 0.0),
+                                        "pivot": Vec2(0.5, 0.5),
+                                        "position": Vec2(28.0, 0.0),
+                                        "size": Vec2(-56.0, -0.0),
+                                    },
+                                ),
+                                (
+                                    kind: "Text",
+                                    fields: {
+                                        "align": Enum("Left"),
+                                        "bold": Bool(false),
+                                        "color": Color(0.8549927, 0.8879232, 0.9386859, 1.0),
+                                        "font": Asset(""),
+                                        "line_spacing": Float(1.0),
+                                        "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                                        "outline_width": Float(0.0),
+                                        "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                        "shadow_offset": Vec2(0.0, 0.0),
+                                        "size": Float(20.0),
+                                        "text": Str("Числа урона"),
+                                        "vertical_align": Enum("Middle"),
+                                        "wrap": Bool(false),
+                                    },
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                (
+                    name: "options_back",
+                    id: 86669375176836,
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.5),
+                                "anchor_min": Vec2(0.5, 0.5),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(300.0, 56.0),
+                            },
+                        ),
+                        (
+                            kind: "Image",
+                            fields: {
+                                "border_color": Color(0.10946172, 0.8713672, 1.0, 0.9),
+                                "border_width": Float(1.5),
+                                "color": Color(1.0, 1.0, 1.0, 1.0),
+                                "corner_radius": Float(12.0),
+                                "raycast_target": Bool(true),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                                "shadow_offset": Vec2(0.0, 6.0),
+                                "shadow_size": Float(0.0),
+                                "slice_border": Float(0.0),
+                                "texture": Asset(""),
+                            },
+                        ),
+                        (
+                            kind: "Button",
+                            fields: {
+                                "disabled_color": Color(0.006512091, 0.010329823, 0.02415763, 1.0),
+                                "hover_color": Color(0.023153365, 0.3813261, 0.6038274, 1.0),
+                                "interactable": Bool(true),
+                                "message": Str("options_back"),
+                                "normal_color": Color(0.013702081, 0.21223073, 0.3515327, 1.0),
+                                "pressed_color": Color(0.008568125, 0.13286833, 0.22322798, 1.0),
+                            },
+                        ),
+                    ],
+                    children: [
+                        (
+                            name: "Label",
+                            id: 185466100292856,
+                            transform: (
+                                position: (0.0, 0.0, 0.0),
+                                rotation: (0.0, 0.0, 0.0),
+                                scale: (1.0, 1.0, 1.0),
+                            ),
+                            components: [
+                                (
+                                    kind: "RectTransform",
+                                    fields: {
+                                        "anchor_max": Vec2(1.0, 1.0),
+                                        "anchor_min": Vec2(0.0, 0.0),
+                                        "pivot": Vec2(0.5, 0.5),
+                                        "position": Vec2(0.0, 0.0),
+                                        "size": Vec2(0.0, 0.0),
+                                    },
+                                ),
+                                (
+                                    kind: "Text",
+                                    fields: {
+                                        "align": Enum("Center"),
+                                        "bold": Bool(true),
+                                        "color": Color(0.8549927, 0.8879232, 0.9386859, 1.0),
+                                        "font": Asset(""),
+                                        "line_spacing": Float(1.0),
+                                        "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                                        "outline_width": Float(0.0),
+                                        "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                        "shadow_offset": Vec2(0.0, 0.0),
+                                        "size": Float(21.0),
+                                        "text": Str("Готово"),
+                                        "vertical_align": Enum("Middle"),
+                                        "wrap": Bool(false),
+                                    },
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ],
+)

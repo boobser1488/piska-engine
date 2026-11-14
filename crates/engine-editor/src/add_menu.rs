@@ -7,6 +7,7 @@ use crate::icons::Icon;
 use crate::sorting::natural_cmp;
 use crate::theme;
 
+// i18n-keys: "Scripts (C++)" "Scripts (Scenario)" "Physics" "Camera"  — категории из реестра типов, переводятся при показе
 /// Порядок категорий в меню; неизвестные (из чужих крейтов) идут за ними по алфавиту.
 pub(crate) const CATEGORY_ORDER: [&str; 10] = [
     "Rendering",

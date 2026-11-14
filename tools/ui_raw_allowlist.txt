@@ -1,0 +1,16 @@
+# Raw egui widgets still outside the kit (`kit::controls`): file <TAB> pattern <TAB> maximum count.
+# The source check (crates/engine-editor/tests/ui_source_check.rs) fails when a file uses MORE
+# than listed here, or a pattern not listed. Every entry is a deliberate exception with its reason.
+# Kit files (controls.rs, theme.rs, window_kit.rs, metrics.rs, hub widgets.rs, Modeler ui/kit.rs,
+# ui/controls.rs, ui/metrics.rs) are exempt. `add_space(<number>)` is never allowed.
+#
+# Code tab: the multi-line code editor itself (syntax layouter, line numbers) — not a form field.
+crates/engine-editor/src/code.rs	TextEdit::	1
+# Hierarchy: inline rename inside a tree row (row height, indent and icon belong to the row).
+crates/engine-editor/src/hierarchy.rs	TextEdit::	1
+# Inspector: the axis cell of `axes` (coloured X/Y/Z tag + number) — the kit's vector field.
+crates/engine-editor/src/inspector.rs	DragValue::new(	1
+# Project: frameless path editor that replaces the breadcrumb in place.
+crates/engine-editor/src/project_chrome.rs	TextEdit::	1
+# Project: inline rename of a tile / list caption (centred under the thumbnail).
+crates/engine-editor/src/project_content.rs	TextEdit::	1

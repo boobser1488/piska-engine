@@ -6,6 +6,7 @@
 //! Пути показываются относительно проекта (`Assets/prefabs/coin.prefab`): полный
 //! путь к каталогу ассетов на диске пользователю не нужен.
 
+use crate::i18n::{tr_s, trf, trn};
 use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 
@@ -347,23 +348,23 @@ pub(crate) fn asset_icon(importer: &str) -> (Icon, Color32) {
 /// Что сделает двойной щелчок по ассету.
 pub(crate) fn default_action(asset: &AssetEntry, root: &std::path::Path) -> Option<(&'static str, Action)> {
     match asset.importer.as_str() {
-        "Scene" => Some(("Open Scene", Action::OpenScene(asset.path.clone()))),
+        "Scene" => Some((tr_s("Open Scene"), Action::OpenScene(asset.path.clone()))),
         "Prefab" => Some((
-            "Add to Scene",
+            tr_s("Add to Scene"),
             Action::Instantiate {
                 reference: asset.path.clone(),
                 position: None,
             },
         )),
         "Texture" => Some((
-            "Create Sprite",
+            tr_s("Create Sprite"),
             Action::CreateSpriteFromTexture {
                 guid: asset.guid,
                 position: None,
             },
         )),
-        "Code" | "Text" | "Scenario" => Some(("Open in Code Tab", Action::OpenCode(root.join(&asset.path)))),
-        "Mesh" if asset.path.ends_with(".pmodel") => Some(("Open in Piska Modeler", Action::OpenModel(asset.path.clone()))),
+        "Code" | "Text" | "Scenario" => Some((tr_s("Open in Code Tab"), Action::OpenCode(root.join(&asset.path)))),
+        "Mesh" if asset.path.ends_with(".pmodel") => Some((tr_s("Open in Piska Modeler"), Action::OpenModel(asset.path.clone()))),
         _ => None,
     }
 }
@@ -387,8 +388,8 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
         theme::empty_state(
             ui,
             Icon::Folder,
-            "No assets directory is mounted",
-            "Call `engine::mount_assets(&mut app, \"assets\")` before starting the editor",
+            tr_s("No assets directory is mounted"),
+            tr_s("Call `engine::mount_assets(&mut app, \"assets\")` before starting the editor"),
         );
         return;
     };
@@ -489,7 +490,7 @@ pub(crate) fn load_thumbnail(ctx: &egui::Context, file: &std::path::Path, name: 
     }
     let color_image = egui::ColorImage { size: [side, side], pixels };
     let options = if side <= 64 { egui::TextureOptions::NEAREST } else { egui::TextureOptions::LINEAR };
-    Some(ctx.load_texture(format!("thumb:{name}"), color_image, options))
+    Some(ctx.load_texture(format!("thumb:{name}", name = name), color_image, options))
 }
 
 /// Сводка по нескольким выделенным элементам: сколько, какого размера, каких типов.
@@ -498,7 +499,7 @@ fn multi_details(editor: &mut Editor, ui: &mut egui::Ui) {
     let summary = editor.project.summary.as_ref().map(|(_, s)| s.clone()).unwrap_or_default();
     ui.horizontal(|ui| {
         icons::inline(ui, Icon::Copy, theme::TEXT_MUTED);
-        ui.label(egui::RichText::new(format!("{count} items selected")).font(theme::strong(theme::FONT_TITLE)).color(theme::TEXT));
+        ui.label(egui::RichText::new(trn!("{n} item selected", "{n} items selected", count)).font(theme::strong(theme::FONT_TITLE)).color(theme::TEXT));
     });
     ui.add_space(theme::SP_M);
     let row = |ui: &mut egui::Ui, key: &str, value: String| {
@@ -506,24 +507,36 @@ fn multi_details(editor: &mut Editor, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new(value).color(theme::TEXT));
         ui.add_space(theme::SP_S);
     };
-    row(ui, "Files", summary.files.to_string());
+    row(ui, tr_s("Files"), summary.files.to_string());
     if summary.folders > 0 {
-        row(ui, "Folders", summary.folders.to_string());
+        row(ui, tr_s("Folders"), summary.folders.to_string());
     }
-    row(ui, "Total size", crate::sorting::size_label(summary.bytes));
-    ui.label(egui::RichText::new("By type").size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
+    row(ui, tr_s("Total size"), crate::sorting::size_label(summary.bytes));
+    ui.label(egui::RichText::new(tr_s("By type")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
     for (kind, n) in &summary.by_type {
         ui.label(egui::RichText::new(format!("{kind}: {n}")).color(theme::TEXT));
     }
     ui.add_space(theme::SP_L);
     ui.label(
-        egui::RichText::new("Drag onto a folder to move, hold Ctrl to copy. Ctrl+C / Ctrl+X / Delete work on the whole selection.")
+        egui::RichText::new(tr_s("Drag onto a folder to move, hold Ctrl to copy. Ctrl+C / Ctrl+X / Delete work on the whole selection."))
             .size(theme::FONT_CAPTION)
             .color(theme::TEXT_MUTED),
     );
 }
 
+/// Панель подробностей окна Project. Прокручивается целиком: в низком окне текст не
+/// обрезается краем панели.
 fn details(editor: &mut Editor, ui: &mut egui::Ui, root: &std::path::Path) {
+    egui::ScrollArea::vertical()
+        .id_salt("project_details_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            details_body(editor, ui, root);
+        });
+}
+
+fn details_body(editor: &mut Editor, ui: &mut egui::Ui, root: &std::path::Path) {
     if editor.project.selection.len() > 1 {
         editor.project.preview_rect = None;
         multi_details(editor, ui);
@@ -547,26 +560,24 @@ fn details(editor: &mut Editor, ui: &mut egui::Ui, root: &std::path::Path) {
             let files = editor.assets.iter().filter(|a| a.path.starts_with(&prefix)).count();
             let folders = editor.folders.iter().filter(|f| f.starts_with(&prefix)).count();
             ui.add_space(theme::SP_S);
-            ui.label(egui::RichText::new(format!("{files} files, {folders} folders inside")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
+            ui.label(egui::RichText::new(trf!("{files}, {folders} inside", files = trn!("{n} file", "{n} files", files), folders = trn!("{n} folder", "{n} folders", folders))).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
             editor.project.preview_rect = None;
             return;
         }
         ui.add_space(theme::SP_M);
-        ui.label(egui::RichText::new("No asset selected").font(theme::strong(theme::FONT_TITLE)).color(theme::TEXT));
+        ui.label(egui::RichText::new(tr_s("No asset selected")).font(theme::strong(theme::FONT_TITLE)).color(theme::TEXT));
         ui.add_space(theme::SP_S);
         ui.label(
             egui::RichText::new(
-                "Double-click a scene to open it, a prefab or texture to add it to the scene. \
-                 Drag assets into the Scene view or onto Inspector fields.",
+                tr_s("Double-click a scene to open it, a prefab or texture to add it to the scene. \
+                 Drag assets into the Scene view or onto Inspector fields."),
             )
             .color(theme::TEXT_MUTED),
         );
         return;
     };
-    egui::ScrollArea::vertical()
-        .id_salt("project_details_scroll")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
+    {
+        {
             let (icon, color) = asset_icon(&asset.importer);
             let is_model = asset.importer == "Mesh" || asset.importer == "Material";
             if is_model {
@@ -612,16 +623,16 @@ fn details(editor: &mut Editor, ui: &mut egui::Ui, root: &std::path::Path) {
             if asset.importer == "Mesh" {
                 model_facts(editor, ui, &asset, root);
             }
-            detail(ui, "Path", egui::RichText::new(format!("Assets/{}", asset.path)));
-            detail(ui, "Type", egui::RichText::new(crate::sorting::type_label(&asset.importer, &asset.path)));
+            detail(ui, tr_s("Path"), egui::RichText::new(format!("Assets/{}", asset.path)));
+            detail(ui, tr_s("Type"), egui::RichText::new(crate::sorting::type_label(&asset.importer, &asset.path)));
             if let Ok(modified) = std::fs::metadata(root.join(&asset.path)).and_then(|m| m.modified()) {
-                detail(ui, "Modified", egui::RichText::new(crate::sorting::date_label(modified)));
+                detail(ui, tr_s("Modified"), egui::RichText::new(crate::sorting::date_label(modified)));
             }
             if let (false, Ok(meta)) = (is_model, std::fs::metadata(root.join(&asset.path))) {
-                detail(ui, "Size", egui::RichText::new(human_size(meta.len())));
+                detail(ui, tr_s("Size"), egui::RichText::new(human_size(meta.len())));
             }
             detail(ui, "GUID", egui::RichText::new(asset.guid.to_string()).font(egui::FontId::monospace(12.0)))
-                .on_hover_text("Scenes reference this asset by its GUID: renaming or moving the file keeps the link");
+                .on_hover_text(tr_s("Scenes reference this asset by its GUID: renaming or moving the file keeps the link"));
             ui.add_space(theme::SP_L);
             ui.horizontal_wrapped(|ui| {
                 if let Some((label, action)) = default_action(&asset, root) {
@@ -629,11 +640,12 @@ fn details(editor: &mut Editor, ui: &mut egui::Ui, root: &std::path::Path) {
                         editor.actions.push(action);
                     }
                 }
-                if matches!(asset.importer.as_str(), "Scene" | "Prefab") && theme::secondary_button(ui, "Edit as Text").clicked() {
+                if matches!(asset.importer.as_str(), "Scene" | "Prefab") && theme::secondary_button(ui, tr_s("Edit as Text")).clicked() {
                     editor.actions.push(Action::OpenCode(root.join(&asset.path)));
                 }
             });
-        });
+        }
+    }
 }
 
 /// Большой предпросмотр модели: тянуть мышью — вращать, колесо — приблизить, двойной
@@ -683,7 +695,7 @@ fn model_preview(editor: &mut Editor, ui: &mut egui::Ui, asset: &AssetEntry) {
                 ui.painter().text(
                     pos2(rect.center().x, rect.bottom() - 8.0),
                     Align2::CENTER_BOTTOM,
-                    "Drag to rotate · wheel to zoom",
+                    tr_s("Drag to rotate · wheel to zoom"),
                     theme::caption(),
                     theme::TEXT_DISABLED,
                 );
@@ -694,7 +706,7 @@ fn model_preview(editor: &mut Editor, ui: &mut egui::Ui, asset: &AssetEntry) {
             ui.painter().text(
                 rect.center() + vec2(0.0, 22.0),
                 Align2::CENTER_TOP,
-                "Cannot preview this model",
+                tr_s("Cannot preview this model"),
                 theme::body(),
                 theme::TEXT,
             );
@@ -721,19 +733,19 @@ fn model_facts(editor: &mut Editor, ui: &mut egui::Ui, asset: &AssetEntry, root:
     match info {
         Ok(info) => {
             egui::Grid::new("model_facts").num_columns(2).spacing([theme::SP_L, theme::SP_S]).show(ui, |ui| {
-                fact(ui, "Vertices", thousands(info.vertices));
-                fact(ui, "Triangles", thousands(info.triangles));
-                fact(ui, "Sub-meshes", info.submeshes.to_string());
+                fact(ui, tr_s("Vertices"), thousands(info.vertices));
+                fact(ui, tr_s("Triangles"), thousands(info.triangles));
+                fact(ui, tr_s("Sub-meshes"), info.submeshes.to_string());
                 let size = info.bounds.1 - info.bounds.0;
-                fact(ui, "Bounds", format!("{:.2} × {:.2} × {:.2}", size.x, size.y, size.z));
+                fact(ui, tr_s("Bounds"), format!("{:.2} × {:.2} × {:.2}", size.x, size.y, size.z));
                 if let Some(size) = file_size {
-                    fact(ui, "File size", size);
+                    fact(ui, tr_s("File size"), size);
                 }
             });
             ui.add_space(theme::SP_S);
-            ui.label(egui::RichText::new("Materials").size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
+            ui.label(egui::RichText::new(tr_s("Materials")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
             if info.materials.is_empty() {
-                ui.label(egui::RichText::new("None in the file: default grey").color(theme::TEXT_DISABLED));
+                ui.label(egui::RichText::new(tr_s("None in the file: default grey")).color(theme::TEXT_DISABLED));
             }
             for material in &info.materials {
                 ui.horizontal(|ui| {
@@ -745,15 +757,15 @@ fn model_facts(editor: &mut Editor, ui: &mut egui::Ui, asset: &AssetEntry, root:
                     ui.add(egui::Label::new(egui::RichText::new(&material.name).color(theme::TEXT)).truncate());
                 });
                 if let Some(texture) = &material.texture {
-                    ui.label(egui::RichText::new(format!("    texture: {texture}")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
+                    ui.label(egui::RichText::new(format!("    texture: {texture}", texture = texture)).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
                 }
             }
         }
         Err(reason) => {
-            ui.label(egui::RichText::new("This model cannot be read").color(theme::ERROR));
+            ui.label(egui::RichText::new(tr_s("This model cannot be read")).color(theme::ERROR));
             ui.label(egui::RichText::new(reason).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
             if let Some(size) = file_size {
-                ui.label(egui::RichText::new(format!("File size: {size}")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
+                ui.label(egui::RichText::new(trf!("File size: {size}", size = size)).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
             }
         }
     }
@@ -777,7 +789,7 @@ fn human_size(bytes: u64) -> String {
     match bytes {
         b if b >= 1 << 20 => format!("{:.1} MB", b as f64 / (1u64 << 20) as f64),
         b if b >= 1 << 10 => format!("{:.1} KB", b as f64 / 1024.0),
-        b => format!("{b} bytes"),
+        b => trf!("{b} bytes", b = b),
     }
 }
 

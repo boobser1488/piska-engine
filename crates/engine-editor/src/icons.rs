@@ -520,9 +520,11 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.circle_filled(c, s * 0.22, color);
         }
         Icon::Build => {
-            // Молоток.
-            painter.add(fill(vec![at(-0.15, -0.85), at(0.75, -0.85), at(0.75, -0.35), at(-0.15, -0.35)]));
-            painter.line_segment([at(0.3, -0.35), at(-0.6, 0.85)], Stroke::new(w * 1.3, color));
+            // Молоток: рукоять идёт по диагонали, боёк стоит поперёк неё (а не горизонтально —
+            // иначе головка выглядит свёрнутой набок). Ось рукояти — (0.6, −0.8), ось бойка —
+            // перпендикуляр (0.8, 0.6); углы бойка: центр ± 0.52 вдоль бойка ± 0.24 вдоль рукояти.
+            painter.add(fill(vec![at(-0.27, -0.52), at(0.018, -0.904), at(0.85, -0.28), at(0.562, 0.104)]));
+            painter.line_segment([at(0.22, -0.30), at(-0.62, 0.82)], Stroke::new(w * 1.6, color));
         }
         Icon::Collapse => {
             painter.rect_stroke(rect_at(-0.85, -0.85, 0.45, 0.2), 2.0, thin);
@@ -592,7 +594,8 @@ pub fn inline_small(ui: &mut Ui, icon: Icon, color: Color32) {
 
 /// Кнопка панели инструментов: квадрат с иконкой; `selected` — включена.
 pub fn button(ui: &mut Ui, icon: Icon, selected: bool, tint: Option<Color32>, tooltip: &str) -> Response {
-    let size = vec2(26.0, theme::CONTROL_H + 2.0);
+    // Квадрат со стороной в высоту контрола: в одной строке с полями и кнопками.
+    let size = vec2(theme::CONTROL_H, theme::CONTROL_H);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let enabled = ui.is_enabled();
     let hovered = response.hovered() && enabled;

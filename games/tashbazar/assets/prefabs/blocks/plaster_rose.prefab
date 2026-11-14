@@ -1,0 +1,46 @@
+(
+    name: "plaster_rose",
+    id: 5613463977386,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "MeshRenderer",
+            fields: {
+                "cast_shadows": Bool(true),
+                "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                "grid": Bool(false),
+                "materials": List([
+                    Asset("a829e5058424d00a1f1d39336bf0ce25"),
+                ]),
+                "mesh": Asset(""),
+                "metallic": Float(0.0),
+                "model_materials": Bool(false),
+                "roughness": Float(0.6),
+                "shape": Enum("Cube"),
+                "texture": Asset(""),
+                "tiling": Float(0.0),
+                "tint": Color(1.0, 1.0, 1.0, 1.0),
+            },
+        ),
+        (
+            kind: "Collider",
+            fields: {
+                "collides_with": Int(4294967295),
+                "density": Float(1.0),
+                "friction": Float(0.0),
+                "is_trigger": Bool(false),
+                "mesh": Asset(""),
+                "offset": Vec3(0.0, 0.0, 0.0),
+                "radius": Float(0.5),
+                "restitution": Float(0.0),
+                "shape": Enum("Box"),
+                "size": Vec3(1.0, 1.0, 1.0),
+            },
+        ),
+    ],
+)

@@ -1,0 +1,37 @@
+(
+    name: "CrumblePlatform",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 1.0),
+                "sheet_columns": Int(1),
+                "sheet_rows": Int(3),
+                "size": Vec2(3.0, 0.5),
+                "sorting_layer": Int(1),
+                "texture": Asset("375033cf51c2d19157a3a83ea8c39020"),
+                "uv_offset": Vec2(0.0, 0.0),
+                "uv_size": Vec2(1.0, 1.0),
+            },
+        ),
+        (
+            kind: "CrumblePlatform",
+            fields: {
+                "home": Vec2(0.0, 0.0),
+                "state": Int(0),
+                "timer": Float(0.0),
+                "width": Float(3.0),
+            },
+        ),
+    ],
+)

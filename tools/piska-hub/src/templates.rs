@@ -5,6 +5,7 @@
 //! В `games/` движка он становится членом рабочего пространства; в другом месте —
 //! отдельным рабочим пространством с путём к этой копии движка.
 
+use engine_editor::kit::i18n::{tr_s};
 use std::path::{Path, PathBuf};
 
 use crate::paths;
@@ -23,22 +24,22 @@ impl Template {
 
     pub fn title(self) -> &'static str {
         match self {
-            Template::Empty2D => "Empty 2D",
-            Template::Empty3D => "Empty 3D",
-            Template::Starfall => "Starfall sample",
+            Template::Empty2D => tr_s("Empty 2D"),
+            Template::Empty3D => tr_s("Empty 3D"),
+            Template::Starfall => tr_s("Starfall sample"),
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
             Template::Empty2D => {
-                "Orthographic camera, a sprite and one Rust component. The smallest 2D game that runs."
+                tr_s("Orthographic camera and a sprite turned by a Scenario script. Opens at once, nothing to compile.")
             }
             Template::Empty3D => {
-                "Perspective camera, sun and sky, a ground grid and a cube spun by a Rust component."
+                tr_s("Camera, sun, sky, ground grid and a cube spun by a Scenario script. Opens at once, nothing to compile.")
             }
             Template::Starfall => {
-                "A complete small 2D game: sprites, prefabs, 2D physics, UI, sound and a saved high score."
+                tr_s("A complete small 2D game: sprites, prefabs, 2D physics, UI, sound and a saved high score.")
             }
         }
     }
@@ -46,9 +47,9 @@ impl Template {
     /// Короткая строка о составе: что внутри.
     pub fn contents(self) -> &'static str {
         match self {
-            Template::Empty2D => "1 scene · 1 sprite · 1 script",
-            Template::Empty3D => "1 scene · 1 script",
-            Template::Starfall => "1 scene · 1 prefab · 3 sprites · 1 sound · 3 scripts",
+            Template::Empty2D => tr_s("1 scene · 1 sprite · 1 Scenario script"),
+            Template::Empty3D => tr_s("1 scene · 1 Scenario script"),
+            Template::Starfall => tr_s("1 scene · 1 prefab · 3 sprites · 1 sound · 3 scripts"),
         }
     }
 
@@ -236,14 +237,23 @@ pub fn plan(new: &NewProject, engine_root: &Path) -> Result<Plan, CreateError> {
             files.push(("src/lib.rs".to_string(), empty_lib(&names, three, new.cpp).into_bytes()));
             files.push(("tests/smoke.rs".to_string(), empty_smoke(&names, new.cpp).into_bytes()));
             let scene_guid = new_guid();
-            files.push(("assets/scenes/main.scene.meta".to_string(), meta(&scene_guid, "Scene").into_bytes()));
+            files.push(("assets/scenes/main.scene.meta".to_string(), meta(&scene_guid, tr_s("Scene")).into_bytes()));
+            // Поведение демо — сценарий Scenario, а не код на Rust: проект открывается
+            // общим редактором сразу, без компиляции (docs/api/hub.md).
+            let script_guid = new_guid();
+            let script = if three { SPIN_3D } else { SPIN_2D };
+            files.push(("assets/scenarios/spin.scenario".to_string(), script.to_string().into_bytes()));
+            files.push(("assets/scenarios/spin.scenario.meta".to_string(), meta(&script_guid, tr_s("Scenario")).into_bytes()));
             if three {
-                files.push(("assets/scenes/main.scene".to_string(), SCENE_3D.to_string().into_bytes()));
+                files.push(("assets/scenes/main.scene".to_string(), SCENE_3D.replace("{SCRIPT}", &script_guid).into_bytes()));
             } else {
                 let sprite_guid = new_guid();
                 files.push(("assets/sprites/square.png".to_string(), square_png()));
-                files.push(("assets/sprites/square.png.meta".to_string(), meta(&sprite_guid, "Texture").into_bytes()));
-                files.push(("assets/scenes/main.scene".to_string(), SCENE_2D.replace("{SPRITE}", &sprite_guid).into_bytes()));
+                files.push(("assets/sprites/square.png.meta".to_string(), meta(&sprite_guid, tr_s("Texture")).into_bytes()));
+                files.push((
+                    "assets/scenes/main.scene".to_string(),
+                    SCENE_2D.replace("{SPRITE}", &sprite_guid).replace("{SCRIPT}", &script_guid).into_bytes(),
+                ));
             }
         }
         Template::Starfall => starfall_files(&names, new.cpp, engine_root, &mut files)?,
@@ -417,8 +427,9 @@ fn main_rs(names: &Names) -> String {
     format!(
         "//! Программа игры для десктопа: `cargo run -p {package}`.\n\
          //! В браузере и на Android точку входа даёт `engine::game_main!` в `lib.rs`.\n\n\
-         // В release-сборке на Windows — без окна консоли (как у обычной игры).\n\
-         #![cfg_attr(not(debug_assertions), windows_subsystem = \"windows\")]\n\n\
+         // На Windows — без окна консоли и в отладочной сборке (запущенная из терминала игра\n\
+         // подключается к его консоли сама: `engine::init_logger`).\n\
+         #![windows_subsystem = \"windows\"]\n\n\
          fn main() -> Result<(), engine::EngineError> {{\n    {lib}::main()\n}}\n",
         package = names.package,
         lib = names.lib
@@ -431,6 +442,8 @@ fn editor_rs(names: &Names) -> String {
          //! (или кнопка Open в Piska Hub).\n//!\n\
          //! Скрипты на Rust — в `src/scripts/` (Assets → New Rust Script…). Build (Ctrl+B)\n\
          //! пересобирает эту программу и перезапускает редактор с новым кодом.\n\n\
+         // Без окна консоли рядом с редактором (вывод — в консоль терминала или в журнал).\n\
+         #![windows_subsystem = \"windows\"]\n\n\
          engine::editor_main!({lib}::build, |config| config.open_scene(\"scenes/main.scene\"));\n",
         package = names.package,
         lib = names.lib
@@ -489,8 +502,7 @@ ENGINE_FIELDS(Wobble,
 ENGINE_COMPONENT(Wobble);
 ";
 
-fn empty_lib(names: &Names, three: bool, cpp: bool) -> String {
-    let (rotate, axis) = if three { ("rotate_y", "Y") } else { ("rotate_z", "Z") };
+fn empty_lib(names: &Names, _three: bool, cpp: bool) -> String {
     let cpp_line = if cpp {
         "    // Компоненты на C++ из cpp/ (build.rs → engine-cpp-build).\n    engine::add_static_cpp(&mut app, engine::cpp_scripts!())?;\n"
     } else {
@@ -502,28 +514,20 @@ fn empty_lib(names: &Names, three: bool, cpp: bool) -> String {
          //! [`build`] собирает игру: компоненты, ассеты, стартовая сцена. `engine::game_main!`\n\
          //! делает из неё программу для десктопа, браузера и Android, а\n\
          //! `src/bin/{package}-editor.rs` открывает её в редакторе. Устройство крейта игры —\n\
-         //! docs/api/export.md, компоненты и сцены — docs/api/gameplay.md.\n\n\
+         //! docs/api/export.md, компоненты и сцены — docs/api/gameplay.md.\n\
+         //!\n\
+         //! Пока в проекте нет своего кода на Rust (скрипты в `src/scripts/`) или C++, Piska Hub\n\
+         //! открывает его общим редактором без компиляции; поведение демо — сценарий\n\
+         //! `assets/scenarios/spin.scenario`. Первый скрипт на Rust (Assets → New Rust Script…)\n\
+         //! соберёт программу редактора этого проекта.\n\n\
          /// Скрипты на Rust, созданные в редакторе (New Rust Script).\n\
          pub mod scripts;\n\n\
          use engine::prelude::*;\n\n\
          /// Имя игры: каталог сохранений на десктопе, ключ `localStorage` в браузере.\n\
          pub const GAME_NAME: &str = \"{title}\";\n\n\
-         component! {{\n\
-         \x20   /// Вращает объект вокруг оси {axis} с постоянной скоростью.\n\
-         \x20   pub struct Rotator {{\n\
-         \x20       /// Градусов в секунду.\n\
-         \x20       pub speed_deg: f32 = 45.0,\n\
-         \x20   }}\n\
-         }}\n\n\
-         impl Component for Rotator {{\n\
-         \x20   fn on_update(&mut self, ctx: &mut Ctx, dt: f32) {{\n\
-         \x20       ctx.transform().{rotate}(self.speed_deg.to_radians() * dt);\n\
-         \x20   }}\n\
-         }}\n\n\
          /// Зарегистрировать компоненты игры (сцена ссылается на них по имени).\n\
          pub fn register(app: &mut App) {{\n\
          \x20   scripts::register(app);\n\
-         \x20   app.register::<Rotator>();\n\
          }}\n\n\
          /// Собрать игру.\n\
          pub fn build() -> Result<App, EngineError> {{\n\
@@ -549,7 +553,7 @@ fn empty_smoke(names: &Names, cpp: bool) -> String {
     };
     format!(
         "//! Проверка без окна: игра собирается из своих ассетов, сцена загружается,\n\
-         //! компонент `Rotator` поворачивает игрока. `cargo test -p {package}`.\n\n\
+         //! сценарий `scenarios/spin.scenario` поворачивает игрока. `cargo test -p {package}`.\n\n\
          #[test]\n\
          fn the_game_starts_and_the_rotator_turns_the_player() {{\n\
          \x20   std::env::set_var(\"ENGINE_AUDIO\", \"off\");\n\
@@ -559,14 +563,14 @@ fn empty_smoke(names: &Names, cpp: bool) -> String {
          \x20   let before = app.world.scene.get(player).unwrap().transform.rotation;\n\
          \x20   app.run_headless(60, 1.0 / 60.0);\n\
          \x20   let after = app.world.scene.get(player).unwrap().transform.rotation;\n\
-         \x20   assert!(before.angle_between(after) > 0.5, \"one second at 45°/s turns the player\");\n\
+         \x20   assert!(before.angle_between(after) > 0.5, \"one second at 45°/s of the Scenario script turns the player\");\n\
          }}\n",
         package = names.package,
         lib = names.lib,
     )
 }
 
-const SCENE_2D: &str = "// Стартовая сцена: камера, земля и вращающийся квадрат (компонент Rotator из src/lib.rs).
+const SCENE_2D: &str = "// Стартовая сцена: камера, земля и вращающийся квадрат (сценарий scenarios/spin.scenario).
 (
     name: \"Main\",
     objects: [
@@ -601,15 +605,43 @@ const SCENE_2D: &str = "// Стартовая сцена: камера, земл
                     \"size\": Vec2(1.5, 1.5),
                     \"order\": Int(1),
                 }),
-                (kind: \"Rotator\", fields: { \"speed_deg\": Float(45.0) }),
+                (kind: \"ScenarioRunner\", fields: { \"script\": Asset(\"{SCRIPT}\") }),
             ],
         ),
     ],
 )
 ";
 
+/// Демо 2D: сценарий поворачивает свой объект.
+const SPIN_2D: &str = "-- Демо стартовой сцены: объект с этим сценарием (ScenarioRunner) вращается.
+-- Поменяйте скорость и сохраните файл во время Play — сценарий перезапустится сам.
+-- Язык: docs/api/scenario.md.
+const speed = 45          -- градусов в секунду
+const obj = self          -- объект, на котором висит сценарий
+let angle = 0
+while true do
+    angle = angle + speed * dt()
+    obj.rotation = vec3(0, 0, angle)
+    wait_frame()
+end
+";
+
+/// Демо 3D: сценарий вращает куб вокруг вертикальной оси.
+const SPIN_3D: &str = "-- Демо стартовой сцены: куб с этим сценарием (ScenarioRunner) вращается вокруг оси Y.
+-- Поменяйте скорость и сохраните файл во время Play — сценарий перезапустится сам.
+-- Язык: docs/api/scenario.md.
+const speed = 45          -- градусов в секунду
+const obj = self          -- объект, на котором висит сценарий
+let angle = 0
+while true do
+    angle = angle + speed * dt()
+    obj.rotation = vec3(0, angle, 0)
+    wait_frame()
+end
+";
+
 const SCENE_3D: &str = "// Стартовая сцена: камера, солнце, небо, земля с сеткой и вращающийся куб
-// (компонент Rotator из src/lib.rs).
+// (сценарий scenarios/spin.scenario).
 (
     name: \"Main\",
     objects: [
@@ -654,7 +686,7 @@ const SCENE_3D: &str = "// Стартовая сцена: камера, солн
                     \"color\": Color(0.3, 0.55, 1.0, 1.0),
                     \"roughness\": Float(0.4),
                 }),
-                (kind: \"Rotator\", fields: { \"speed_deg\": Float(45.0) }),
+                (kind: \"ScenarioRunner\", fields: { \"script\": Asset(\"{SCRIPT}\") }),
             ],
         ),
     ],
@@ -763,11 +795,13 @@ fn readme(names: &Names, new: &NewProject, in_workspace: bool) -> String {
     let place = if in_workspace {
         "Проект лежит в `games/` движка и собирается в его рабочем пространстве.".to_string()
     } else {
+        // i18n-skip: текст файла README (язык документации проекта — русский)
         "Отдельный проект: свой `[workspace]` и путь к копии движка в `Cargo.toml`. \
          Первая сборка компилирует движок целиком (10–15 минут и несколько ГБ на диске)."
             .to_string()
     };
     let cpp = if new.cpp {
+        // i18n-skip: текст файла README
         "\n* `cpp/` — компоненты на C++ (пример `Wobble.cpp`), собираются `build.rs` вместе с игрой (docs/api/cpp.md §17)."
     } else {
         ""
@@ -848,6 +882,8 @@ mod tests {
                 ".gitignore",
                 "Cargo.toml",
                 "README.md",
+                "assets/scenarios/spin.scenario",
+                "assets/scenarios/spin.scenario.meta",
                 "assets/scenes/main.scene",
                 "assets/scenes/main.scene.meta",
                 "assets/sprites/square.png",
@@ -898,7 +934,9 @@ mod tests {
         assert!(manifest.contains("engine-cpp-build = { path = \"../../crates/engine-cpp-build\" }"));
         assert!(!manifest.contains("[workspace]"));
         let lib = String::from_utf8(plan.files.iter().find(|(p, _)| p == "src/lib.rs").unwrap().1.clone()).unwrap();
-        assert!(lib.contains("add_static_cpp") && lib.contains("rotate_y"));
+        assert!(lib.contains("add_static_cpp") && !lib.contains("component!"), "the empty templates need no Rust component");
+        let scene = String::from_utf8(plan.files.iter().find(|(p, _)| p == "assets/scenes/main.scene").unwrap().1.clone()).unwrap();
+        assert!(scene.contains("ScenarioRunner"));
         assert!(!plan.dir.exists(), "planning writes nothing");
     }
 

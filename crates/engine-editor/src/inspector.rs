@@ -5,6 +5,7 @@
 //! типу значения. Новый компонент, объявленный через `component!`, появляется
 //! здесь сам, вместе с подсказками из doc-комментариев.
 
+use crate::i18n::{tr_s, trf, trn};
 use std::collections::HashMap;
 
 use egui::{pos2, vec2, Align2, Color32, Rect, Sense, Stroke};
@@ -30,12 +31,16 @@ pub(crate) struct InspectorState {
     pub asset_filter: String,
     /// Скопированные значения компонента: тип и поля.
     clipboard: Option<(&'static str, Vec<(&'static str, Value)>)>,
+    /// Значение одного поля (меню поля → Copy).
+    pub field_clipboard: Option<Value>,
     /// Где в этом кадре нарисован виджет каждого поля: (компонент, поле) → область.
     pub field_rects: HashMap<(&'static str, &'static str), egui::Rect>,
+    /// Насколько содержимое в последнем кадре вышло за ширину окна (0 — не вышло).
+    pub overflow: f32,
 }
 
 /// Что попросили сделать из меню «⋮» компонента.
-enum CardCommand {
+pub(crate) enum CardCommand {
     Reset,
     Remove,
     Copy,
@@ -50,9 +55,14 @@ enum CardCommand {
 struct DragComponent(usize);
 
 pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
-    theme::panel_header(ui, Icon::Inspector, "Inspector", |_| {});
+    theme::panel_header(ui, Icon::Inspector, tr_s("Inspector"), |_| {});
     // Выбран материал в окне Project — его редактор вместо объекта.
     if crate::material_editor::show(editor, ui) {
+        return;
+    }
+    // Несколько объектов — общий вид (inspector_multi.rs).
+    if editor.selected().len() > 1 {
+        crate::inspector_multi::show(editor, ui);
         return;
     }
 
@@ -64,6 +74,10 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
         return;
     };
 
+    // Поля-ссылки на объекты: справочник объектов сцены на этот кадр (inspector_refs.rs).
+    crate::inspector_refs::publish(ui.ctx(), &editor.app.world.scene, &[id]);
+    // Экземпляр префаба: какие поля переопределены (inspector_prefab.rs).
+    let prefab_marks = crate::inspector_prefab::PrefabMarks::of(ui.ctx(), &editor.app.world, id);
     let add_entries = crate::add_menu::entries(&editor.app.world.registry);
     let can_script = editor.config.script_dir.is_some();
     let assets_root = editor.assets_root();
@@ -100,6 +114,8 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
             ui.spacing_mut().item_spacing.y = 0.0;
             // Ничто не раздвигает инспектор шире окна: длинный текст переносится.
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+            let inner_width = ui.available_width();
+            let left = ui.max_rect().left();
             if *mode != Mode::Edit {
                 egui::Frame::none()
                     .fill(theme::mix(theme::BG_PANEL, theme::accent(), 0.16))
@@ -109,7 +125,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                         ui.horizontal(|ui| {
                             icons::inline_small(ui, Icon::Play, theme::TEXT_MUTED);
                             ui.label(
-                                egui::RichText::new("Play mode — changes are reverted on Stop")
+                                egui::RichText::new(tr_s("Play mode — changes are reverted on Stop"))
                                     .size(theme::FONT_CAPTION)
                                     .color(theme::TEXT_MUTED),
                             );
@@ -126,30 +142,32 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                     ui.horizontal(|ui| {
                         changed |= ui
                             .checkbox(&mut object.active, "")
-                            .on_hover_text("Active: inactive objects are not updated or drawn")
+                            .on_hover_text(tr_s("Active: inactive objects are not updated or drawn"))
                             .changed();
                         let (icon, color) = catalog::object_icon(object);
                         icons::inline(ui, icon, if object.prefab().is_some() { theme::PREFAB } else { color });
-                        changed |= ui
-                            .add(
-                                egui::TextEdit::singleline(&mut object.name)
-                                    .font(theme::body())
-                                    .min_size(vec2(0.0, theme::FIELD_H + 2.0))
-                                    .vertical_align(egui::Align::Center)
-                                    .desired_width(f32::INFINITY),
-                            )
-                            .changed();
+                        // Поле имени — ровно в оставшуюся ширину: длинное имя прокручивается
+                        // внутри поля и ничего не раздвигает.
+                        let size = vec2(ui.available_width().max(0.0), theme::CONTROL_H);
+                        let name_response = theme::fixed(ui, size, |ui| {
+                            crate::controls::text_field(ui, &mut object.name, "", size.x)
+                        });
+                        changed |= name_response.changed();
                     });
                     ui.horizontal(|ui| {
                         // Длинное имя тега не раздвигает инспектор: текст обрезается.
                         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                        let half = (ui.available_width() - theme::SP_M) * 0.5;
-                        ui.allocate_ui(vec2(half, theme::FIELD_H), |ui| {
-                            caption(ui, "Tag", 30.0);
+                        // Каждая половина — ровно своей ширины: в узком окне список обрезается,
+                        // а не раздвигает инспектор.
+                        // В широком окне строка не шире сетки свойств (подписи + значение).
+                        let row = ui.available_width().min(theme::PROP_LABEL_MAX + theme::PROP_VALUE_MAX + theme::SP_S);
+                        let half = ((row - theme::SP_M) * 0.5).max(0.0);
+                        theme::fixed(ui, vec2(half, theme::FIELD_H), |ui| {
+                            caption(ui, tr_s("Tag"), 30.0);
                             changed |= crate::settings::tag_combo(ui, &mut object.tag, &tags_layers, &mut open_tags);
                         });
-                        ui.allocate_ui(vec2(half, theme::FIELD_H), |ui| {
-                            caption(ui, "Layer", 36.0);
+                        theme::fixed(ui, vec2(half, theme::FIELD_H), |ui| {
+                            caption(ui, tr_s("Layer"), 36.0);
                             changed |= crate::settings::layer_combo(ui, &mut object.layer, &tags_layers, &mut open_tags);
                         });
                     });
@@ -162,14 +180,14 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
             // --- Transform ---
             let transform_menu = card(
                 ui,
-                ("component", "Transform", usize::MAX),
+                ("component", tr_s("Transform"), usize::MAX),
                 Icon::Transform,
-                "Transform",
+                tr_s("Transform"),
                 false,
                 None,
                 |ui| {
                     let transform = &mut object.transform;
-                    changed |= property(ui, "Position", "Local position, metres", |ui| {
+                    changed |= property(ui, tr_s("Position"), tr_s("Local position, metres"), |ui| {
                         let mut v = transform.position.to_array();
                         let edited = axes(ui, &mut v, 0.05);
                         transform.position = Vec3::from_array(v);
@@ -179,7 +197,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                         Some((owner, rotation, euler)) if owner == id && rotation == transform.rotation => euler,
                         _ => transform.euler_deg(),
                     };
-                    changed |= property(ui, "Rotation", "Euler angles in degrees", |ui| {
+                    changed |= property(ui, tr_s("Rotation"), tr_s("Euler angles in degrees"), |ui| {
                         // Без «-0.0» и хвостов вроде 89.99999.
                         let mut v = euler.to_array().map(|angle| {
                             let rounded = (angle * 1e3).round() / 1e3;
@@ -192,7 +210,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                         inspector.euler = Some((id, transform.rotation, Vec3::from_array(v)));
                         edited
                     });
-                    changed |= property(ui, "Scale", "", |ui| {
+                    changed |= property(ui, tr_s("Scale"), "", |ui| {
                         let mut v = transform.scale.to_array();
                         let edited = axes(ui, &mut v, 0.02);
                         transform.scale = Vec3::from_array(v);
@@ -251,12 +269,17 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                         }
                         let fields = component.field_names();
                         if fields.is_empty() {
-                            ui.label(egui::RichText::new("This component has no settings").color(theme::TEXT_MUTED));
+                            ui.label(egui::RichText::new(tr_s("This component has no settings")).color(theme::TEXT_MUTED));
                         }
                         for field in fields {
                             let Some(mut value) = component.get_field(field) else {
                                 continue;
                             };
+                            // Подзаголовок группы полей (длинные компоненты, catalog.rs).
+                            if let Some(group) = crate::catalog::field_group(type_name, field) {
+                                ui.add_space(theme::SP_S);
+                                theme::section_label(ui, tr_s(group));
+                            }
                             let meta = component.field_meta(field);
                             let doc = clean_doc(component.field_doc(field));
                             let edited = property(ui, &theme::pretty_name(field), &doc, |ui| {
@@ -269,6 +292,26 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                             if edited {
                                 // Значение вне диапазона поля (−1 для `u32`) просто не применится.
                                 changed |= component.set_field(field, &value).is_ok();
+                            }
+                            if let Some(rect) = inspector.field_rects.get(&(type_name, *field)).copied() {
+                                if let Some(base) = crate::inspector_prefab::field_marker(ui, &prefab_marks, type_name, field, &value, rect) {
+                                    changed |= component.set_field(field, &base).is_ok();
+                                }
+                                // Правая кнопка по подписи поля: Copy / Paste / Reset to Default (у
+                                // переопределённого в префабе поля там своё меню Revert).
+                                let overridden = prefab_marks.overridden(type_name, field, &value);
+                                let label = Rect::from_min_max(pos2(ui.max_rect().left(), rect.top()), pos2(rect.left() - 2.0, rect.bottom()));
+                                let defaults = &world.registry;
+                                let menu = (!overridden)
+                                    .then(|| {
+                                        field_menu(ui, label, (type_name, index, field), &value, &mut inspector.field_clipboard, &doc, || {
+                                            defaults.create(type_name).ok().and_then(|c| c.get_field(field))
+                                        })
+                                    })
+                                    .flatten();
+                                if let Some(new) = menu {
+                                    changed |= component.set_field(field, &new).is_ok();
+                                }
                             }
                         }
                     },
@@ -325,12 +368,14 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                     );
                 });
             ui.add_space(theme::SP_XL);
+            inspector.overflow = (ui.min_rect().right() - left - inner_width).max(0.0);
         });
 
     let _ = assets_root;
     if changed {
         editor.touch();
     }
+    crate::inspector_refs::finish(editor, ui.ctx());
     if open_tags {
         editor.show_project_settings_page("tags-and-layers");
     }
@@ -345,8 +390,8 @@ fn empty(editor: &Editor, ui: &mut egui::Ui) {
             theme::empty_state(
                 ui,
                 Icon::Inspector,
-                "Nothing selected",
-                "Select an object in the Hierarchy or the Scene view\nto see and edit its components.",
+                tr_s("Nothing selected"),
+                tr_s("Select an object in the Hierarchy or the Scene view\nto see and edit its components."),
             );
             ui.add_space(theme::SP_XL);
             egui::Frame::none()
@@ -360,24 +405,24 @@ fn empty(editor: &Editor, ui: &mut egui::Ui) {
                         .filter_map(|id| scene.get(*id))
                         .map(|o| o.components().count())
                         .sum();
-                    section_title(ui, "Scene");
+                    section_title(ui, tr_s("Scene"));
                     egui::Grid::new("inspector_scene_summary")
                         .num_columns(2)
                         .spacing(vec2(theme::SP_L, theme::SP_S))
                         .show(ui, |ui| {
-                            theme::key_value(ui, "Name", scene.name.as_str());
-                            theme::key_value(ui, "Objects", scene.len().to_string());
-                            theme::key_value(ui, "Components", components.to_string());
+                            theme::key_value(ui, tr_s("Name"), scene.name.as_str());
+                            theme::key_value(ui, tr_s("Objects"), scene.len().to_string());
+                            theme::key_value(ui, tr_s("Components"), components.to_string());
                             theme::key_value(
                                 ui,
-                                "File",
+                                tr_s("File"),
                                 editor
                                     .scene_path()
-                                    .map_or("not saved yet".to_string(), |p| format!("Assets/{p}")),
+                                    .map_or(tr_s("not saved yet").to_string(), |p| format!("Assets/{p}")),
                             );
                         });
                     ui.add_space(theme::SP_XL);
-                    section_title(ui, "Shortcuts");
+                    section_title(ui, tr_s("Shortcuts"));
                     egui::Grid::new("inspector_shortcuts")
                         .num_columns(2)
                         .spacing(vec2(theme::SP_L, theme::SP_S))
@@ -390,14 +435,14 @@ fn empty(editor: &Editor, ui: &mut egui::Ui) {
                                 .collect::<Vec<_>>()
                                 .join("  ");
                             let rows = [
-                                (tools, "Move, rotate, scale"),
-                                (key("frame-selected"), "Frame the selection"),
-                                (key("duplicate"), "Duplicate"),
-                                (key("rename"), "Rename"),
-                                (key("delete"), "Delete"),
-                                (key("create-empty"), "New empty object"),
-                                (key("play"), "Play / Stop"),
-                                (key("save"), "Save the scene"),
+                                (tools, tr_s("Move, rotate, scale")),
+                                (key("frame-selected"), tr_s("Frame the selection")),
+                                (key("duplicate"), tr_s("Duplicate")),
+                                (key("rename"), tr_s("Rename")),
+                                (key("delete"), tr_s("Delete")),
+                                (key("create-empty"), tr_s("New empty object")),
+                                (key("play"), tr_s("Play / Stop")),
+                                (key("save"), tr_s("Save the scene")),
                             ];
                             for (keys, what) in rows.into_iter().filter(|(keys, _)| !keys.is_empty()) {
                                 ui.label(egui::RichText::new(keys).font(theme::mono()).color(theme::TEXT));
@@ -409,7 +454,7 @@ fn empty(editor: &Editor, ui: &mut egui::Ui) {
         });
 }
 
-fn section_title(ui: &mut egui::Ui, title: &str) {
+pub(crate) fn section_title(ui: &mut egui::Ui, title: &str) {
     theme::section_label(ui, title);
     ui.add_space(theme::SP_S);
 }
@@ -419,8 +464,8 @@ fn caption(ui: &mut egui::Ui, text: &str, width: f32) {
     ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, text, theme::body(), theme::TEXT_MUTED);
 }
 
-fn separator(ui: &mut egui::Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+pub(crate) fn separator(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().max(0.0), 1.0), Sense::hover());
     ui.painter().hline(rect.x_range(), rect.center().y, Stroke::new(1.0_f32, theme::LINE));
 }
 
@@ -439,21 +484,24 @@ fn prefab_row(
         .inner_margin(egui::Margin::symmetric(theme::SP_S + 2.0, theme::SP_XS))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            // Ссылка на префаб — путь или GUID: показываем имя файла, полный путь — в подсказке.
+            let asset = assets.iter().find(|a| a.path == prefab || a.guid.to_string().eq_ignore_ascii_case(prefab));
+            let path = asset.map_or(prefab, |a| a.path.as_str()).to_string();
+            let name = path.rsplit('/').next().unwrap_or(&path).trim_end_matches(".prefab").to_string();
             ui.horizontal(|ui| {
                 icons::inline(ui, Icon::Prefab, theme::PREFAB);
-                ui.add(
-                    egui::Label::new(egui::RichText::new(format!("Assets/{prefab}")).color(theme::PREFAB))
-                        .truncate(),
-                )
-                .on_hover_text("This object is an instance of the prefab: the scene stores only what differs");
+                ui.add(egui::Label::new(egui::RichText::new(name).color(theme::PREFAB)).truncate()).on_hover_text(format!(
+                    "Assets/{path}\n{}",
+                    tr_s("This object is an instance of the prefab: the scene stores only what differs")
+                ));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("Unpack").on_hover_text("Turn the instance into ordinary objects").clicked() {
+                    if crate::controls::button(ui, tr_s("Unpack")).on_hover_text(tr_s("Turn the instance into ordinary objects")).clicked() {
                         actions.push(Action::UnpackPrefab(id));
                     }
-                    if assets.iter().any(|a| a.path == prefab)
-                        && ui.small_button("Select").on_hover_text("Show the prefab in the Project window").clicked()
+                    if asset.is_some()
+                        && crate::controls::button(ui, tr_s("Select")).on_hover_text(tr_s("Show the prefab in the Project window")).clicked()
                     {
-                        project.reveal(prefab);
+                        project.reveal(&path);
                         *bottom_tab = BottomTab::Project;
                     }
                 });
@@ -461,9 +509,44 @@ fn prefab_row(
         });
 }
 
+/// Меню поля по правой кнопке на его подписи: Copy, Paste (значение того же вида),
+/// Reset to Default (значение нового компонента). Возвращает новое значение поля.
+fn field_menu(
+    ui: &mut egui::Ui,
+    label: Rect,
+    key: (&'static str, usize, &str),
+    value: &Value,
+    clipboard: &mut Option<Value>,
+    doc: &str,
+    default: impl FnOnce() -> Option<Value>,
+) -> Option<Value> {
+    let response = ui.interact(label, egui::Id::new(("field_menu", key.0, key.1, key.2)), Sense::click());
+    let response = if doc.is_empty() { response } else { response.on_hover_text(doc) };
+    let mut chosen = None;
+    let mut reset = false;
+    response.context_menu(|ui| {
+        theme::menu_body(ui);
+        if item(tr_s("Copy")).icon(Icon::Copy).show(ui) {
+            *clipboard = Some(value.clone());
+        }
+        let fits = clipboard.as_ref().is_some_and(|c| std::mem::discriminant(c) == std::mem::discriminant(value));
+        if item(tr_s("Paste")).enabled_if(fits, tr_s("Copy a value of the same kind first")).show(ui) {
+            chosen = clipboard.clone();
+        }
+        theme::menu_separator(ui);
+        if item(tr_s("Reset to Default")).icon(Icon::Reset).show(ui) {
+            reset = true;
+        }
+    });
+    if reset {
+        chosen = default();
+    }
+    chosen
+}
+
 /// Карточка компонента: заголовок с иконкой и меню «⋮», тело сворачивается.
 /// Возвращает команду из меню, если её выбрали.
-fn card(
+pub(crate) fn card(
     ui: &mut egui::Ui,
     salt: (&str, &str, usize),
     icon: Icon,
@@ -477,7 +560,7 @@ fn card(
     let mut command = None;
     let removable = salt.2 != usize::MAX;
 
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), theme::ROW + 2.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().max(0.0), theme::ROW + 2.0), Sense::hover());
     let menu_rect = Rect::from_center_size(pos2(rect.right() - theme::SP_M - 6.0, rect.center().y), vec2(20.0, 20.0));
     // Компонент можно перетащить за заголовок на другой компонент (Transform — нельзя).
     let header = ui.interact(
@@ -531,35 +614,36 @@ fn card(
     }
 
     let mut menu_ui = ui.new_child(egui::UiBuilder::new().max_rect(menu_rect));
-    let response = egui::menu::menu_custom_button(
+    let response = crate::controls::menu_anchor(
         &mut menu_ui,
-        egui::Button::new("").frame(false).min_size(menu_rect.size()),
+        menu_rect.size(),
+        false,
         |ui| {
             theme::menu_body(ui);
-            if item("Reset").icon(Icon::Reset).show(ui) {
+            if item(tr_s("Reset")).icon(Icon::Reset).show(ui) {
                 command = Some(CardCommand::Reset);
             }
             if removable {
-                if item("Copy Values").icon(Icon::Copy).show(ui) {
+                if item(tr_s("Copy Values")).icon(Icon::Copy).show(ui) {
                     command = Some(CardCommand::Copy);
                 }
-                if item("Paste Values")
-                    .enabled_if(can_paste, "Copy the values of a component of the same type first")
+                if item(tr_s("Paste Values"))
+                    .enabled_if(can_paste, tr_s("Copy the values of a component of the same type first"))
                     .show(ui)
                 {
                     command = Some(CardCommand::Paste);
                 }
                 theme::menu_separator(ui);
                 if let Some((index, count)) = position {
-                    if item("Move Up").enabled_if(index > 0, "Already the first component").show(ui) {
+                    if item(tr_s("Move Up")).enabled_if(index > 0, tr_s("Already the first component")).show(ui) {
                         command = Some(CardCommand::MoveUp);
                     }
-                    if item("Move Down").enabled_if(index + 1 < count, "Already the last component").show(ui) {
+                    if item(tr_s("Move Down")).enabled_if(index + 1 < count, tr_s("Already the last component")).show(ui) {
                         command = Some(CardCommand::MoveDown);
                     }
                     theme::menu_separator(ui);
                 }
-                if item("Remove Component").icon(Icon::Trash).show(ui) {
+                if item(tr_s("Remove Component")).icon(Icon::Trash).show(ui) {
                     command = Some(CardCommand::Remove);
                 }
             }
@@ -570,7 +654,7 @@ fn card(
         ui.painter().rect_filled(menu_rect, theme::R_S, theme::BG_HOVER);
     }
     icons::paint(ui.painter(), menu_rect.shrink(4.0), Icon::More, if response.hovered() { theme::TEXT_STRONG } else { theme::TEXT_MUTED });
-    response.on_hover_text(if removable { "Reset, copy, paste, move or remove" } else { "Reset the transform" });
+    response.on_hover_text(if removable { tr_s("Reset, copy, paste, move or remove") } else { tr_s("Reset the transform") });
 
     if open {
         egui::Frame::none()
@@ -590,10 +674,17 @@ pub(crate) fn clean_doc(doc: &str) -> String {
 }
 
 /// Строка «подпись — виджет» с выровненными колонками. Возвращает, изменено ли значение.
+///
+/// Геометрия как в Unity (`docs/design/ui-guidelines.md`, «Сетка свойств»): колонка
+/// подписей — 40 % ширины в пределах [`theme::PROP_LABEL_MIN`]…[`theme::PROP_LABEL_MAX`];
+/// колонка значения — остальное, но не шире [`theme::PROP_VALUE_MAX`] (в широком
+/// инспекторе поля не растягиваются на весь экран, а стоят слева). Ничто в строке не
+/// может сделать её шире окна: значение рисуется в дочерней области фиксированной ширины.
 pub(crate) fn property(ui: &mut egui::Ui, label: &str, doc: &str, add: impl FnOnce(&mut egui::Ui) -> bool) -> bool {
+    let total = ui.available_width();
+    let (width, value_width) = theme::property_columns(total);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme::SP_S;
-        let width = theme::label_width(ui.available_width() + 8.0);
         let (rect, response) = ui.allocate_exact_size(vec2(width, theme::FIELD_H), Sense::hover());
         let color = if response.hovered() { theme::TEXT } else { theme::TEXT_MUTED };
         let mut job = egui::text::LayoutJob::simple_singleline(label.to_string(), theme::body(), color);
@@ -610,13 +701,40 @@ pub(crate) fn property(ui: &mut egui::Ui, label: &str, doc: &str, add: impl FnOn
             }
             (true, false) => {}
         }
-        add(ui)
+        let column = Rect::from_min_size(
+            pos2(rect.right() + theme::SP_S, rect.top()),
+            vec2(value_width, theme::FIELD_H),
+        );
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(column)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        child.set_max_width(value_width);
+        // Шире колонки ничего не рисуется (по высоте — сколько нужно спискам).
+        let clip = ui.clip_rect();
+        child.set_clip_rect(Rect::from_min_max(
+            pos2(column.left().max(clip.left()), clip.top()),
+            pos2((column.right() + 1.0).min(clip.right()), clip.bottom()),
+        ));
+        let changed = add(&mut child);
+        // Высота строки — по содержимому (списки); ширина — ровно колонка.
+        let used = child.min_rect();
+        ui.allocate_rect(Rect::from_min_max(column.min, pos2(column.right(), used.bottom().max(column.bottom()))), Sense::hover());
+        changed
     })
     .inner
 }
 
 /// Ряд чисел с цветными метками осей X / Y / Z (W).
-fn axes(ui: &mut egui::Ui, values: &mut [f32], speed: f64) -> bool {
+pub(crate) fn axes(ui: &mut egui::Ui, values: &mut [f32], speed: f64) -> bool {
+    axes_mixed(ui, values, &[], speed).is_some()
+}
+
+/// То же для нескольких объектов: `mixed[i]` — у объектов разные значения оси `i`,
+/// поле показывает «—»; потянуть или вписать — задать всем. Возвращает номер изменённой
+/// оси.
+pub(crate) fn axes_mixed(ui: &mut egui::Ui, values: &mut [f32], mixed: &[bool], speed: f64) -> Option<usize> {
     const LABELS: [(&str, Color32); 4] = [
         ("X", theme::AXIS_X),
         ("Y", theme::AXIS_Y),
@@ -624,17 +742,25 @@ fn axes(ui: &mut egui::Ui, values: &mut [f32], speed: f64) -> bool {
         ("W", theme::TEXT_DISABLED),
     ];
     let count = values.len() as f32;
-    let mut changed = false;
+    let mut changed = None;
     ui.scope(|ui| {
         let spacing = theme::SP_S;
         ui.spacing_mut().item_spacing.x = spacing;
         ui.spacing_mut().button_padding.x = 4.0;
-        let cell = ((ui.available_width() - spacing * (count - 1.0)) / count).max(30.0);
-        for (value, (label, color)) in values.iter_mut().zip(LABELS) {
+        // Ячейки делят колонку значения поровну; узкая колонка — ячейки сжимаются, а не
+        // раздвигают окно.
+        let cell = ((ui.available_width() - spacing * (count - 1.0)) / count).max(12.0);
+        for (index, (value, (label, color))) in values.iter_mut().zip(LABELS).enumerate() {
             let (rect, _) = ui.allocate_exact_size(vec2(cell, theme::FIELD_H), Sense::hover());
             let tag = Rect::from_min_size(rect.min, vec2(12.0, rect.height()));
             let field = Rect::from_min_max(pos2(tag.right(), rect.top()), rect.max);
-            let response = ui.put(field, egui::DragValue::new(value).speed(speed).max_decimals(3));
+            let mut drag = egui::DragValue::new(value).speed(speed).max_decimals(3);
+            if mixed.get(index).copied().unwrap_or(false) {
+                drag = drag.custom_formatter(|_, _| "—".to_string());
+            }
+            // Ответ — на всё поле: в режиме ввода egui сужает текстовое поле внутри.
+            let mut response = ui.allocate_new_ui(egui::UiBuilder::new().max_rect(field), |ui| ui.add_sized(field.size(), drag)).inner;
+            response.rect = field;
             ui.painter().text(
                 tag.center() - vec2(1.0, 0.0),
                 Align2::CENTER_CENTER,
@@ -648,7 +774,9 @@ fn axes(ui: &mut egui::Ui, values: &mut [f32], speed: f64) -> bool {
                 egui::Rounding { nw: theme::R_S, sw: theme::R_S, ne: 0.0, se: 0.0 },
                 color,
             );
-            changed |= response.changed();
+            if response.changed() {
+                changed = Some(index);
+            }
         }
     });
     changed
@@ -666,18 +794,9 @@ pub(crate) fn value_widget(
     let width = ui.available_width();
     match value {
         Value::Bool(flag) => ui.checkbox(flag, "").changed(),
-        Value::Int(number) => ui.add_sized(vec2(width, theme::FIELD_H), egui::DragValue::new(number).speed(0.1)).changed(),
-        Value::Float(number) => ui
-            .add_sized(vec2(width, theme::FIELD_H), egui::DragValue::new(number).speed(0.05).max_decimals(3))
-            .changed(),
-        Value::Str(text) => ui
-            .add(
-                egui::TextEdit::singleline(text)
-                    .min_size(vec2(0.0, theme::FIELD_H))
-                    .vertical_align(egui::Align::Center)
-                    .desired_width(width),
-            )
-            .changed(),
+        Value::Int(number) => crate::controls::number_field(ui, number, 0.1, width).changed(),
+        Value::Float(number) => crate::controls::number_field(ui, number, 0.05, width).changed(),
+        Value::Str(text) => crate::controls::text_field(ui, text, "", width).changed(),
         Value::Vec2(x, y) => {
             let mut v = [*x, *y];
             let changed = axes(ui, &mut v, 0.05);
@@ -700,11 +819,7 @@ pub(crate) fn value_widget(
         Value::Enum(current) => {
             let mut changed = false;
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-            egui::ComboBox::from_id_salt(egui::Id::new(("enum_field", salt)))
-                .selected_text(theme::pretty_type(current))
-                .width(width)
-                .height(320.0)
-                .show_ui(ui, |ui| {
+            crate::controls::combo_ex(ui, egui::Id::new(("enum_field", salt)), theme::pretty_type(current), width, |ui| {
                     for variant in meta.variants {
                         if ui.selectable_label(current == variant, theme::pretty_type(variant)).clicked() {
                             *current = variant.to_string();
@@ -715,6 +830,7 @@ pub(crate) fn value_widget(
             changed
         }
         Value::Asset(guid_text) => asset_widget(ui, guid_text, meta, assets, asset_filter, salt),
+        Value::Object(uid) => crate::inspector_refs::object_field(ui, uid, meta, salt, false),
         Value::List(items) => list_widget(ui, items, meta, assets, asset_filter, salt),
         Value::Nil => {
             ui.label(egui::RichText::new("—").color(theme::TEXT_MUTED));
@@ -729,7 +845,7 @@ pub(crate) fn color_widget(ui: &mut egui::Ui, r: &mut f32, g: &mut f32, b: &mut 
     let mut rgba = [*r, *g, *b, *a];
     let mut changed = false;
     ui.spacing_mut().interact_size = vec2(44.0, theme::FIELD_H);
-    changed |= ui.color_edit_button_rgba_unmultiplied(&mut rgba).changed();
+    changed |= crate::controls::color_button_rgba(ui, &mut rgba).changed();
     let srgb = egui::Rgba::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], 1.0);
     let [red, green, blue, _] = Color32::from(srgb).to_array();
     let id = egui::Id::new(("color_hex", salt));
@@ -737,14 +853,7 @@ pub(crate) fn color_widget(ui: &mut egui::Ui, r: &mut f32, g: &mut f32, b: &mut 
         .data(|d| d.get_temp::<String>(id))
         .filter(|_| ui.memory(|m| m.has_focus(id)))
         .unwrap_or_else(|| format!("#{red:02x}{green:02x}{blue:02x}"));
-    let edit = ui.add(
-        egui::TextEdit::singleline(&mut text)
-            .id(id)
-            .font(theme::mono())
-            .min_size(vec2(0.0, theme::FIELD_H))
-            .vertical_align(egui::Align::Center)
-            .desired_width(ui.available_width()),
-    );
+    let edit = crate::controls::text_field_font(ui, Some(id), &mut text, "", f32::INFINITY, theme::mono());
     if edit.changed() {
         if let Ok(color) = Color32::from_hex(text.trim()) {
             let linear = egui::Rgba::from(color);
@@ -776,22 +885,22 @@ fn list_widget(
             ui.horizontal(|ui| {
                 let (rect, _) = ui.allocate_exact_size(vec2(18.0, theme::FIELD_H), Sense::hover());
                 ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, index.to_string(), theme::mono(), theme::TEXT_DISABLED);
-                let width = ui.available_width() - 24.0;
-                ui.allocate_ui(vec2(width, theme::FIELD_H), |ui| {
+                let width = (ui.available_width() - 24.0).max(0.0);
+                theme::fixed(ui, vec2(width, theme::FIELD_H), |ui| {
                     changed |= value_widget(ui, value, meta, assets, asset_filter, egui::Id::new(salt).with(index));
                 });
-                if icons::small_button(ui, Icon::Close, "Remove this element").clicked() {
+                if icons::small_button(ui, Icon::Close, tr_s("Remove this element")).clicked() {
                     remove = Some(index);
                 }
             });
         }
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(format!("{} elements", items.len())).color(theme::TEXT_MUTED));
-            let add = ui.add_enabled(!items.is_empty(), egui::Button::new("Add").min_size(vec2(48.0, theme::FIELD_H)));
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new(trn!("{n} element", "{n} elements", items.len())).color(theme::TEXT_MUTED));
+            let add = ui.add_enabled_ui(!items.is_empty(), |ui| crate::controls::button(ui, tr_s("Add"))).inner;
             let add = add.on_disabled_hover_text(
-                "The element type of an empty list is unknown here: add the first element in code or in the scene file",
+                tr_s("The element type of an empty list is unknown here: add the first element in code or in the scene file"),
             );
-            if add.on_hover_text("Add a copy of the last element").clicked() {
+            if add.on_hover_text(tr_s("Add a copy of the last element")).clicked() {
                 if let Some(last) = items.last().cloned() {
                     items.push(last);
                     changed = true;
@@ -817,16 +926,16 @@ pub(crate) fn asset_widget(
     salt: impl std::hash::Hash,
 ) -> bool {
     let current = Guid::parse(guid_text).and_then(|guid| assets.iter().find(|a| a.guid == guid));
-    let kind = if meta.asset_kind.is_empty() { "Asset" } else { meta.asset_kind };
+    let kind = if meta.asset_kind.is_empty() { tr_s("Asset") } else { tr_s(meta.asset_kind) };
     let (label, label_color) = match current {
         Some(asset) => (file_name(&asset.path).to_string(), theme::TEXT),
-        None if guid_text.is_empty() => (format!("None ({kind})"), theme::TEXT_MUTED),
-        None => ("Missing asset".to_string(), theme::ERROR),
+        None if guid_text.is_empty() => (trf!("None ({kind})", kind = kind), theme::TEXT_MUTED),
+        None => (tr_s("Missing asset").to_string(), theme::ERROR),
     };
     let fits = |asset: &AssetEntry| meta.asset_kind.is_empty() || asset.importer == meta.asset_kind;
     let mut changed = false;
 
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), theme::FIELD_H), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width().max(0.0), theme::FIELD_H), Sense::click());
     let popup = egui::Id::new(("asset_popup", salt));
     let open = ui.memory(|m| m.is_popup_open(popup));
     let border = if open {
@@ -836,7 +945,7 @@ pub(crate) fn asset_widget(
     } else {
         theme::LINE_STRONG
     };
-    ui.painter().rect(rect, theme::R_S, theme::BG_INSET, Stroke::new(1.0_f32, border));
+    crate::controls::paint_frame(ui.painter(), rect, theme::R_S, theme::BG_INSET, border);
     let (icon, icon_color) = current.map_or((asset_icon(meta.asset_kind).0, theme::TEXT_DISABLED), |a| asset_icon(&a.importer));
     icons::paint(
         ui.painter(),
@@ -867,7 +976,7 @@ pub(crate) fn asset_widget(
 
     egui::popup_below_widget(ui, popup, &response, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
         ui.set_min_width(rect.width().max(260.0));
-        theme::search_field(ui, filter, &format!("Search {kind} assets"), f32::INFINITY).request_focus();
+        theme::search_field(ui, filter, &trf!("Search {kind} assets", kind = kind), f32::INFINITY).request_focus();
         ui.add_space(theme::SP_S);
         let needle = filter.trim().to_lowercase();
         egui::ScrollArea::vertical()
@@ -875,7 +984,7 @@ pub(crate) fn asset_widget(
             .max_height(300.0)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                if picker_row(ui, Icon::Close, theme::TEXT_MUTED, "None", "", guid_text.is_empty()) {
+                if picker_row(ui, Icon::Close, theme::TEXT_MUTED, tr_s("None"), "", guid_text.is_empty()) {
                     guid_text.clear();
                     changed = true;
                     ui.memory_mut(|m| m.close_popup());
@@ -898,7 +1007,7 @@ pub(crate) fn asset_widget(
                 }
                 if shown == 0 {
                     ui.add_space(theme::SP_M);
-                    ui.label(egui::RichText::new(format!("No {kind} assets match")).color(theme::TEXT_MUTED));
+                    ui.label(egui::RichText::new(trf!("No {kind} assets match", kind = kind)).color(theme::TEXT_MUTED));
                 }
             });
     });
@@ -929,7 +1038,7 @@ pub(crate) fn asset_widget(
 
 /// Строка выпадающего списка ассетов.
 fn picker_row(ui: &mut egui::Ui, icon: Icon, color: Color32, name: &str, folder: &str, selected: bool) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), theme::ROW), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width().max(0.0), theme::ROW), Sense::click());
     let hovered = response.hovered();
     if selected {
         ui.painter().rect_filled(rect, theme::R_S, theme::selection_fill());
@@ -964,7 +1073,7 @@ fn picker_row(ui: &mut egui::Ui, icon: Icon, color: Color32, name: &str, folder:
 /// Заголовок категории в меню Add Component. `collapsed`: `Some` — заголовок сворачивает
 /// категорию (`true` — щелчок развернул бы её), `None` — просто подпись. Возвращает «щёлкнули».
 fn category_header(ui: &mut egui::Ui, title: &str, icon: Icon, count: usize, collapsed: Option<bool>) -> bool {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), theme::ROW), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().max(0.0), theme::ROW), Sense::hover());
     let response = ui.interact(rect, egui::Id::new(("add_category", title)), Sense::click());
     if response.hovered() && collapsed.is_some() {
         ui.painter().rect_filled(rect, 0.0, theme::BG_HOVER);
@@ -999,7 +1108,7 @@ fn category_header(ui: &mut egui::Ui, title: &str, icon: Icon, count: usize, col
 
 /// Кнопка Add Component и окно выбора с поиском и категориями.
 #[allow(clippy::too_many_arguments)]
-fn add_component(
+pub(crate) fn add_component(
     ui: &mut egui::Ui,
     inspector: &mut InspectorState,
     actions: &mut Vec<Action>,
@@ -1012,14 +1121,14 @@ fn add_component(
     script_rust: &mut bool,
 ) {
     let popup = ui.make_persistent_id("add_component_popup");
-    let button = theme::primary_button_wide(ui, Icon::Plus, "Add Component");
+    let button = theme::primary_button_wide(ui, Icon::Plus, tr_s("Add Component"));
     if button.clicked() {
         inspector.add_filter.clear();
         ui.memory_mut(|memory| memory.toggle_popup(popup));
     }
     egui::popup_below_widget(ui, popup, &button, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
         ui.set_min_width(button.rect.width().clamp(280.0, 420.0));
-        let search = theme::search_field(ui, &mut inspector.add_filter, "Search components", f32::INFINITY);
+        let search = theme::search_field(ui, &mut inspector.add_filter, tr_s("Search components"), f32::INFINITY);
         search.request_focus();
         ui.add_space(theme::SP_S);
         let query = inspector.add_filter.trim().to_string();
@@ -1039,7 +1148,7 @@ fn add_component(
                     }
                     let mut row = item(&entry.label)
                         .icon(catalog::component_icon(entry.kind))
-                        .enabled_if(!already, "Already on this object");
+                        .enabled_if(!already, tr_s("Already on this object"));
                     if let Some(hint) = hint {
                         row = row.shortcut(hint);
                     }
@@ -1050,7 +1159,7 @@ fn add_component(
                 if query.is_empty() {
                     let recently = crate::add_menu::recent_entries(entries, recent);
                     if !recently.is_empty() {
-                        category_header(ui, "Recent", Icon::Refresh, recently.len(), None);
+                        category_header(ui, tr_s("Recent"), Icon::Refresh, recently.len(), None);
                         for entry in recently {
                             entry_row(ui, entry, Some(entry.category));
                         }
@@ -1058,7 +1167,7 @@ fn add_component(
                     for (category, items) in crate::add_menu::grouped(entries) {
                         let collapsed = inspector.add_collapsed.contains(category);
                         let icon = crate::add_menu::category_icon(category);
-                        if category_header(ui, category, icon, items.len(), Some(collapsed)) {
+                        if category_header(ui, tr_s(category), icon, items.len(), Some(collapsed)) {
                             toggled = Some(category);
                         }
                         if !collapsed {
@@ -1075,7 +1184,7 @@ fn add_component(
                     }
                     if found.is_empty() {
                         ui.add_space(theme::SP_M);
-                        ui.label(egui::RichText::new("No component matches").color(theme::TEXT_MUTED));
+                        ui.label(egui::RichText::new(tr_s("No component matches")).color(theme::TEXT_MUTED));
                     }
                 }
             });
@@ -1095,7 +1204,7 @@ fn add_component(
         theme::menu_separator(ui);
         // Как в Unity: новый скрипт создаётся прямо отсюда и сразу вешается на объект.
         // Скрипт на Rust повесится на объект, когда редактор перезапустится с новым кодом.
-        if item("New Rust Script…").icon(Icon::Script).show(ui) {
+        if item(tr_s("New Rust Script…")).icon(Icon::Script).show(ui) {
             *script_rust = true;
             *dialog = Some(Dialog::NewScript {
                 name: inspector.add_filter.trim().to_string(),
@@ -1103,7 +1212,7 @@ fn add_component(
             });
             ui.memory_mut(|memory| memory.close_popup());
         }
-        if item("New C++ Script…")
+        if item(tr_s("New C++ Script…"))
             .icon(Icon::Script)
             .enabled_if(can_script, "Start the editor with `EditorConfig::cpp_scripts(dir)` to create scripts")
             .show(ui)
@@ -1116,7 +1225,7 @@ fn add_component(
             ui.memory_mut(|memory| memory.close_popup());
         }
         // Сценарий не собирается: `ScenarioRunner` вешается на объект сразу.
-        if item("New Scenario Script…").icon(Icon::Script).show(ui) {
+        if item(tr_s("New Scenario Script…")).icon(Icon::Script).show(ui) {
             *dialog = Some(Dialog::NewScenario {
                 name: inspector.add_filter.trim().to_string(),
                 folder: String::new(),

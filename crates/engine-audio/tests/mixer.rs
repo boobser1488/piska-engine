@@ -19,6 +19,14 @@ fn dc(value: f32, seconds: f32) -> Arc<AudioClip> {
     Arc::new(AudioClip::mono(RATE, vec![value; (RATE as f32 * seconds) as usize]))
 }
 
+/// Микшер «как есть»: без запаса −6 дБ и без лимитера — уровни в тестах точные.
+fn raw(rate: u32) -> Mixer {
+    let mut m = Mixer::new(rate);
+    m.set_headroom_db(0.0);
+    m.set_limiter_enabled(false);
+    m
+}
+
 fn render(mixer: &mut Mixer, seconds: f32) -> Vec<f32> {
     let mut out = vec![0.0; (RATE as f32 * seconds) as usize * 2];
     mixer.render(&mut out);
@@ -50,7 +58,7 @@ fn silence_when_nothing_plays() {
 
 #[test]
 fn sine_has_the_right_frequency_and_amplitude() {
-    let mut mixer = Mixer::new(RATE);
+    let mut mixer = raw(RATE);
     mixer.play(sine(440.0, 0.5, 2.0), VoiceParams::default());
     let out = render(&mut mixer, 1.0);
     let l = left(&out);
@@ -89,7 +97,7 @@ fn pitch_two_doubles_the_frequency() {
 #[test]
 fn pan_moves_sound_between_channels() {
     let play = |pan: f32| {
-        let mut mixer = Mixer::new(RATE);
+        let mut mixer = raw(RATE);
         mixer.play(sine(300.0, 0.5, 1.0), VoiceParams { pan, ..VoiceParams::default() });
         render(&mut mixer, 0.2)
     };
@@ -119,7 +127,7 @@ fn stereo_clips_keep_their_channels() {
         samples.push(s * 0.8); // L
         samples.push(0.0); // R
     }
-    let mut mixer = Mixer::new(RATE);
+    let mut mixer = raw(RATE);
     mixer.play(Arc::new(AudioClip::from_samples(RATE, 2, samples)), VoiceParams::default());
     let out = render(&mut mixer, 0.05);
     assert!(peak(&left(&out)) > 0.7);
@@ -157,7 +165,7 @@ fn distance_attenuates_and_pan_follows_the_side() {
 
 #[test]
 fn non_looping_voice_ends_and_looping_voice_continues() {
-    let mut mixer = Mixer::new(RATE);
+    let mut mixer = raw(RATE);
     let once = mixer.play(sine(440.0, 0.5, 0.1), VoiceParams::default());
     let looped = mixer.play(sine(440.0, 0.5, 0.1), VoiceParams { looping: true, ..VoiceParams::default() });
     assert_eq!(mixer.voice_count(), 2);
@@ -190,20 +198,20 @@ fn stop_silences_quickly_and_invalidates_the_handle() {
 
 #[test]
 fn fade_in_is_monotonic_and_reaches_full_volume() {
-    let mut mixer = Mixer::new(RATE);
+    let mut mixer = raw(RATE);
     mixer.play(dc(0.8, 1.0), VoiceParams { fade_in: 0.2, ..VoiceParams::default() });
     let l = left(&render(&mut mixer, 0.4));
     assert!(l[0].abs() < 0.001);
     assert!(l.windows(2).all(|w| w[1] >= w[0] - 1e-6), "fade-in is not monotonic");
     assert!((l[l.len() - 1] - 0.8).abs() < 1e-3);
-    // Посередине фейда — примерно половина.
+    // Посередине фейда — равномощная кривая: около 0.69 (−3 дБ), а не половина.
     let mid = l[(0.1 * RATE as f32) as usize];
-    assert!((mid - 0.4).abs() < 0.03, "{mid}");
+    assert!((mid - 0.8 * 0.6875).abs() < 0.03, "{mid}");
 }
 
 #[test]
 fn fade_out_is_monotonic_and_stops_the_voice() {
-    let mut mixer = Mixer::new(RATE);
+    let mut mixer = raw(RATE);
     let id = mixer.play(dc(0.8, 2.0), VoiceParams::default());
     render(&mut mixer, 0.05);
     mixer.fade_out(id, 0.2);
@@ -220,7 +228,7 @@ fn fade_out_is_monotonic_and_stops_the_voice() {
 #[test]
 fn bus_volume_mute_and_master() {
     let render_with = |setup: &dyn Fn(&mut Mixer)| {
-        let mut mixer = Mixer::new(RATE);
+        let mut mixer = raw(RATE);
         mixer.play(dc(0.8, 1.0), VoiceParams { bus: Bus::Sfx, ..VoiceParams::default() });
         mixer.play(dc(0.2, 1.0), VoiceParams { bus: Bus::Music, ..VoiceParams::default() });
         setup(&mut mixer);
@@ -244,7 +252,7 @@ fn bus_volume_mute_and_master() {
 
 #[test]
 fn volume_changes_are_smooth() {
-    let mut mixer = Mixer::new(RATE);
+    let mut mixer = raw(RATE);
     let id = mixer.play(dc(1.0, 1.0), VoiceParams::default());
     render(&mut mixer, 0.01);
     mixer.set_volume(id, 0.0);
@@ -256,7 +264,7 @@ fn volume_changes_are_smooth() {
 
 #[test]
 fn pause_freezes_and_resume_continues() {
-    let mut mixer = Mixer::new(RATE);
+    let mut mixer = raw(RATE);
     let id = mixer.play(sine(440.0, 0.5, 1.0), VoiceParams::default());
     render(&mut mixer, 0.1);
     let before = mixer.position(id).unwrap();
@@ -273,10 +281,12 @@ fn start_offset_skips_the_beginning() {
     let mut samples = vec![0.0; 4410];
     samples.extend(vec![0.7; 4410]);
     let clip = Arc::new(AudioClip::mono(RATE, samples));
-    let mut mixer = Mixer::new(RATE);
+    let mut mixer = raw(RATE);
     mixer.play(clip, VoiceParams { start_offset: 0.1, ..VoiceParams::default() });
-    let l = left(&render(&mut mixer, 0.01));
-    assert!((l[10] - 0.7).abs() < 1e-3);
+    let l = left(&render(&mut mixer, 0.02));
+    // Старт не с начала клипа — с нарастанием 3 мс (там сигнал не с нуля), затем уровень клипа.
+    assert!(l[0].abs() < 0.05);
+    assert!((l[400] - 0.7).abs() < 1e-3);
 }
 
 #[test]

@@ -1,0 +1,47 @@
+Components: core, android
+DRY RUN: nothing is installed, downloaded or changed. Detection below only reads.
+[1/13] STEP core.git - Git
+         elevation: The Git installer may ask Windows for administrator rights (one UAC prompt).
+         run      winget install --id Git.Git --exact --source winget --accept-source-agreements --accept-package-agreements --silent
+[2/13] STEP core.buildtools - Visual Studio Build Tools (C++ workload + Windows SDK)
+         elevation: Visual Studio Build Tools install system-wide: Windows will show ONE administrator (UAC) prompt for it.
+         licence: Visual Studio Build Tools (https://visualstudio.microsoft.com/license-terms/) - accepted only with -AcceptLicenses or your answer
+         run      winget install --id Microsoft.VisualStudio.2022.BuildTools --exact --source winget --accept-source-agreements --accept-package-agreements --silent --override "--passive --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --includeRecommended"
+         note     about 5 GB; a reboot may be requested afterwards (the installer then stops: re-run with -Resume)
+[3/13] STEP core.rustup - Rust (rustup, stable, MSVC)
+         download https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe (~14 MB)
+         verify   sha256 from https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe.sha256
+         cache    <FAKE>\Install\cache
+         run      rustup-init.exe -y --default-host x86_64-pc-windows-msvc --default-toolchain stable --profile minimal
+[4/13] STEP core.rust-components - Rust components (clippy, rustfmt)
+         run      rustup component add clippy rustfmt
+[5/13] STEP core.vulkan - Vulkan runtime (GPU driver)
+         note     vulkan-1.dll is installed by your GPU driver. If it is missing, install the current driver from NVIDIA / AMD / Intel (the engine also runs on DX12).
+[6/13] STEP android.jdk - JDK 17
+         elevation: The JDK installer may ask for administrator rights (one UAC prompt).
+         run      winget install --id EclipseAdoptium.Temurin.17.JDK --exact --source winget --accept-source-agreements --accept-package-agreements --silent
+[7/13] STEP android.cmdline-tools - Android command-line tools (sdkmanager)
+         download https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip (~156 MB)
+         verify   sha256 90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a
+         cache    <FAKE>\Install\cache
+         extract  to <FAKE>\Local\Android\Sdk\cmdline-tools\latest
+[8/13] STEP android.licenses - Android SDK licences
+         licence: the Android SDK (https://developer.android.com/studio/terms) - accepted only with -AcceptLicenses or your answer
+         run      sdkmanager --sdk_root=<FAKE>\Local\Android\Sdk --licenses   (answers 'y' to every licence; only after you accept)
+[9/13] STEP android.packages - Android SDK packages
+         run      sdkmanager --sdk_root=<FAKE>\Local\Android\Sdk "platform-tools" "platforms;android-35" "build-tools;36.0.0" "ndk;28.2.13676358"
+[10/13] STEP android.cargo-ndk - cargo-ndk 4.1.2
+         run      cargo install cargo-ndk --version 4.1.2 --locked   (compiles from crates.io, a few minutes; cargo checks crate hashes)
+[11/13] STEP android.target.aarch64-linux-android - Rust target aarch64-linux-android
+         run      rustup target add aarch64-linux-android
+[12/13] STEP android.env - Environment: ANDROID_HOME, ANDROID_NDK_HOME (and JAVA_HOME if unset)
+         env      ANDROID_HOME=<FAKE>\Local\Android\Sdk (user)
+         env      ANDROID_NDK_HOME=<FAKE>\Local\Android\Sdk\ndk\28.2.13676358 (user)
+         env      JAVA_HOME=<JDK folder> (user, only if it is not set yet)
+[13/13] STEP config.preferences - Editor preferences: Build & Tools paths
+         prefs    tool_cargo = <FAKE>\Home\.cargo\bin\cargo.exe
+         prefs    tool_android_sdk = <FAKE>\Local\Android\Sdk
+         prefs    tool_android_ndk = <FAKE>\Local\Android\Sdk\ndk\28.2.13676358
+         prefs    tool_java = <JDK folder>
+         file     <FAKE>\Roaming\PiskaEngine\editor.ron  (merged: existing values are kept, a backup .piska-backup-<time> is made first)
+DRY RUN finished: no changes were made.

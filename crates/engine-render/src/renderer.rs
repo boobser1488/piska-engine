@@ -94,6 +94,12 @@ struct GpuTexture {
     view: wgpu::TextureView,
     /// Пиксель-арт: без сглаживания (материал берёт резкий сэмплер).
     nearest: bool,
+    /// Пиксель-арт с мипмапами (`"filter": Enum("Pixel")`): вблизи — резкие пиксели,
+    /// вдали — трилинейное уменьшение (не рябит).
+    pixel: bool,
+    /// Атлас модели Piska Modeler с линейной фильтрацией: без мипмапов и без анизотропии
+    /// (прямоугольники граней лежат вплотную, мипы и анизотропия смешали бы соседей).
+    atlas: bool,
 }
 
 struct GpuMesh {
@@ -179,6 +185,9 @@ pub struct CameraView {
     /// Сетка плоскости (только виды редактора), глубина-тестируемая: модели её закрывают.
     /// У игровых камер `None`. См. [`SceneGrid`].
     pub grid: Option<SceneGrid>,
+    /// Применять туман сцены (`Environment`). Вид Scene редактора по умолчанию — без
+    /// тумана, как переключатель Fog в Unity; игровые камеры — всегда с ним.
+    pub fog: bool,
 }
 
 impl CameraView {
@@ -186,7 +195,7 @@ impl CameraView {
     pub fn orthographic_2d(center: Vec2, half_height: f32, aspect: f32, clear_color: Color) -> Self {
         let half_h = half_height.max(1e-4);
         let half_w = half_h * aspect;
-        let projection = Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, -1000.0, 1000.0);
+        let projection = crate::depth::orthographic(-half_w, half_w, -half_h, half_h, -1000.0, 1000.0);
         let view = Mat4::from_translation(-center.extend(0.0));
         Self {
             view_proj: projection * view,
@@ -197,12 +206,13 @@ impl CameraView {
             culling_mask: u32::MAX,
             overlay: false,
             grid: None,
+            fog: true,
         }
     }
 
     /// Перспективный вид из точки `eye` на точку `target` (ось Y — вверх).
     pub fn look_at(eye: Vec3, target: Vec3, fov_deg: f32, aspect: f32, clear_color: Color, sky: bool) -> Self {
-        let projection = Mat4::perspective_rh(fov_deg.to_radians(), aspect.max(1e-4), 0.05, 2000.0);
+        let projection = crate::depth::perspective(fov_deg.to_radians(), aspect.max(1e-4), 0.05, 2000.0);
         let view = Mat4::look_at_rh(eye, target, Vec3::Y);
         Self {
             view_proj: projection * view,
@@ -213,6 +223,7 @@ impl CameraView {
             culling_mask: u32::MAX,
             overlay: false,
             grid: None,
+            fog: true,
         }
     }
 }
@@ -324,6 +335,12 @@ pub struct Renderer {
     sampler_nearest: wgpu::Sampler,
     sampler_tiled: wgpu::Sampler,
     sampler_tiled_nearest: wgpu::Sampler,
+    /// Пиксель-арт с мипмапами: увеличение — ближайший тексель, уменьшение — трилинейно.
+    sampler_tiled_pixel: wgpu::Sampler,
+    /// Линейный атлас модели: с повторением, без мипмапов и анизотропии.
+    sampler_atlas: wgpu::Sampler,
+    /// Предупреждение о матрице вида с обычной глубиной — один раз.
+    warned_standard_depth: bool,
     post: PostChain,
     /// Белая 1×1 — для спрайтов и мешей без текстуры (чистый цвет).
     white: GpuTexture,
@@ -583,7 +600,7 @@ impl Renderer {
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SpriteVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x4],
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4],
                 }],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
@@ -594,7 +611,7 @@ impl Renderer {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(depth_state(false, wgpu::CompareFunction::LessEqual)),
+            depth_stencil: Some(depth_state(false, wgpu::CompareFunction::GreaterEqual)),
             multisample: wgpu::MultisampleState {
                 count: SAMPLES,
                 ..wgpu::MultisampleState::default()
@@ -720,6 +737,15 @@ impl Renderer {
             address_mode_v: wgpu::AddressMode::Repeat,
             ..wgpu::SamplerDescriptor::default()
         });
+        let sampler_tiled_pixel = device.create_sampler(&pixel_sampler_descriptor());
+        let sampler_atlas = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("model atlas sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..wgpu::SamplerDescriptor::default()
+        });
 
         let solid = |pixels: &[u8], side: u32| {
             upload_texture(
@@ -783,6 +809,9 @@ impl Renderer {
             sampler_nearest,
             sampler_tiled,
             sampler_tiled_nearest,
+            sampler_tiled_pixel,
+            sampler_atlas,
+            warned_standard_depth: false,
             post,
             white,
             missing,
@@ -856,6 +885,7 @@ impl Renderer {
                     culling_mask: camera.culling_mask,
                     overlay: true,
                     grid: None,
+                    fog: true,
                 }
             }
             None => {
@@ -876,6 +906,7 @@ impl Renderer {
                     culling_mask: camera.culling_mask,
                     overlay: true,
                     grid: None,
+                    fog: true,
                 }
             }
         }
@@ -903,26 +934,31 @@ impl Renderer {
             let image = decoded
                 .map_err(|e| format!("cannot decode `{name}`: {e}"))?
                 .to_rgba8();
-            let nearest = assets
-                .meta(guid)
-                .and_then(|meta| meta.settings.get("filter"))
-                .is_some_and(|v| *v == Value::Enum("Nearest".to_string()));
-            Ok::<_, String>((image, nearest))
+            let filter = TextureFilter::from_setting(assets.meta(guid).and_then(|meta| meta.settings.get("filter")));
+            Ok::<_, String>((image, filter, engine_assets::has_embedded_atlas(&name)))
         })();
 
         match loaded {
-            Ok((image, nearest)) => {
-                // Пиксель-арт остаётся резким: без сглаживания и без мипмапов.
+            Ok((image, filter, atlas)) => {
+                let nearest = filter == TextureFilter::Nearest;
+                let pixel = filter == TextureFilter::Pixel;
+                // Пиксель-арт остаётся резким: без сглаживания и без мипмапов. Атлас
+                // модели (`.pmodel`) — тоже без мипмапов: грани в нём лежат вплотную, и
+                // уменьшенные копии смешали бы их цвета на швах (см. `inset_atlas_uvs`).
                 // Сэмплер с повторением для мешей выбирает материал (по `nearest`).
-                let sampler = if nearest { &self.sampler_nearest } else { &self.sampler_linear };
-                let texture = upload_texture(
+                // `Pixel` — резкие пиксели вблизи, но с мипмапами: вдали не рябит.
+                let sampler = if nearest || pixel { &self.sampler_nearest } else { &self.sampler_linear };
+                let mut texture = upload_texture(
                     &self.device,
                     &self.queue,
                     &self.texture_layout,
                     sampler,
                     &image,
-                    !nearest,
+                    (!nearest && !atlas) || pixel,
                 );
+                texture.nearest = nearest;
+                texture.pixel = pixel;
+                texture.atlas = atlas && !nearest && !pixel;
                 self.textures.insert(guid, texture);
             }
             Err(reason) => {
@@ -952,7 +988,11 @@ impl Renderer {
                 }
                 let loaded = assets
                     .ok_or_else(|| "no AssetDatabase in world.resources".to_string())
-                    .and_then(|assets| assets.load_mesh(guid).map_err(|e| e.to_string()));
+                    .and_then(|assets| {
+                        let mut data = assets.load_mesh(guid).map_err(|e| e.to_string())?;
+                        inset_atlas_uvs(&mut data, guid, assets);
+                        Ok(data)
+                    });
                 match loaded {
                     Ok(data) => data,
                     Err(reason) => {
@@ -978,7 +1018,8 @@ impl Renderer {
         if let Some(mesh) = self.meshes.get(&key) {
             return Ok(mesh.bounds);
         }
-        let data = assets.load_mesh(guid).map_err(|e| e.to_string())?;
+        let mut data = assets.load_mesh(guid).map_err(|e| e.to_string())?;
+        inset_atlas_uvs(&mut data, guid, assets);
         let mut gpu = upload_mesh(&self.device, &data);
         gpu.id = self.next_mesh_id;
         self.next_mesh_id += 1;
@@ -1048,6 +1089,23 @@ impl Renderer {
         height: u32,
         view: &CameraView,
     ) -> RenderStats {
+        // Сцена рисуется с обратной глубиной (depth.rs). Свою матрицу с обычной глубиной
+        // (`Mat4::perspective_rh` …) переводим здесь: иначе тест «больше» оставил бы в
+        // кадре самое дальнее.
+        let converted;
+        let view = if crate::depth::uses_reversed_depth(view.view_proj, view.position) {
+            view
+        } else {
+            if !self.warned_standard_depth {
+                self.warned_standard_depth = true;
+                log::warn!(
+                    "CameraView::view_proj uses standard 0..1 depth; converted to reversed-Z. \
+                     Build projections with engine_render::perspective / orthographic for full depth precision"
+                );
+            }
+            converted = CameraView { view_proj: crate::depth::to_reversed_depth(view.view_proj), ..*view };
+            &converted
+        };
         let extract_clock = Stopwatch::start();
         let assets = world.resources.get::<AssetDatabase>();
         let scene = &world.scene;
@@ -1277,6 +1335,14 @@ impl Renderer {
             environment.fog_density *= finite_or(g.fog_scale, 1.0).max(0.0);
             environment.bloom = if g.bloom { environment.bloom * finite_or(g.bloom_intensity, 1.0).max(0.0) } else { 0.0 };
         }
+        if !view.fog {
+            environment.fog_density = 0.0;
+        }
+        // Форма тумана (компонент `Fog`, fog.rs): начало, спад с высотой; выключатель.
+        let (fog_on, fog_shape) = crate::fog::Fog::shader_params(&world.scene);
+        if !fog_on {
+            environment.fog_density = 0.0;
+        }
         // Рельефы: подгрузка чанков вокруг камеры и отбор видимых (terrain_pass.rs).
         self.terrain.prepare(&self.device, &self.queue, world, view.position, &frustum, mask, assets);
 
@@ -1302,6 +1368,8 @@ impl Renderer {
         let sky_horizon = Vec3::new(0.015, 0.02, 0.04)
             .lerp(Vec3::new(0.55, 0.70, 0.90), day)
             .lerp(Vec3::new(0.95, 0.50, 0.25), sunset * 0.7);
+        // Свои цвета неба сцены (компонент `SkyColors`, sky_colors.rs).
+        let (sky_zenith, sky_horizon) = crate::sky_colors::SkyColors::apply(scene, sky_zenith, sky_horizon);
 
         let caster_bounds = frame
             .items
@@ -1481,7 +1549,7 @@ impl Renderer {
             sky_zenith: sky_zenith.extend(environment.ambient.max(0.0)).to_array(),
             sky_horizon: sky_horizon.extend(environment.fog_density.max(0.0)).to_array(),
             shadow_params,
-            counts: [point_count as f32, 0.0, 0.0, 0.0],
+            counts: [point_count as f32, fog_shape[0], fog_shape[1], fog_shape[2]],
             points: point_data,
         };
         self.queue
@@ -1565,7 +1633,8 @@ impl Renderer {
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: depth_view,
                     depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
+                        // Обратная глубина: «дальше всего» — ноль.
+                        load: wgpu::LoadOp::Clear(crate::depth::FAR_DEPTH),
                         store: wgpu::StoreOp::Discard,
                     }),
                     stencil_ops: None,
@@ -1593,7 +1662,7 @@ impl Renderer {
             if let Some(grid) = &view.grid {
                 // Ортографический вид: у матрицы нет перспективного деления (clip.w не зависит от точки).
                 let ortho = view.view_proj.x_axis.w == 0.0 && view.view_proj.y_axis.w == 0.0 && view.view_proj.z_axis.w == 0.0;
-                self.grid.upload(&self.queue, grid, ortho);
+                self.grid.upload(&self.queue, grid, view.view_proj, view.position, ortho);
                 self.grid.draw(&mut pass, &self.globals_bind_group);
                 draw_calls += 1;
             }
@@ -1630,6 +1699,12 @@ impl Renderer {
                 }
             }
         }
+        // Цветокоррекция сцены (компонент `ColorGrading`, grading.rs) — только для вида,
+        // который берёт пост-обработку из сцены.
+        self.post.set_grading(match view.post {
+            None => crate::grading::ColorGrading::scene_params(scene),
+            Some(_) => crate::grading::GradingParams::OFF,
+        });
         self.post
             .run(&self.queue, &mut encoder, target, post_settings);
         // Экранный слой (игровой интерфейс) — поверх пост-обработки, см. overlay.rs.
@@ -1966,5 +2041,111 @@ fn upload_texture_as(
         },
         view,
         nearest: !mipmaps,
+        pixel: false,
+        atlas: false,
+    }
+}
+
+/// Фильтр текстуры из настройки импорта `filter` в `.meta`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TextureFilter {
+    /// Сглаживание и мипмапы (по умолчанию).
+    Linear,
+    /// Пиксель-арт без мипмапов (спрайты, интерфейс).
+    Nearest,
+    /// Пиксель-арт на поверхностях мира: вблизи — ближайший тексель (резко), вдали —
+    /// мипмапы и трилинейное уменьшение (без ряби на мостовой и стенах).
+    Pixel,
+}
+
+impl TextureFilter {
+    pub(crate) fn from_setting(value: Option<&Value>) -> Self {
+        match value {
+            Some(Value::Enum(name)) if name == "Nearest" => Self::Nearest,
+            Some(Value::Enum(name)) if name == "Pixel" => Self::Pixel,
+            _ => Self::Linear,
+        }
+    }
+}
+
+/// Сэмплер `Pixel` для мешей: повторение, увеличение — ближайший тексель, уменьшение и
+/// переход между мипами — линейно (анизотропия в wgpu требует линейного увеличения).
+pub(crate) fn pixel_sampler_descriptor() -> wgpu::SamplerDescriptor<'static> {
+    wgpu::SamplerDescriptor {
+        label: Some("tiled pixel-art sampler with mipmaps"),
+        address_mode_u: wgpu::AddressMode::Repeat,
+        address_mode_v: wgpu::AddressMode::Repeat,
+        mag_filter: wgpu::FilterMode::Nearest,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::FilterMode::Linear,
+        ..wgpu::SamplerDescriptor::default()
+    }
+}
+
+#[cfg(test)]
+mod pixel_filter_tests {
+    use super::*;
+
+    #[test]
+    fn the_filter_setting_picks_linear_nearest_or_pixel() {
+        assert_eq!(TextureFilter::from_setting(None), TextureFilter::Linear);
+        assert_eq!(TextureFilter::from_setting(Some(&Value::Enum("Linear".into()))), TextureFilter::Linear);
+        assert_eq!(TextureFilter::from_setting(Some(&Value::Enum("Nearest".into()))), TextureFilter::Nearest);
+        assert_eq!(TextureFilter::from_setting(Some(&Value::Enum("Pixel".into()))), TextureFilter::Pixel);
+    }
+
+    #[test]
+    fn pixel_textures_are_sharp_up_close_and_mipmapped_far_away() {
+        let d = pixel_sampler_descriptor();
+        assert_eq!(d.mag_filter, wgpu::FilterMode::Nearest);
+        assert_eq!(d.min_filter, wgpu::FilterMode::Linear);
+        assert_eq!(d.mipmap_filter, wgpu::FilterMode::Linear);
+        assert_eq!(d.address_mode_u, wgpu::AddressMode::Repeat);
+    }
+}
+
+/// Защита атласа модели Piska Modeler от смешивания граней при линейной фильтрации:
+/// UV каждого треугольника сдвигаются внутрь его прямоугольника в атласе на полтекселя
+/// (билинейная выборка у края грани тогда не задевает соседний прямоугольник). Для
+/// «ближайшего» фильтра (по умолчанию у `.pmodel`) не нужно — UV не меняются, крайние
+/// пиксели граней остаются полной ширины. Вершины на стыке разных прямоугольников
+/// (у моделера их нет) ограничиваются пересечением прямоугольников.
+fn inset_atlas_uvs(data: &mut MeshData, guid: Guid, assets: &AssetDatabase) {
+    let is_atlas = assets.relative_path_of(guid).is_some_and(engine_assets::has_embedded_atlas);
+    let linear = assets
+        .meta(guid)
+        .and_then(|meta| meta.settings.get("filter"))
+        .is_some_and(|v| *v == Value::Enum("Linear".to_string()));
+    if !is_atlas || !linear || data.uvs.len() != data.positions.len() {
+        return;
+    }
+    let Ok(bytes) = assets.read_image(guid) else { return };
+    let Ok((width, height)) = image::ImageReader::new(std::io::Cursor::new(&bytes[..]))
+        .with_guessed_format()
+        .map_err(|_| ())
+        .and_then(|r| r.into_dimensions().map_err(|_| ()))
+    else {
+        return;
+    };
+    let half = Vec2::new(0.5 / width.max(1) as f32, 0.5 / height.max(1) as f32);
+    let mut ranges = vec![(Vec2::splat(f32::NEG_INFINITY), Vec2::splat(f32::INFINITY)); data.uvs.len()];
+    for triangle in data.indices.chunks_exact(3) {
+        let corners = [triangle[0], triangle[1], triangle[2]].map(|i| Vec2::from(data.uvs[i as usize]));
+        let min = corners[0].min(corners[1]).min(corners[2]);
+        let max = corners[0].max(corners[1]).max(corners[2]);
+        // Внутрь на полтекселя, но не дальше середины (грань уже тексела).
+        let middle = (min + max) * 0.5;
+        let low = (min + half).min(middle);
+        let high = (max - half).max(middle);
+        for &i in triangle {
+            let range = &mut ranges[i as usize];
+            range.0 = range.0.max(low);
+            range.1 = range.1.min(high);
+        }
+    }
+    for (uv, (low, high)) in data.uvs.iter_mut().zip(ranges) {
+        if low.x <= high.x && low.y <= high.y {
+            *uv = Vec2::from(*uv).clamp(low, high).to_array();
+        }
     }
 }

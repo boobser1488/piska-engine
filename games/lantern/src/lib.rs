@@ -5,78 +5,56 @@
 //! платформы, пружины, контрольные точки, четыре вида врагов и босс. Двойной прыжок
 //! открывается в конце 2-го уровня, рывок — в конце 4-го.
 //!
-//! Устройство: карты уровней — `assets/scenes/levelN.scene` (тайлмапы и список объектов,
-//! пишет `tools/gen_levels.py`), поведение — компоненты ниже, физика — `phys` (кинематика по
-//! сетке тайлов). `build()` собирает приложение; `engine::game_main!` делает из него
-//! программу для десктопа, браузера и Android (`docs/api/export.md`).
+//! Устройство: игра — это проект. Всё содержимое лежит в `assets/`: сцены уровней и меню,
+//! префабы персонажей и предметов, интерфейс (`ui/`), звук (`audio/`), таблицы (`data/`),
+//! сценарии (`scenarios/`), карта ввода (`project.settings`). Поведение — компоненты в
+//! `src/scripts/` (по одному на файл); общие помощники — `phys`, `combat`, `common`.
+//! `build()` только подключает ассеты, регистрирует скрипты и грузит первую сцену.
+//! Как собрана игра и как её править — `README.md`.
 #![forbid(unsafe_code)]
 
-pub mod boss;
+pub mod audio_bank;
+pub mod combat;
 pub mod common;
 pub mod controls;
 pub mod data;
-pub mod enemies;
-pub mod level;
-pub mod menu;
-pub mod objects;
 pub mod phys;
-pub mod player;
-pub mod scenery;
-pub mod sfx;
-pub mod spawn;
-pub mod ui;
-
-/// Скрипты на Rust, созданные в редакторе (New Rust Script).
 pub mod scripts;
+pub mod sfx;
+pub mod ui;
 
 use engine::prelude::*;
 
-pub use data::{Progress, RunResult, Session, LEVELS, LEVEL_COUNT};
-pub use level::{LevelManager, LevelState};
-pub use player::Player;
+pub use data::{GameData, LevelInfo, Progress, Rules, RunResult, Session, LEVEL_COUNT};
+pub use scripts::level_manager::{LevelManager, LevelState};
+pub use scripts::player::Player;
 
 /// Имя игры: каталог сохранений на десктопе, ключ `localStorage` в браузере.
 pub const GAME_NAME: &str = "Lantern Keeper";
 
-/// Зарегистрировать компоненты игры (сцены ссылаются на них по имени).
+/// Зарегистрировать компоненты игры (сцены и префабы ссылаются на них по имени).
 pub fn register(app: &mut App) {
     scripts::register(app);
-    app.register::<Player>()
-        .register::<LevelManager>()
-        .register::<menu::MenuController>()
-        .register::<scenery::Parallax>()
-        .register::<objects::Firefly>()
-        .register::<objects::Checkpoint>()
-        .register::<objects::Spring>()
-        .register::<objects::MovingPlatform>()
-        .register::<objects::CrumblePlatform>()
-        .register::<objects::Gate>()
-        .register::<objects::Exit>()
-        .register::<objects::Hint>()
-        .register::<objects::Projectile>()
-        .register::<objects::Rock>()
-        .register::<enemies::Crawler>()
-        .register::<enemies::Brute>()
-        .register::<enemies::Bat>()
-        .register::<enemies::Spitter>()
-        .register::<boss::Boss>();
 }
 
 /// Собрать игру с заданным хранилищем сохранений (тесты передают `SaveData::in_memory()`).
 pub fn build_with(save: SaveData) -> Result<App, EngineError> {
+    build_in(save, engine::assets_dir!())
+}
+
+/// То же, но с каталогом ассетов `assets` (копия проекта после правок в редакторе — в тестах).
+pub fn build_in(save: SaveData, assets: impl AsRef<std::path::Path>) -> Result<App, EngineError> {
     let mut app = engine::app();
     register(&mut app);
-    controls::setup(&mut app.world.input);
 
     let progress = Progress::load(&save);
     app.world.resources.insert(save);
-    engine::mount_assets(&mut app, engine::assets_dir!())?;
+    engine::mount_assets(&mut app, assets)?; // сцены, префабы, project.settings
 
     let database = app.world.resources.get::<AssetDatabase>().expect("mount_assets inserted the database").clone();
-    app.world.resources.insert(common::Gfx::load(&database)?);
-
+    app.world.resources.insert(GameData::load(&database)?);
+    audio_bank::install(&mut app)?;
     if let Some(audio) = app.world.resources.get_mut::<Audio>() {
-        sfx::install(audio);
         sfx::apply_volumes(audio, progress.music, progress.sfx);
     }
     app.world.resources.insert(progress);
@@ -93,7 +71,13 @@ pub fn build() -> Result<App, EngineError> {
 
 /// Перейти на уровень `n` (с нуля) прямо сейчас: для тестов и снимков экрана.
 pub fn goto_level(app: &mut App, n: usize) {
-    app.world.scenes().load(LEVELS[n.min(LEVEL_COUNT - 1)].scene);
+    let scene = app
+        .world
+        .resources
+        .get::<GameData>()
+        .map(|d| d.level(n).scene.clone())
+        .unwrap_or_else(|| format!("level{}", n + 1));
+    app.world.scenes().load(&scene);
 }
 
 engine::game_main!(build, WindowConfig::titled("Хранитель фонаря").with_size(1280, 720));

@@ -4,6 +4,7 @@
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{pos2, vec2, Align2, Color32, FontId, Pos2, Rect, Response, Sense, Shape, Stroke, Ui};
 use engine_editor::kit::icons::{self, Icon};
+use engine_editor::kit::controls::{self, Kind};
 use engine_editor::kit::theme;
 
 use crate::templates::Template;
@@ -53,6 +54,13 @@ pub fn paint_badge(painter: &egui::Painter, left: f32, y: f32, text: &str, tone:
     rect
 }
 
+/// Метка в строке раскладки: занимает своё место (в отличие от `paint_badge`).
+pub fn paint_badge_inline(ui: &mut Ui, text: &str, tone: Tone) {
+    let width = badge_width(ui.painter(), text);
+    let (rect, _) = ui.allocate_exact_size(vec2(width, 18.0), Sense::hover());
+    paint_badge(ui.painter(), rect.left(), rect.center().y, text, tone);
+}
+
 /// Текст в одну строку, обрезанный многоточием по ширине.
 pub fn paint_elided(painter: &egui::Painter, pos: Pos2, text: &str, font: FontId, color: Color32, max_width: f32, align: Align2) -> Rect {
     let mut job = LayoutJob::single_section(
@@ -73,6 +81,48 @@ pub fn paint_elided(painter: &egui::Painter, pos: Pos2, text: &str, font: FontId
     let rect = align.anchor_size(pos, galley.size());
     painter.galley(rect.min, galley, color);
     rect
+}
+
+/// Подпись в одну строку не шире `max_width` (с «…»); обрезанная — с полным текстом во
+/// всплывающей подсказке. Прямоугольник регистрируется под `id` (по нему проверяют, что
+/// текст не заходит под кнопки). Меньше 24 пикселей места — подпись не рисуется.
+#[allow(clippy::too_many_arguments)]
+pub fn caption_elided(
+    ui: &Ui,
+    id: egui::Id,
+    pos: Pos2,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    max_width: f32,
+    align: Align2,
+) -> Option<Rect> {
+    if max_width < 24.0 || text.is_empty() {
+        return None;
+    }
+    let mut job = LayoutJob::single_section(
+        text.to_string(),
+        TextFormat {
+            font_id: font,
+            color,
+            ..TextFormat::default()
+        },
+    );
+    job.wrap = TextWrapping {
+        max_width,
+        max_rows: 1,
+        break_anywhere: true,
+        overflow_character: Some('…'),
+    };
+    let galley = ui.painter().layout_job(job);
+    let elided = galley.elided;
+    let rect = align.anchor_size(pos, galley.size());
+    ui.painter().galley(rect.min, galley, color);
+    let response = ui.interact(rect, id, Sense::hover());
+    if elided {
+        response.on_hover_text(text.to_string());
+    }
+    Some(rect)
 }
 
 /// Детерминированный оттенок по имени (для сгенерированных миниатюр).
@@ -290,101 +340,90 @@ pub fn nav_item(ui: &mut Ui, id: egui::Id, icon: Icon, label: &str, count: Optio
     response
 }
 
-/// Компактная кнопка (строки списка, карточки): 26 пикселей, иконка необязательна.
-/// `primary` — с акцентом.
-pub fn compact_button(ui: &mut Ui, id: egui::Id, icon: Option<Icon>, label: &str, primary: bool) -> Response {
-    sized_button(ui, id, icon, label, primary, 26.0)
+/// Высота любого контрола хаба (кнопка, поле, список, поиск, сегменты, кнопка-иконка):
+/// плотность [`theme::Density::Comfortable`] набора. Одна на весь хаб и установщик.
+pub const CONTROL_H: f32 = theme::CONTROL_H_COMFORTABLE;
+
+/// Кнопка хаба — [`controls::button_with_id`] плотности хаба; `primary` — с акцентом.
+pub fn button(ui: &mut Ui, id: egui::Id, icon: Option<Icon>, label: &str, primary: bool) -> Response {
+    let kind = if primary { Kind::Primary } else { Kind::Normal };
+    controls::button_with_id(ui, Some(id), kind, icon, label, 0.0)
 }
 
-/// Кнопка диалога или страницы: 32 пикселя, не уже 96.
-pub fn large_button(ui: &mut Ui, id: egui::Id, icon: Option<Icon>, label: &str, primary: bool) -> Response {
-    sized_button(ui, id, icon, label, primary, 32.0)
+/// Кнопка строки действий страницы или диалога: та же высота и рамка, не уже
+/// [`theme::DIALOG_BUTTON_MIN_W`].
+pub fn action_button(ui: &mut Ui, id: egui::Id, icon: Option<Icon>, label: &str, primary: bool) -> Response {
+    let kind = if primary { Kind::Primary } else { Kind::Normal };
+    controls::button_with_id(ui, Some(id), kind, icon, label, theme::DIALOG_BUTTON_MIN_W)
 }
 
-fn sized_button(ui: &mut Ui, id: egui::Id, icon: Option<Icon>, label: &str, primary: bool, height: f32) -> Response {
-    let font = if height > 28.0 { theme::strong(theme::FONT_BODY) } else { theme::strong(13.0) };
-    let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::PLACEHOLDER);
-    let icon_space = if icon.is_some() { 18.0 } else { 0.0 };
-    let mut size = vec2(galley.size().x + icon_space + if height > 28.0 { 32.0 } else { 22.0 }, height);
-    if height > 28.0 {
-        size.x = size.x.max(96.0);
+/// Кнопка опасного действия («Удалить»): та же геометрия, другой цвет.
+pub fn danger_button(ui: &mut Ui, id: egui::Id, icon: Option<Icon>, label: &str) -> Response {
+    controls::button_with_id(ui, Some(id), Kind::Danger, icon, label, theme::DIALOG_BUTTON_MIN_W)
+}
+
+/// Обычная кнопка ширины `width` («Browse…» рядом с полем).
+pub fn button_sized(ui: &mut Ui, id: egui::Id, label: &str, width: f32) -> Response {
+    let width = width.min(ui.available_width());
+    controls::button_with_id(ui, Some(id), Kind::Normal, None, label, width)
+}
+
+/// Естественная ширина [`button`] — чтобы раскладка (перенос строки кнопок, высота
+/// карточки) знала размер заранее.
+pub fn button_width(ui: &Ui, icon: Option<Icon>, label: &str) -> f32 {
+    controls::button_width(ui, icon, label)
+}
+
+/// Ширина [`action_button`].
+pub fn action_button_width(ui: &Ui, icon: Option<Icon>, label: &str) -> f32 {
+    controls::button_width(ui, icon, label).max(theme::DIALOG_BUTTON_MIN_W)
+}
+
+/// Разложить кнопки шириной `widths` по строкам не шире `width` с промежутком `gap`
+/// (порядок сохраняется; кнопка шире строки занимает строку одна). Правило для всех строк
+/// кнопок в карточках и панелях: не влезает — перенос на следующую строку, а не выход за край.
+pub fn wrap_rows(widths: &[f32], width: f32, gap: f32) -> Vec<Vec<usize>> {
+    let mut rows: Vec<Vec<usize>> = Vec::new();
+    let mut used = 0.0;
+    for (i, w) in widths.iter().enumerate() {
+        match rows.last_mut() {
+            Some(row) if used + gap + w <= width + 0.01 => {
+                row.push(i);
+                used += gap + w;
+            }
+            _ => {
+                rows.push(vec![i]);
+                used = *w;
+            }
+        }
     }
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-    let response = ui.interact(rect, id, Sense::click());
-    let enabled = ui.is_enabled();
-    let hovered = response.hovered() && enabled;
-    let pressed = response.is_pointer_button_down_on() && enabled;
-    let (fill, stroke, text) = if !enabled {
-        (theme::BG_FIELD, theme::LINE, theme::TEXT_DISABLED)
-    } else if primary {
-        let base = theme::accent();
-        let fill = if pressed {
-            theme::mix(base, Color32::BLACK, 0.15)
-        } else if hovered {
-            theme::mix(base, Color32::WHITE, 0.12)
-        } else {
-            base
-        };
-        (fill, fill, Color32::WHITE)
-    } else {
-        let fill = if pressed { theme::BG_ACTIVE } else if hovered { theme::BG_HOVER } else { theme::BG_FIELD };
-        (fill, theme::LINE_STRONG, theme::TEXT)
-    };
-    let painter = ui.painter();
-    painter.rect(rect, theme::R_S + 1.0, fill, Stroke::new(1.0_f32, stroke));
-    let content = galley.size().x + icon_space;
-    let mut x = rect.center().x - content * 0.5;
-    if let Some(icon) = icon {
-        icons::paint(painter, Rect::from_center_size(pos2(x + 6.5, rect.center().y), vec2(13.0, 13.0)), icon, text);
-        x += icon_space;
-    }
-    painter.galley(pos2(x, rect.center().y - galley.size().y * 0.5), galley, text);
-    if response.has_focus() {
-        painter.rect_stroke(rect.expand(2.0), theme::R_S + 2.0, Stroke::new(1.0_f32, theme::accent()));
-    }
-    response
+    rows
 }
 
-/// Обычная кнопка высотой с поле ввода (30) и заданной ширины: «Browse…» рядом с полем.
-pub fn sized_like_field(ui: &mut Ui, id: egui::Id, label: &str, width: f32) -> Response {
-    let (rect, _) = ui.allocate_exact_size(vec2(width, 30.0), Sense::hover());
-    let response = ui.interact(rect, id, Sense::click());
-    let enabled = ui.is_enabled();
-    let hovered = response.hovered() && enabled;
-    let fill = if !enabled {
-        theme::BG_FIELD
-    } else if response.is_pointer_button_down_on() {
-        theme::BG_ACTIVE
-    } else if hovered {
-        theme::BG_HOVER
-    } else {
-        theme::BG_FIELD
-    };
-    ui.painter().rect(rect, theme::R_S + 1.0, fill, Stroke::new(1.0_f32, theme::LINE_STRONG));
-    let color = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, theme::body(), color);
-    response
-}
-
-/// Кнопка-иконка 26×26 с рамкой при наведении.
+/// Кнопка-иконка без рамки (подсветка при наведении), сторона [`CONTROL_H`].
 pub fn icon_button(ui: &mut Ui, id: egui::Id, icon: Icon, tooltip: &str) -> Response {
-    let (rect, _) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::hover());
-    let response = ui.interact(rect, id, Sense::click());
-    let enabled = ui.is_enabled();
-    let hovered = response.hovered() && enabled;
-    if hovered {
-        ui.painter()
-            .rect(rect, theme::R_S + 1.0, theme::BG_HOVER, Stroke::new(1.0_f32, theme::LINE_STRONG));
-    }
-    let color = if !enabled {
-        theme::TEXT_DISABLED
-    } else if hovered {
-        Color32::WHITE
-    } else {
-        theme::TEXT_MUTED
-    };
-    icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(14.0, 14.0)), icon, color);
-    response.on_hover_text(tooltip)
+    controls::button_with_id(ui, Some(id), Kind::Ghost, Some(icon), "", CONTROL_H).on_hover_text(tooltip)
+}
+
+/// Однострочное поле ввода высотой [`CONTROL_H`] — [`controls::text_field_with_id`].
+pub fn text_field(ui: &mut Ui, id: egui::Id, text: &mut String, hint: &str, width: f32) -> Response {
+    controls::text_field_with_id(ui, Some(id), text, hint, width.max(40.0))
+}
+
+/// Поле только для чтения (путь в настройках): рамка поля ввода, текст с «…».
+pub fn readonly_field(ui: &mut Ui, text: &str, width: f32) -> Response {
+    let pad = theme::Density::Comfortable.pad_x();
+    let (rect, response) = ui.allocate_exact_size(vec2(width.min(ui.available_width()), CONTROL_H), Sense::hover());
+    controls::inset_frame(ui.painter(), rect);
+    paint_elided(ui.painter(), pos2(rect.left() + pad, rect.center().y), text, theme::body(), theme::TEXT, rect.width() - pad * 2.0, Align2::LEFT_CENTER);
+    response
+}
+
+/// Подпись слева от поля в строке формы: та же высота, что у поля, текст по центру строки.
+pub fn field_label(ui: &mut Ui, text: &str, width: f32) -> Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(width, CONTROL_H), Sense::hover());
+    paint_elided(ui.painter(), pos2(rect.left(), rect.center().y), text, theme::body(), theme::TEXT_MUTED, width, Align2::LEFT_CENTER);
+    response
 }
 
 /// Полоса хода: `None` — неопределённая (бегущий отрезок).
@@ -417,19 +456,6 @@ pub fn progress_bar(ui: &mut Ui, fraction: Option<f32>, failed: bool) {
 /// Подпись раздела: мелкие прописные.
 pub fn section_label(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text.to_uppercase()).font(theme::strong(11.0)).color(theme::TEXT_MUTED));
-}
-
-/// Однострочное поле ввода высотой 30.
-pub fn text_field(ui: &mut Ui, id: egui::Id, text: &mut String, hint: &str, width: f32) -> Response {
-    // add_sized: длинный путь не раздвигает поле (и окно) — текст прокручивается внутри.
-    ui.add_sized(
-        vec2(width.max(40.0), 30.0),
-        egui::TextEdit::singleline(text)
-            .id(id)
-            .hint_text(egui::RichText::new(hint).color(theme::TEXT_DISABLED))
-            .vertical_align(egui::Align::Center)
-            .margin(vec2(8.0, 4.0)),
-    )
 }
 
 /// Плашка-пояснение с иконкой (внимание или справка).

@@ -1,0 +1,31 @@
+// Звуки игры: имя клипа -> файл. Файлы пишет tools/bake (из синтезатора); можно заменить своими .wav.
+(
+    effects: [
+        ("ui_click", "audio/ui_click.wav"),
+        ("ui_hover", "audio/ui_hover.wav"),
+        ("ui_confirm", "audio/ui_confirm.wav"),
+        ("ui_error", "audio/ui_error.wav"),
+        ("jump", "audio/jump.wav"),
+        ("land", "audio/land.wav"),
+        ("roll", "audio/roll.wav"),
+        ("fell", "audio/fell.wav"),
+        ("respawn", "audio/respawn.wav"),
+        ("gear", "audio/gear.wav"),
+        ("golden", "audio/golden.wav"),
+        ("win", "audio/win.wav"),
+        ("lose", "audio/lose.wav"),
+        ("beep", "audio/beep.wav"),
+        ("go", "audio/go.wav"),
+        ("clang", "audio/clang.wav"),
+        ("bumper", "audio/bumper.wav"),
+        ("boost", "audio/boost.wav"),
+        ("crack", "audio/crack.wav"),
+        ("thud", "audio/thud.wav"),
+        ("chime", "audio/chime.wav"),
+    ],
+    music: [
+        ("music_menu", "audio/music_menu.wav"),
+        ("music_factory_a", "audio/music_factory_a.wav"),
+        ("music_factory_b", "audio/music_factory_b.wav"),
+    ],
+)

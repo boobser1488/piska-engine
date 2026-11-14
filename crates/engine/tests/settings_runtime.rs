@@ -356,7 +356,7 @@ fn player_settings_reach_the_window_config() {
     settings.player.height = 768;
     settings.player.resizable = false;
     settings.player.fullscreen = FullscreenMode::Borderless;
-    settings.player.vsync = true;
+    settings.player.vsync = false;
     settings.player.fps_cap = 30;
     settings.player.icon = "art/game_icon.png".into();
     write_settings(&dir, &settings);
@@ -369,7 +369,7 @@ fn player_settings_reach_the_window_config() {
     assert_eq!((config.width, config.height), (1024, 768));
     assert!(!config.resizable);
     assert_eq!(config.fullscreen, FullscreenMode::Borderless);
-    assert!(config.vsync);
+    assert!(!config.vsync, "the project turned vertical sync off");
     assert_eq!(config.fps_cap, 30);
     assert_eq!(config.frame_period(), Some(std::time::Duration::from_secs_f64(1.0 / 30.0)));
     assert_eq!(config.icon.as_deref(), Some(png.as_slice()));
@@ -379,7 +379,7 @@ fn player_settings_reach_the_window_config() {
     let config = code.clone().with_player_settings(&partial);
     assert_eq!(config.title, "From Code");
     assert_eq!((config.width, config.height), (800, 600));
-    assert!(config.resizable && !config.vsync);
+    assert!(config.resizable && config.vsync, "untouched fields keep the code's values (vsync is on by default)");
     assert_eq!(config.fps_cap, 144);
 
     // Старый файл без раздела `player` — окно такое, как задал код.

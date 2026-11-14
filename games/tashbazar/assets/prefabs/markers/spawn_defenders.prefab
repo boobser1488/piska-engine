@@ -1,0 +1,82 @@
+(
+    name: "spawn_defenders",
+    id: 251160568480717,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpawnPoint",
+            fields: {
+                "index": Int(0),
+                "team": Enum("Defenders"),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Paint",
+            id: 64221650726265,
+            transform: (
+                position: (0.0, 0.004, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.9, 0.006, 0.9),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(false),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("63dc80789e24bc8b67fb17b828b9cbaf"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Arrow",
+            id: 174948566417139,
+            transform: (
+                position: (0.0, 0.004, -0.75),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.25, 0.006, 0.6),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(false),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("63dc80789e24bc8b67fb17b828b9cbaf"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

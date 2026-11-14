@@ -5,6 +5,7 @@
 //!
 //! Копии получают новый GUID: два ассета с одним GUID база не принимает.
 
+use crate::i18n::{tr_s, trf, trn};
 use std::path::{Path, PathBuf};
 
 use engine_assets::Guid;
@@ -23,23 +24,27 @@ impl Outcome {
         self.failed.is_empty()
     }
 
+    /// «Moved 3 items» — всё прошло.
+    pub fn done_text(&self, past: &str) -> String {
+        trf!("{past} {done}", past = past, done = trn!("{n} item", "{n} items", self.done.len()))
+    }
+
     /// Одна строка для тоста и консоли: «Moved 3 of 5 items. Failed: …».
     pub fn summary(&self, past: &str, total: usize) -> String {
-        let noun = |n: usize| if n == 1 { "item" } else { "items" };
         if self.failed.is_empty() {
-            return format!("{past} {} {}", self.done.len(), noun(self.done.len()));
+            return self.done_text(past);
         }
-        let mut text = format!("{past} {} of {total} {}.", self.done.len(), noun(total));
+        let mut text = trf!("{past} {done} of {total}.", past = past, done = self.done.len(), total = trn!("{n} item", "{n} items", total));
         for (path, why) in self.failed.iter().take(3) {
             text.push_str(&format!(" `{path}`: {why}."));
         }
         if self.failed.len() > 3 {
-            text.push_str(&format!(" And {} more failed.", self.failed.len() - 3));
+            text.push_str(&trf!(" And {} more failed.", self.failed.len() - 3));
         }
         if self.done.is_empty() {
-            text.push_str(" Nothing was changed.");
+            text.push_str(tr_s(" Nothing was changed."));
         } else {
-            text.push_str(" The rest was done.");
+            text.push_str(tr_s(" The rest was done."));
         }
         text
     }
@@ -61,7 +66,7 @@ pub(crate) fn safe_join(root: &Path, relative: &str) -> Result<PathBuf, String> 
     }
     let ok = Path::new(relative).components().all(|c| matches!(c, std::path::Component::Normal(_)));
     if !ok || relative.contains('\\') {
-        return Err(format!("`{relative}` is not a path inside the assets directory"));
+        return Err(trf!("`{relative}` is not a path inside the assets directory", relative = relative));
     }
     Ok(root.join(relative))
 }
@@ -94,32 +99,32 @@ pub(crate) fn join(dir: &str, name: &str) -> String {
 /// Можно ли так назвать файл или каталог. Текст ошибки показывается под полем ввода.
 pub(crate) fn validate_name(name: &str) -> Result<(), String> {
     if name.trim().is_empty() {
-        return Err("The name cannot be empty".to_string());
+        return Err(tr_s("The name cannot be empty").to_string());
     }
     if name != name.trim() {
-        return Err("The name cannot start or end with a space".to_string());
+        return Err(tr_s("The name cannot start or end with a space").to_string());
     }
     if name.ends_with('.') {
-        return Err("The name cannot end with a dot".to_string());
+        return Err(tr_s("The name cannot end with a dot").to_string());
     }
     if let Some(bad) = name.chars().find(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control()) {
         return Err(if bad.is_control() {
-            "The name contains a control character".to_string()
+            tr_s("The name contains a control character").to_string()
         } else {
-            format!("The name cannot contain `{bad}`")
+            trf!("The name cannot contain `{bad}`", bad = bad)
         });
     }
     let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
     let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
         || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit());
     if reserved {
-        return Err(format!("`{stem}` is a reserved name on Windows"));
+        return Err(trf!("`{stem}` is a reserved name on Windows", stem = stem));
     }
     if name.to_ascii_lowercase().ends_with(".meta") {
         return Err("`.meta` files belong to the asset database".to_string());
     }
     if name.chars().count() > 200 {
-        return Err("The name is too long".to_string());
+        return Err(tr_s("The name is too long").to_string());
     }
     Ok(())
 }
@@ -164,10 +169,10 @@ pub(crate) fn unique_name(dir: &Path, name: &str, is_dir: bool) -> String {
 fn io_text(action: &str, path: &str, err: &std::io::Error) -> String {
     let hint = match err.kind() {
         std::io::ErrorKind::PermissionDenied => " (read-only or in use by another program)",
-        std::io::ErrorKind::NotFound => " (it no longer exists; press Refresh)",
+        std::io::ErrorKind::NotFound => tr_s(" (it no longer exists; press Refresh)"),
         _ => "",
     };
-    format!("cannot {action} `{path}`: {err}{hint}")
+    trf!("cannot {action} `{path}`: {err}{hint}", action = action, path = path, err = err, hint = hint)
 }
 
 /// Создать каталог `parent/name` (имя уже проверено). Возвращает путь созданного.
@@ -176,7 +181,7 @@ pub(crate) fn create_folder(root: &Path, parent: &str, name: &str) -> Result<Str
     let dir = dir_join(root, parent)?;
     let target = dir.join(name);
     if target.exists() {
-        return Err(format!("`{name}` already exists here"));
+        return Err(trf!("`{name}` already exists here", name = name));
     }
     std::fs::create_dir(&target).map_err(|e| io_text("create", name, &e))?;
     Ok(join(parent, name))
@@ -187,7 +192,7 @@ pub(crate) fn rename_item(root: &Path, from: &str, new_name: &str) -> Result<Str
     validate_name(new_name)?;
     let source = safe_join(root, from)?;
     if !source.exists() {
-        return Err(format!("`{from}` no longer exists"));
+        return Err(trf!("`{from}` no longer exists", from = from));
     }
     let to = join(parent_of(from), new_name);
     if to == from {
@@ -197,7 +202,7 @@ pub(crate) fn rename_item(root: &Path, from: &str, new_name: &str) -> Result<Str
     // Смена регистра (`a.png` → `A.png`) на Windows — тот же файл: это допустимо.
     let same_file = to.eq_ignore_ascii_case(from);
     if !same_file && (target.exists() || meta_of(&target).exists()) {
-        return Err(format!("`{new_name}` already exists here"));
+        return Err(trf!("`{new_name}` already exists here", new_name = new_name));
     }
     move_with_meta(&source, &target, from)?;
     Ok(to)
@@ -222,10 +227,10 @@ pub(crate) fn move_into(root: &Path, from: &str, dest: &str) -> Result<String, S
     let source = safe_join(root, from)?;
     let dest_dir = dir_join(root, dest)?;
     if !source.exists() {
-        return Err(format!("`{from}` no longer exists"));
+        return Err(trf!("`{from}` no longer exists", from = from));
     }
     if !dest_dir.is_dir() {
-        return Err(format!("the folder `{dest}` does not exist"));
+        return Err(trf!("the folder `{dest}` does not exist", dest = dest));
     }
     let from = from.trim_matches('/');
     let dest = dest.trim_matches('/');
@@ -245,10 +250,10 @@ pub(crate) fn copy_into(root: &Path, from: &str, dest: &str) -> Result<String, S
     let source = safe_join(root, from)?;
     let dest_dir = dir_join(root, dest)?;
     if !source.exists() {
-        return Err(format!("`{from}` no longer exists"));
+        return Err(trf!("`{from}` no longer exists", from = from));
     }
     if !dest_dir.is_dir() {
-        return Err(format!("the folder `{dest}` does not exist"));
+        return Err(trf!("the folder `{dest}` does not exist", dest = dest));
     }
     let from = from.trim_matches('/');
     let dest = dest.trim_matches('/');
@@ -343,7 +348,7 @@ pub(crate) fn import_external(
         Ok(dir) if dir.is_dir() => dir,
         _ => {
             for source in sources {
-                outcome.failed.push((source.display().to_string(), format!("the folder `{dest}` does not exist")));
+                outcome.failed.push((source.display().to_string(), trf!("the folder `{dest}` does not exist", dest = dest)));
             }
             return outcome;
         }
@@ -481,7 +486,7 @@ pub(crate) fn recycle_available() -> bool {
     {
         static FOUND: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *FOUND.get_or_init(|| {
-            std::process::Command::new("gio")
+            engine_build::host::command("gio")
                 .arg("version")
                 .output()
                 .is_ok_and(|out| out.status.success())
@@ -504,7 +509,7 @@ pub(crate) fn trash(paths: &[PathBuf]) -> Result<(), String> {
     if left.is_empty() {
         Ok(())
     } else {
-        Err(format!("the Recycle Bin did not take: {}", left.join(", ")))
+        Err(trf!("the Recycle Bin did not take: {}", left.join(", ")))
     }
 }
 
@@ -532,9 +537,9 @@ fn run_trash(paths: &[PathBuf]) -> Result<(), String> {
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let text: String = paths.iter().map(|p| format!("{}\n", p.display())).collect();
-    std::fs::write(&list, text).map_err(|e| format!("cannot prepare the Recycle Bin request: {e}"))?;
+    std::fs::write(&list, text).map_err(|e| trf!("cannot prepare the Recycle Bin request: {e}", e = e))?;
     let encoded = base64_utf16le(SCRIPT);
-    let output = std::process::Command::new("powershell")
+    let output = engine_build::host::command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", &encoded])
         .env("PISKA_TRASH_LIST", &list)
         .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
@@ -545,9 +550,9 @@ fn run_trash(paths: &[PathBuf]) -> Result<(), String> {
         Ok(out) => {
             let why = String::from_utf8_lossy(&out.stderr);
             let why = why.lines().find(|l| !l.trim().is_empty()).unwrap_or("unknown error").trim().to_string();
-            Err(format!("the Recycle Bin refused: {why}"))
+            Err(trf!("the Recycle Bin refused: {why}", why = why))
         }
-        Err(err) => Err(format!("cannot start PowerShell to use the Recycle Bin: {err}")),
+        Err(err) => Err(trf!("cannot start PowerShell to use the Recycle Bin: {err}", err = err)),
     }
 }
 
@@ -558,25 +563,25 @@ fn run_trash(paths: &[PathBuf]) -> Result<(), String> {
         .map(|p| format!("POSIX file \"{}\"", p.display().to_string().replace('\\', "\\\\").replace('"', "\\\"")))
         .collect();
     let script = format!("tell application \"Finder\" to delete {{{}}}", list.join(", "));
-    match std::process::Command::new("osascript").args(["-e", &script]).output() {
+    match engine_build::host::command("osascript").args(["-e", &script]).output() {
         Ok(out) if out.status.success() => Ok(()),
-        Ok(out) => Err(format!("Finder refused: {}", String::from_utf8_lossy(&out.stderr).trim())),
-        Err(err) => Err(format!("cannot start osascript: {err}")),
+        Ok(out) => Err(trf!("Finder refused: {}", String::from_utf8_lossy(&out.stderr).trim())),
+        Err(err) => Err(trf!("cannot start osascript: {err}", err = err)),
     }
 }
 
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
 fn run_trash(paths: &[PathBuf]) -> Result<(), String> {
-    match std::process::Command::new("gio").arg("trash").arg("--").args(paths).output() {
+    match engine_build::host::command("gio").arg("trash").arg("--").args(paths).output() {
         Ok(out) if out.status.success() => Ok(()),
-        Ok(out) => Err(format!("gio trash refused: {}", String::from_utf8_lossy(&out.stderr).trim())),
-        Err(err) => Err(format!("cannot start `gio trash`: {err}")),
+        Ok(out) => Err(trf!("gio trash refused: {}", String::from_utf8_lossy(&out.stderr).trim())),
+        Err(err) => Err(trf!("cannot start `gio trash`: {err}", err = err)),
     }
 }
 
 #[cfg(any(target_os = "android", target_arch = "wasm32"))]
 fn run_trash(_paths: &[PathBuf]) -> Result<(), String> {
-    Err("this platform has no Recycle Bin".to_string())
+    Err(tr_s("this platform has no Recycle Bin").to_string())
 }
 
 /// Base64 от UTF-16LE — формат `powershell -EncodedCommand`.

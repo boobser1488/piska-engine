@@ -1,0 +1,32 @@
+// Настройки проекта «Рой»: управление, порядок скриптов, окно.
+// Править можно в редакторе (Edit → Project Settings) или руками.
+(
+    // Порядок скриптов менеджера внутри кадра: ввод → меню → ход игры → HUD.
+    script_order: {
+        "TouchControls": -30,
+        "Menus": -20,
+        "GameManager": -10,
+        "Hud": 10,
+    },
+    player: (
+        title: "Рой",
+        width: 1280,
+        height: 720,
+        default_scene: "scenes/arena.scene",
+    ),
+    input: (
+        actions: [
+            // Движение: WASD, левый стик, крестовина.
+            (name: "Horizontal", kind: Axis, negative: ["Key:A", "Pad:DPadLeft"], positive: ["Key:D", "Pad:DPadRight"], analog: ["LeftStickX"], dead_zone: 0.2),
+            (name: "Vertical", kind: Axis, negative: ["Key:S", "Pad:DPadDown"], positive: ["Key:W", "Pad:DPadUp"], analog: ["LeftStickY"], dead_zone: 0.2),
+            // Прицел и огонь: стрелки и правый стик (мышь читается напрямую).
+            (name: "AimX", kind: Axis, negative: ["Key:Left"], positive: ["Key:Right"], analog: ["RightStickX"], dead_zone: 0.2),
+            (name: "AimY", kind: Axis, negative: ["Key:Down"], positive: ["Key:Up"], analog: ["RightStickY"], dead_zone: 0.2),
+            (name: "Dash", kind: Button, bindings: ["Key:Space", "Key:LShift", "Pad:RightBumper", "Pad:LeftBumper", "Pad:South"], dead_zone: 0.2),
+            (name: "Fire", kind: Button, bindings: ["Mouse:Left", "Pad:RightTrigger", "Pad:LeftTrigger"], dead_zone: 0.2),
+            // Меню и пауза.
+            (name: "Submit", kind: Button, bindings: ["Key:Enter", "Pad:South"], dead_zone: 0.2),
+            (name: "Cancel", kind: Button, bindings: ["Key:Escape", "Pad:East"], dead_zone: 0.2),
+        ],
+    ),
+)

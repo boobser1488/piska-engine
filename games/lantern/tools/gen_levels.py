@@ -21,6 +21,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCENES = os.path.join(HERE, "..", "assets", "scenes")
 PREVIEW = os.path.join(HERE, "preview")
 H = 30
+# Стабильные номера (`id`) узлов сцены, на которые ссылаются поля-ссылки скриптов.
+DECO_ID = 100
+TILES_ID = 101
+INFO = {}
+BLURBS = ["Первые огоньки", "Пружины и подъёмы", "Двойной прыжок в деле", "Платформы и шипы", "Рывок сквозь тьму", "Хозяин пещер"]
 
 
 def lin(c):
@@ -264,6 +269,144 @@ class Level:
                 if self.g[y][x] == ".":
                     self.g[y][x] = "#"
 
+    # --- объекты сцены: экземпляры префабов ---
+    @staticmethod
+    def parse_ent(line):
+        head, _, text = line.partition("|")
+        toks = head.split()
+        kw = dict(t.split("=", 1) for t in toks[3:])
+        return toks[0], float(toks[1]), float(toks[2]), {k: float(v) for k, v in kw.items()}, text.strip()
+
+    def object_nodes(self):
+        def f(v):
+            return "Float(%s)" % repr(float(v))
+
+        def ov(comp, field, value):
+            return '(component: "%s", field: "%s", value: %s)' % (comp, field, value)
+
+        groups = {"Player": [], "Enemies": [], "Fireflies": [], "Mechanisms": [], "Checkpoints": [], "Exit": []}
+        for line in self.ents:
+            kind, x, y, kw, text = self.parse_ent(line)
+            if kind == "hint":
+                continue
+            o = []
+            group, prefab, name = "Mechanisms", None, kind.capitalize()
+            if kind == "player":
+                group, prefab, name = "Player", "player", "Player"
+            elif kind in ("crawler", "brute"):
+                group, prefab, name = "Enemies", kind, kind.capitalize()
+                comp = kind.capitalize()
+                for k in ("dir", "speed", "range"):
+                    if k in kw:
+                        o.append(ov(comp, k, f(kw[k])))
+            elif kind == "bat":
+                group, prefab, name = "Enemies", "bat", "Bat"
+                for k, field in (("range", "range"), ("amp", "amp"), ("speed", "speed"), ("phase", "t")):
+                    if k in kw:
+                        o.append(ov("Bat", field, f(kw[k])))
+            elif kind == "spitter":
+                group, prefab, name = "Enemies", "spitter", "Spitter"
+                if "period" in kw:
+                    o.append(ov("Spitter", "period", f(kw["period"])))
+                if "delay" in kw:
+                    o.append(ov("Spitter", "timer", f(kw["delay"])))
+            elif kind == "boss":
+                group, prefab, name = "Enemies", "boss", "Boss"
+                o.append(ov("Boss", "arena_x", "Vec2(%r, %r)" % (kw["x0"], kw["x1"])))
+                o.append(ov("Boss", "floor_y", f(kw["floor"])))
+                o.append(ov("Boss", "ceiling_y", f(kw["ceil"])))
+                o.append(ov("Boss", "door", "Vec3(%r, %r, 0.0)" % (kw["doorx"], kw["doory0"])))
+                o.append(ov("Boss", "door_y1", f(kw["doory1"])))
+                # Ссылка на тайлмап уровня (узел Tiles, id TILES_ID): дверь закладывается в нём.
+                o.append(ov("Boss", "tiles", "Object(%d)" % TILES_ID))
+            elif kind in ("firefly", "golden"):
+                group = "Fireflies"
+                prefab = "golden_firefly" if kind == "golden" else "firefly"
+                name = "GoldenFirefly" if kind == "golden" else "Firefly"
+            elif kind == "checkpoint":
+                group, prefab, name = "Checkpoints", "checkpoint", "Checkpoint"
+            elif kind == "spring":
+                prefab, name = "spring", "Spring"
+                if "power" in kw:
+                    o.append(ov("Spring", "power", f(kw["power"])))
+            elif kind == "mplat":
+                prefab, name = "moving_platform", "MovingPlatform"
+                o.append(ov("MovingPlatform", "from", "Vec2(%r, %r)" % (x, y)))
+                o.append(ov("MovingPlatform", "to", "Vec2(%r, %r)" % (x + kw.get("dx", 0.0), y + kw.get("dy", 0.0))))
+                for k, field in (("speed", "speed"), ("phase", "t")):
+                    if k in kw:
+                        o.append(ov("MovingPlatform", field, f(kw[k])))
+            elif kind == "cplat":
+                prefab, name = "crumble_platform", "CrumblePlatform"
+            elif kind == "gate":
+                prefab, name = "gate", "Gate"
+                o.append(ov("Gate", "need", "Int(%d)" % int(kw["need"])))
+            elif kind == "exit":
+                group, prefab, name = "Exit", "exit", "Exit"
+            else:
+                raise ValueError("unknown object kind " + kind)
+            node = '            (name: "%s", prefab: Some("prefabs/%s.prefab"), transform: (position: (%r, %r, 0.0))' % (name, prefab, x, y)
+            if o:
+                node += ", overrides: [%s]" % ", ".join(o)
+            node += "),"
+            groups[group].append(node)
+        out = []
+        for g in ("Player", "Enemies", "Fireflies", "Checkpoints", "Mechanisms", "Exit"):
+            if not groups[g]:
+                continue
+            if g in ("Player", "Exit"):
+                # одиночные объекты — прямо в корне сцены
+                out.extend(n.replace("            (", "        (", 1) for n in groups[g])
+            else:
+                out.append('        (name: "%s", children: [\n%s\n        ]),' % (g, "\n".join(groups[g])))
+        return out
+
+    # --- сценарий уровня: заставка и подсказки ---
+    def write_scenario(self):
+        hints = []
+        for line in self.ents:
+            kind, x, y, kw, text = self.parse_ent(line)
+            if kind == "hint":
+                hints.append((x, y, kw.get("w", 2.0), kw.get("h", 2.0), text))
+        hints.sort()
+        lines = [
+            "-- Уровень %d «%s»: заставка с названием и подсказки." % (self.index + 1, self.title),
+            "-- Сгенерировано tools/gen_levels.py (hints у уровня); править можно и руками — сценарий",
+            "-- перезагружается сам при сохранении.",
+            "wait_frame(2)   -- менеджер уровня успел прочитать таблицу data/levels.ron",
+            'ui.text("CardNumber", "Уровень " .. (self.get("LevelManager.index") + 1))',
+            'ui.text("CardTitle", self.get("LevelManager.title"))',
+            'ui.text("CardSub", self.get("LevelManager.subtitle"))',
+            'ui.show("Card")',
+            "",
+            "-- Подсказка: зона вокруг точки (x, y) шириной w и высотой h; срабатывает один раз.",
+            "wait_until(() => find_tag(\"Player\") != nil)",
+            "const player = find_tag(\"Player\")",
+            "function hint(x, y, w, h, text) {",
+            "    start(() => {",
+            "        wait_until(() => abs(player.world_position.x - x) < w / 2 + 0.3 and abs(player.world_position.y + 0.5 - y) < h / 2 + 0.5)",
+            "        self.send(\"hint\", text)",
+            "    })",
+            "}",
+        ]
+        for x, y, w, h, text in hints:
+            lines.append('hint(%r, %r, %r, %r, "%s")' % (x, y, w, h, text.replace('"', "'")))
+        lines += [
+            "",
+            "wait(2.4)",
+            'find("Card").tween("CanvasGroup.alpha", 0, 0.8)',
+            "wait(0.8)",
+            'ui.hide("Card")',
+            "",
+        ]
+        d = os.path.join(HERE, "..", "assets", "scenarios")
+        os.makedirs(d, exist_ok=True)
+        name = "level%d.scenario" % (self.index + 1)
+        with open(os.path.join(d, name), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("\n".join(lines))
+        with open(os.path.join(d, name + ".meta"), "w", newline="\n") as fh:
+            fh.write('(\n    guid: "%s",\n    importer: "Scenario",\n)' % guid_for("scenarios/" + name))
+
     def write(self):
         self.dress()
         tiles, deco = self.tile_rows()
@@ -286,7 +429,6 @@ class Level:
         tileset = guid_for("sprites/tiles.png")
         start = [s for s in self.ents if s.startswith("player")][0].split()
         cx, cy = float(start[1]), float(start[2]) + 2.0
-        ents = "\n".join("            Str(%s)," % ron_str(s) for s in self.ents)
         parts = []
         parts.append("""        (
             name: "Main Camera",
@@ -321,9 +463,10 @@ class Level:
                 }),
             ],
         ),""" % (name, slot, guid_for("sprites/%s.png" % name), sl, tint, factor, slot, ylayer, H / 2))
-        for name, t, layer, tint in (("Deco", deco, -2, th["deco_tint"]), ("Tiles", tiles, 0, th["tiles"])):
+        for name, t, layer, tint, uid in (("Deco", deco, -2, th["deco_tint"], DECO_ID), ("Tiles", tiles, 0, th["tiles"], TILES_ID)):
             parts.append("""        (
             name: "%s",
+            id: %d,
             components: [
                 (kind: "Tilemap", fields: {
                     "tileset": Asset("%s"), "tileset_columns": Int(8), "tileset_rows": Int(4),
@@ -333,19 +476,19 @@ class Level:
                     ]),
                 }),
             ],
-        ),""" % (name, tileset, layer, tint, rows(t)))
+        ),""" % (name, uid, tileset, layer, tint, rows(t)))
+        parts.extend(self.object_nodes())
         parts.append("""        (
             name: "Level",
             components: [
-                (kind: "LevelManager", fields: {
-                    "index": Int(%d), "title": Str(%s), "subtitle": Str(%s), "need": Int(%d),
-                    "par_time": Float(%.1f), "music": Str(%s),
-                    "entities": List([
-%s
-                    ]),
-                }),
+                (kind: "LevelManager", fields: { "index": Int(%d), "tiles": Object(%d) }),
+                (kind: "ScenarioRunner", fields: { "path": Str("scenarios/level%d.scenario") }),
             ],
-        ),""" % (self.index, ron_str(self.title), ron_str(self.subtitle), self.need, self.par, ron_str(self.music), ents))
+        ),""" % (self.index, TILES_ID, self.index + 1))
+        for name, prefab in (("Hud", "ui/hud.prefab"), ("PauseOverlay", "ui/pause.prefab"), ("ResultsOverlay", "ui/results.prefab")):
+            parts.append('        (name: "%s", prefab: Some("%s")),' % (name, prefab))
+        self.write_scenario()
+        INFO[self.index] = self
         text = "// Уровень %d: %s. Сгенерировано tools/gen_levels.py — правьте генератор, а не этот файл.\n(\n    name: \"Level%d\",\n    objects: [\n%s\n    ],\n)\n" % (
             self.index + 1, self.title, self.index + 1, "\n".join(parts))
         os.makedirs(SCENES, exist_ok=True)
@@ -709,12 +852,21 @@ def menu_scene():
                 (kind: "Parallax", fields: { "factor": Float(0.0), "period": Float(32.0), "slot": Int(%d), "y_follow": Float(0.0), "mid_y": Float(0.0), "drift": Float(%.2f) }),
             ],
         ),""" % (name, slot, guid_for("sprites/%s.png" % name), sl, tint, slot, drift))
+    flies = []
+    for k in range(16):
+        x = -11.0 + (k * 7.31) % 22.0
+        y = -5.0 + (k * 3.77) % 10.0
+        flies.append('            (name: "Firefly", prefab: Some("prefabs/firefly.prefab"), transform: (position: (%.2f, %.2f, 0.0))),' % (x, y))
+    parts.append('        (name: "Fireflies", children: [\n%s\n        ]),' % "\n".join(flies))
     parts.append("""        (
             name: "Menu",
             components: [
                 (kind: "MenuController", fields: {}),
             ],
         ),""")
+    screens = ", ".join('(name: "%s", prefab: Some("ui/%s.prefab"))' % (n, f) for n, f in (
+        ("ScreenMain", "main_menu"), ("ScreenLevels", "level_select"), ("ScreenOptions", "options"), ("ScreenHelp", "help")))
+    parts.append('        (name: "MenuCanvas", prefab: Some("ui/menu_canvas.prefab"), children: [%s]),' % screens)
     os.makedirs(SCENES, exist_ok=True)
     text = "// Главное меню. Сгенерировано tools/gen_levels.py.\n(\n    name: \"Menu\",\n    objects: [\n%s\n    ],\n)\n" % "\n".join(parts)
     with open(os.path.join(SCENES, "menu.scene"), "w", encoding="utf-8", newline="\n") as f:
@@ -724,7 +876,52 @@ def menu_scene():
     print("menu scene written")
 
 
+def write_data():
+    d = os.path.join(HERE, "..", "assets", "data")
+    os.makedirs(d, exist_ok=True)
+    rows = []
+    for i in range(6):
+        L = INFO[i]
+        rows.append('    (scene: "level%d", name: %s, subtitle: %s, blurb: %s, need: %d, par_time: %.1f, music: %s),' % (
+            i + 1, ron_str(L.title), ron_str(L.subtitle), ron_str(BLURBS[i]), L.need, L.par, ron_str(L.music)))
+    with open(os.path.join(d, "levels.ron"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("// Таблица уровней: имя сцены, названия, сколько светлячков нужно для выхода, контрольное\n"
+                "// время (третья звезда) и музыка. Читается при старте уровня и в меню.\n[\n" + "\n".join(rows) + "\n]\n")
+    with open(os.path.join(d, "rules.ron"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("// Правила звёзд: 1 — дошли до выхода; 2 — не меньше star2_fireflies_percent %% светлячков\n"
+                "// и не больше star2_max_deaths поражений; 3 — ещё золотой светлячок и время не хуже контрольного.\n"
+                "(star2_fireflies_percent: 60, star2_max_deaths: 2)\n")
+
+
+def write_settings():
+    """assets/project.settings: карта ввода, слои, окно, физика, звук, порядок скриптов."""
+    text = """// Настройки проекта (Edit -> Project Settings). Подробно: docs/api/settings.md.
+(
+    // Порядок скриптов: платформы и враги двигаются в on_update, игрок — в on_late_update.
+    script_order: { "LevelManager": -50 },
+    player: (title: "Хранитель фонаря", width: 1280, height: 720, default_scene: "scenes/menu.scene"),
+    physics2d: (gravity: (0.0, -9.81)),
+    tags_and_layers: (tags: ["Player", "Enemy", "Pickup", "MainCamera"]),
+    input: (actions: [
+        (name: "Horizontal", kind: Axis, negative: ["Key:A", "Key:Left", "Pad:DPadLeft"], positive: ["Key:D", "Key:Right", "Pad:DPadRight"], analog: ["LeftStickX"], dead_zone: 0.2),
+        (name: "Vertical", kind: Axis, negative: ["Key:S", "Key:Down", "Pad:DPadDown"], positive: ["Key:W", "Key:Up", "Pad:DPadUp"], analog: ["LeftStickY"], dead_zone: 0.2),
+        (name: "Jump", kind: Button, bindings: ["Key:Space", "Key:W", "Key:Up", "Pad:South"]),
+        (name: "Dash", kind: Button, bindings: ["Key:LShift", "Key:RShift", "Key:X", "Pad:West", "Pad:RightBumper", "Pad:RightTrigger"]),
+        (name: "Pause", kind: Button, bindings: ["Key:Escape", "Key:P", "Pad:Start"]),
+        (name: "Fire1", kind: Button, bindings: ["Key:LCtrl", "Pad:West"]),
+        (name: "Submit", kind: Button, bindings: ["Key:Enter", "Pad:South"]),
+        (name: "Cancel", kind: Button, bindings: ["Key:Escape", "Pad:East"]),
+    ]),
+    audio: (master_volume: 1.0, music_volume: 0.6),
+)
+"""
+    with open(os.path.join(HERE, "..", "assets", "project.settings"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
 if __name__ == "__main__":
     menu_scene()
     for build in (level1, level2, level3, level4, level5, level6):
         build()
+    write_data()
+    write_settings()

@@ -13,6 +13,9 @@ pub(crate) struct SpriteVertex {
     pub position: [f32; 3],
     pub uv: [f32; 2],
     pub color: [f32; 4],
+    /// Кадр листа (min u, min v, max u, max v): шейдер не даёт выборке уменьшенной копии
+    /// (мипа) выйти за него — иначе вдали между плитками проступают соседние кадры.
+    pub rect: [f32; 4],
 }
 
 /// Чем закрашивать: ассет или одна из встроенных текстур.
@@ -149,10 +152,12 @@ pub(crate) fn sprite_uv(sprite: &SpriteRenderer, inset: UvInset) -> UvRect {
 /// левый нижний, правый нижний, правый верхний, левый верхний.
 pub(crate) fn push_quad(out: &mut Vec<SpriteVertex>, corners: [Vec3; 4], uv: UvRect, color: [f32; 4]) {
     let uvs = [[uv.u0, uv.v1], [uv.u1, uv.v1], [uv.u1, uv.v0], [uv.u0, uv.v0]];
+    let rect = [uv.u0.min(uv.u1), uv.v0.min(uv.v1), uv.u0.max(uv.u1), uv.v0.max(uv.v1)];
     let vertex = |i: usize| SpriteVertex {
         position: corners[i].to_array(),
         uv: uvs[i],
         color,
+        rect,
     };
     out.extend_from_slice(&[vertex(0), vertex(1), vertex(2), vertex(0), vertex(2), vertex(3)]);
 }

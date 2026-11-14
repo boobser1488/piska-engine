@@ -1,0 +1,179 @@
+# Установщики (install/): офлайн-тесты (dry-run, чистая логика, golden-файлы) на Windows,
+# Linux и macOS; сверка закреплённых контрольных сумм с сайтами издателей; графический
+# установщик (tools/piska-installer): сборка на трёх системах, его тесты без GPU, сухой
+# прогон без окна и артефакты; и НАСТОЯЩАЯ установка компонента `core` (и cpp, web) на
+# раннерах — скриптами и графическим установщиком без окна. Это единственное место, где
+# установщики реально что-то ставят (на машине автора они проверялись только в dry-run).
+name: install
+
+on:
+  push:
+    paths: ["install/**", "tools/piska-export/src/doctor.rs", "tools/piska-installer/**", ".github/workflows/install.yml"]
+  pull_request:
+    paths: ["install/**", "tools/piska-export/src/doctor.rs", "tools/piska-installer/**", ".github/workflows/install.yml"]
+  workflow_dispatch:
+    inputs:
+      android:
+        description: "Also run a real Android install (several GB, slow)"
+        type: boolean
+        default: false
+
+jobs:
+  tests-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tests in PowerShell 7
+        shell: pwsh
+        run: pwsh -NoProfile -File install/tests/run.ps1
+      - name: Tests in Windows PowerShell 5.1
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File install/tests/run.ps1
+
+  tests-unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dry-run tests (bash; macOS ships bash 3.2, so this also checks old-bash compatibility)
+        run: bash install/tests/run.sh
+      - name: install.ps1 parses under PowerShell on Linux
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: |
+          $e = $null; $t = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("install/install.ps1", [ref]$t, [ref]$e)
+          if ($e) { $e | ForEach-Object { Write-Error $_.Message }; exit 1 }
+
+  # Закреплённые суммы переписаны со страниц издателей вручную — здесь они сверяются онлайн.
+  verify-pins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash install/tests/verify-pins.sh
+
+  doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p piska-export doctor
+      - run: cargo run -p piska-export -- doctor --json --components core
+
+  # Настоящая установка. Раннеры уже содержат часть инструментов — установщик их найдёт и
+  # пропустит, а недостающее поставит по-настоящему.
+  real-windows:
+    needs: [tests-windows, verify-pins]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Real install of core, cpp, web
+        shell: pwsh
+        run: pwsh -NoProfile -File install/install.ps1 -Components core,cpp,web -Yes -AcceptLicenses -NoPrefs
+      - name: Doctor
+        shell: pwsh
+        run: |
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+          cargo run -p piska-export -- doctor --components core,cpp,web --strict
+      - name: Android (manual runs only)
+        if: ${{ github.event.inputs.android == 'true' }}
+        shell: pwsh
+        run: pwsh -NoProfile -File install/install.ps1 -Components android -Yes -AcceptLicenses -NoPrefs
+
+  real-linux:
+    needs: [tests-unix, verify-pins]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Real install of core, cpp, web
+        run: bash install/install.sh --components core,cpp,web --yes --no-prefs
+      - name: Doctor
+        run: |
+          . "$HOME/.cargo/env"
+          cargo run -p piska-export -- doctor --components core,cpp,web --strict
+      - name: Android (manual runs only)
+        if: ${{ github.event.inputs.android == 'true' }}
+        run: bash install/install.sh --components android --yes --accept-licenses --no-prefs
+
+  # Графический установщик: сборка (release), тесты без GPU (снимки экрана — только на
+  # машине с видеокартой), сухой прогон без окна настоящим скриптом и файлы для скачивания.
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            exe: piska-installer.exe
+            artifact: piska-installer-windows
+          - os: ubuntu-latest
+            exe: piska-installer
+            artifact: piska-installer-linux
+          - os: macos-latest
+            exe: piska-installer
+            artifact: piska-installer-macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux build packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libudev-dev
+      - run: cargo build --release -p piska-installer
+      - name: Unit tests and the wizard without a GPU (fake scripts; the real script only in dry run)
+        run: cargo test -p piska-installer --lib --test wizard --test l10n --test exe
+      - name: Unattended dry run (real script, nothing changes)
+        shell: bash
+        run: |
+          ./target/release/${{ matrix.exe }} --unattended --dry-run --components core,cpp,web > events.jsonl
+          head -n 1 events.jsonl | grep -q '"event":"hello"'
+          tail -n 1 events.jsonl | grep -q '"event":"summary","exit":0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: target/release/${{ matrix.exe }}
+
+  # Настоящая установка `core` графическим установщиком без окна на чистых раннерах.
+  real-installer-windows:
+    needs: [installer]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: piska-installer-windows
+      - name: Real unattended install of core
+        shell: pwsh
+        run: |
+          ./piska-installer.exe --unattended --components core --accept-license vs-buildtools | Tee-Object events.jsonl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Doctor
+        shell: pwsh
+        run: |
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User') + ";$env:USERPROFILE\.cargo\bin"
+          cargo run -p piska-export -- doctor --components core --strict
+
+  real-installer-linux:
+    needs: [installer]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: piska-installer-linux
+      - name: Real unattended install of core
+        run: |
+          chmod +x piska-installer
+          ./piska-installer --unattended --components core | tee events.jsonl
+      - name: Doctor
+        run: |
+          . "$HOME/.cargo/env"
+          cargo run -p piska-export -- doctor --components core --strict

@@ -5,9 +5,10 @@
 //! пересборки подхватывается на лету; код на Rust вкомпилирован в саму программу,
 //! поэтому вступает в силу после перезапуска редактора.
 
+use crate::i18n::{tr_s, trf};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -80,7 +81,7 @@ pub enum BuildStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Language {
+pub(crate) enum Language {
     Rust,
     Cpp,
     Ron,
@@ -90,7 +91,7 @@ enum Language {
 }
 
 impl Language {
-    fn of(path: &Path) -> Self {
+    pub(crate) fn of(path: &Path) -> Self {
         match path
             .extension()
             .and_then(|e| e.to_str())
@@ -100,21 +101,21 @@ impl Language {
         {
             "rs" => Language::Rust,
             "cpp" | "cc" | "cxx" | "c" | "h" | "hpp" => Language::Cpp,
-            "ron" | "scene" | "prefab" | "meta" => Language::Ron,
+            "ron" | "scene" | "prefab" | "meta" | "material" | "json" => Language::Ron,
             "wgsl" => Language::Wgsl,
             "scenario" => Language::Scenario,
             _ => Language::Plain,
         }
     }
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
-            Language::Rust => "Rust",
-            Language::Cpp => "C++",
-            Language::Ron => "RON",
+            Language::Rust => tr_s("Rust"),
+            Language::Cpp => tr_s("C++"),
+            Language::Ron => tr_s("RON"),
             Language::Wgsl => "WGSL",
-            Language::Scenario => "Scenario",
-            Language::Plain => "Text",
+            Language::Scenario => tr_s("Scenario"),
+            Language::Plain => tr_s("Text"),
         }
     }
 
@@ -134,7 +135,7 @@ impl Language {
                 "signed", "sizeof", "static", "struct", "switch", "template", "this", "throw", "true",
                 "try", "typedef", "typename", "union", "unsigned", "using", "virtual", "void", "while",
             ],
-            Language::Ron => &["Some", "None", "true", "false"],
+            Language::Ron => &["Some", "None", "true", "false"], // i18n-skip: ключевые слова RON
             Language::Wgsl => &[
                 "fn", "let", "var", "const", "struct", "return", "if", "else", "for", "while", "loop",
                 "break", "continue", "true", "false", "switch", "case", "default", "discard",
@@ -336,15 +337,74 @@ fn highlight(text: &str, language: Language, font: FontId) -> LayoutJob {
     job
 }
 
-struct Document {
-    path: PathBuf,
-    text: String,
+pub(crate) struct Document {
+    pub(crate) path: PathBuf,
+    pub(crate) text: String,
     /// Что лежит на диске; отличается от `text` — есть несохранённые правки.
-    saved: String,
-    language: Language,
+    pub(crate) saved: String,
+    pub(crate) language: Language,
+    /// Переводы строк, BOM и отступ файла на диске (сохраняются такими же).
+    pub(crate) format: crate::code_files::FileFormat,
+    /// Текст прошлого кадра: по разнице с ним диагностики и закладки следуют за правками.
+    pub(crate) shadow: String,
+    /// Номер версии текста (растёт с каждой правкой) и время последней правки.
+    pub(crate) version: u64,
+    pub(crate) changed_at: f64,
+    /// Версия, которую проверили (мгновенная проверка); `None` — ещё не проверяли.
+    pub(crate) checked: Option<u64>,
+    /// Результат мгновенной проверки.
+    pub(crate) syntax: Vec<crate::code_diagnostics::Diagnostic>,
+    /// Сколько миллисекунд шла последняя проверка.
+    pub(crate) check_ms: f32,
+    /// Закладки: байты начал строк (Ctrl+K Ctrl+K).
+    pub(crate) bookmarks: Vec<usize>,
+    /// Время изменения файла на диске, когда его читали или писали.
+    pub(crate) disk_time: Option<std::time::SystemTime>,
 }
 
 impl Document {
+    /// Новый документ с текстом, прочитанным с диска.
+    pub(crate) fn new(path: &Path, text: String, format: crate::code_files::FileFormat) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            saved: text.clone(),
+            shadow: text.clone(),
+            text,
+            language: Language::of(path),
+            format,
+            version: 0,
+            changed_at: 0.0,
+            checked: None,
+            syntax: Vec::new(),
+            check_ms: 0.0,
+            bookmarks: Vec::new(),
+            disk_time: std::fs::metadata(path).and_then(|m| m.modified()).ok(),
+        }
+    }
+
+    /// Сдвинуть закладки после правки.
+    pub(crate) fn shift_marks(&mut self, change: (usize, usize, usize)) {
+        for mark in &mut self.bookmarks {
+            let mut range = *mark..*mark;
+            crate::code_diagnostics::shift_range(&mut range, change);
+            *mark = range.start;
+        }
+        self.bookmarks.dedup();
+    }
+
+    /// Записать текст на диск в формате файла.
+    pub(crate) fn write(&mut self, trim: bool, final_newline: bool) -> Result<(), String> {
+        let bytes = crate::code_files::encode(&self.text, &self.format, trim, final_newline);
+        std::fs::write(&self.path, &bytes).map_err(|e| trf!("cannot save `{p0}`: {e}", p0 = self.path.display(), e = e))?;
+        // То, что легло на диск (без BOM и с `\n`), — новый «сохранённый» текст.
+        let written = String::from_utf8_lossy(&bytes).trim_start_matches('\u{feff}').replace("\r\n", "\n");
+        if written != self.text {
+            self.text = written;
+        }
+        self.saved = self.text.clone();
+        self.disk_time = std::fs::metadata(&self.path).and_then(|m| m.modified()).ok();
+        Ok(())
+    }
     fn title(&self) -> String {
         self.path
             .file_name()
@@ -352,8 +412,14 @@ impl Document {
             .unwrap_or_else(|| self.path.display().to_string())
     }
 
-    fn dirty(&self) -> bool {
+    pub(crate) fn dirty(&self) -> bool {
         self.text != self.saved
+    }
+
+    /// Id текстового поля документа: по пути, чтобы история Undo и курсор файла
+    /// переживали переключение и закрытие других вкладок.
+    pub(crate) fn text_id(&self) -> egui::Id {
+        egui::Id::new(("code_text", self.path.to_string_lossy().to_lowercase()))
     }
 }
 
@@ -373,6 +439,12 @@ struct Find {
     /// Перейти к текущему совпадению в этом кадре.
     jump: bool,
     focus: bool,
+    /// Строка «Replace» (Ctrl+H) под поиском и то, на что заменять.
+    replace: bool,
+    replacement: String,
+    /// Строка «Go to line» (Ctrl+G): введённый номер; фокус в поле при открытии.
+    goto_line: Option<String>,
+    goto_focus: bool,
 }
 
 /// Подсветка последнего показанного текста: пересчитывается, только когда текст
@@ -461,15 +533,9 @@ impl CodeState {
             self.active = index;
             return Ok(());
         }
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| format!("cannot open `{}` as text: {e}", path.display()))?
-            .replace("\r\n", "\n");
-        self.documents.push(Document {
-            path: path.to_path_buf(),
-            saved: text.clone(),
-            text,
-            language: Language::of(path),
-        });
+        // Формат файла (переводы строк, BOM, отступ) запоминается и сохраняется таким же.
+        let (text, format) = crate::code_files::read(path)?;
+        self.documents.push(Document::new(path, text, format));
         self.active = self.documents.len() - 1;
         Ok(())
     }
@@ -487,7 +553,7 @@ impl CodeState {
             return Ok(None);
         };
         std::fs::write(&document.path, &document.text)
-            .map_err(|e| format!("cannot save `{}`: {e}", document.path.display()))?;
+            .map_err(|e| trf!("cannot save `{p0}`: {e}", p0 = document.path.display(), e = e))?;
         document.saved = document.text.clone();
         Ok(Some(document.path.clone()))
     }
@@ -518,7 +584,7 @@ impl CodeState {
     pub(crate) fn save_all(&mut self) -> Result<(), String> {
         for document in self.documents.iter_mut().filter(|d| d.dirty()) {
             std::fs::write(&document.path, &document.text)
-                .map_err(|e| format!("cannot save `{}`: {e}", document.path.display()))?;
+                .map_err(|e| trf!("cannot save `{p0}`: {e}", p0 = document.path.display(), e = e))?;
             document.saved = document.text.clone();
         }
         Ok(())
@@ -635,7 +701,7 @@ pub(crate) fn log_build_line(line: &str) {
 
 /// Выполнить команду, переслав её вывод построчно в лог. `true` — код возврата 0.
 fn run_command(command: &BuildCommand) -> bool {
-    let mut process = Command::new(&command.program);
+    let mut process = engine_build::host::command(&command.program);
     process
         .args(&command.args)
         .stdin(Stdio::null())
@@ -790,6 +856,16 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
         editor.code.find.open = true;
         editor.code.find.focus = true;
     }
+    // Ctrl+H — поиск с заменой, Ctrl+G — перейти к строке.
+    if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::H)) {
+        editor.code.find.open = true;
+        editor.code.find.replace = true;
+        editor.code.find.focus = true;
+    }
+    if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::G)) {
+        editor.code.find.goto_line = Some(String::new());
+        editor.code.find.goto_focus = true;
+    }
 
     // --- Дерево файлов слева ---
     egui::SidePanel::left("code_files")
@@ -833,29 +909,29 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     right.spacing_mut().item_spacing.x = theme::SP_S;
     let running = status == BuildStatus::Running;
     let buildable = editor.can_build();
-    let build = right.add_enabled_ui(!running && buildable, |ui| theme::icon_text_button(ui, Icon::Build, "Build"));
+    let build = right.add_enabled_ui(!running && buildable, |ui| theme::icon_text_button(ui, Icon::Build, tr_s("Build")));
     let build = build
         .inner
-        .on_hover_text(format!("{}; output goes to the Console", editor.prefs.shortcuts.tip("Save and run the build commands", "build-code")))
+        .on_hover_text(trf!("{}; output goes to the Console", editor.prefs.shortcuts.tip(tr_s("Save and run the build commands"), "build-code")))
         .on_disabled_hover_text(if running {
-            "A build is running"
+            tr_s("A build is running")
         } else {
-            "No build commands: add them with `EditorConfig::build_command`"
+            tr_s("No build commands: add them with `EditorConfig::build_command`")
         });
     if build.clicked() {
         editor.actions.push(Action::Build);
     }
     let has_document = !editor.code.documents.is_empty();
-    let save = right.add_enabled_ui(has_document, |ui| theme::icon_text_button(ui, Icon::Save, "Save"));
-    if save.inner.on_hover_text(editor.prefs.shortcuts.tip("Save the file", "save")).clicked() {
+    let save = right.add_enabled_ui(has_document, |ui| theme::icon_text_button(ui, Icon::Save, tr_s("Save")));
+    if save.inner.on_hover_text(editor.prefs.shortcuts.tip(tr_s("Save the file"), "save")).clicked() {
         editor.actions.push(Action::SaveCode);
     }
     // Внешний редактор (Preferences → General): кнопка есть, только когда он задан.
     if has_document && !editor.prefs.external_editor.trim().is_empty() {
-        let external = theme::icon_text_button(&mut right, Icon::External, "Open Externally");
+        let external = theme::icon_text_button(&mut right, Icon::External, tr_s("Open Externally"));
         let external = right
             .interact(external.rect, Editor::open_externally_id(), egui::Sense::click())
-            .on_hover_text("Open this file in the external code editor set in Preferences → General");
+            .on_hover_text(tr_s("Open this file in the external code editor set in Preferences → General"));
         if external.clicked() {
             editor.open_active_externally();
         }
@@ -879,17 +955,17 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
         .show_inside(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 let (text, color, icon) = match &status {
-                    BuildStatus::Idle => ("Not built yet".to_string(), theme::TEXT_MUTED, Icon::Build),
-                    BuildStatus::Running => ("Building…".to_string(), theme::WARN, Icon::Build),
-                    BuildStatus::Succeeded { seconds } => (format!("Build succeeded in {seconds:.1} s"), theme::OK, Icon::Check),
-                    BuildStatus::Failed { command } => (format!("Build failed: {command} — see the Console"), theme::ERROR, Icon::Error),
+                    BuildStatus::Idle => (tr_s("Not built yet").to_string(), theme::TEXT_MUTED, Icon::Build),
+                    BuildStatus::Running => (tr_s("Building…").to_string(), theme::WARN, Icon::Build),
+                    BuildStatus::Succeeded { seconds } => (trf!("Build succeeded in {seconds} s", seconds = format!("{:.1}", seconds)), theme::OK, Icon::Check),
+                    BuildStatus::Failed { command } => (trf!("Build failed: {command} — see the Console", command = command), theme::ERROR, Icon::Error),
                 };
                 icons::inline(ui, icon, color);
                 ui.label(egui::RichText::new(text).size(theme::FONT_CAPTION).color(color));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if let Some(language) = language {
                         let (line, column) = editor.code.cursor;
-                        for text in ["LF", "UTF-8", language.name(), &format!("Ln {line}, Col {column}")] {
+                        for text in ["LF", "UTF-8", language.name(), &trf!("Ln {line}, Col {column}", line = line, column = column)] {
                             ui.label(egui::RichText::new(text).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
                             ui.add_space(theme::SP_S);
                         }
@@ -915,16 +991,24 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
         theme::empty_state(
             ui,
             Icon::Code,
-            "No file is open",
-            "Pick a file in the tree on the left, or double-click a script\nin the Project window. Ctrl+S saves, Ctrl+B builds.",
+            tr_s("No file is open"),
+            tr_s("Pick a file in the tree on the left, or double-click a script\nin the Project window. Ctrl+S saves, Ctrl+B builds."),
         );
         return;
     };
 
     // --- Поиск ---
-    let matches = if find.open { find_matches(&document.text, &find.query) } else { Vec::new() };
+    let mut matches = if find.open { find_matches(&document.text, &find.query) } else { Vec::new() };
     if find.open {
         find_bar(ui, find, matches.len());
+        if find.replace && replace_bar(ui, find, &mut document.text, &matches) {
+            *cache = None;
+            matches = find_matches(&document.text, &find.query);
+        }
+    }
+    let mut goto_request = None;
+    if find.goto_line.is_some() {
+        goto_request = goto_bar(ui, find, document.text.lines().count().max(1));
     }
     if !matches.is_empty() {
         find.current = find.current.min(matches.len() - 1);
@@ -943,6 +1027,9 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     let mut pending_goto = None;
     if goto.as_ref().is_some_and(|(path, _)| *path == document.path) {
         pending_goto = goto.take();
+    }
+    if let Some(line) = goto_request {
+        pending_goto = Some((document.path.clone(), line));
     }
     if jump_to_match {
         let start = matches[current_match].start;
@@ -964,7 +1051,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                         Sense::hover(),
                     );
                     ui.painter().rect_filled(gutter, 0.0, theme::BG_HEADER);
-                    ui.add_space(12.0);
+                    ui.add_space(theme::SP_6);
 
                     let query = if find.open { find.query.clone() } else { String::new() };
                     let mut layouter = |ui: &egui::Ui, text: &str, _wrap_width: f32| {
@@ -1094,7 +1181,7 @@ fn document_tab(ui: &mut egui::Ui, index: usize, document: &Document, selected: 
         }
         icons::paint(ui.painter(), close_rect.shrink(6.0), Icon::Close, theme::TEXT_MUTED);
     }
-    let tip = if document.dirty() { "Close (unsaved changes are kept in memory until you close)" } else { "Close" };
+    let tip = if document.dirty() { tr_s("Close (unsaved changes are kept in memory until you close)") } else { tr_s("Close") };
     let closed = close.on_hover_text(tip).clicked();
     (response, closed)
 }
@@ -1110,9 +1197,79 @@ fn editor_display(code_dirs: &[PathBuf], path: &Path) -> String {
 }
 
 /// Полоса поиска: поле, «3 из 12», вверх / вниз, закрыть.
+/// Полоса замены под поиском: «на что», Replace (текущее совпадение) и Replace All.
+/// `true` — текст изменился.
+fn replace_bar(ui: &mut egui::Ui, find: &mut Find, text: &mut String, matches: &[std::ops::Range<usize>]) -> bool {
+    let mut changed = false;
+    theme::toolbar_strip(ui, |ui| {
+        crate::controls::text_field(ui, &mut find.replacement, tr_s("Replace with"), 300.0);
+        let current = matches.get(find.current.min(matches.len().saturating_sub(1))).cloned();
+        if ui.add_enabled_ui(current.is_some(), |ui| theme::button(ui, tr_s("Replace"))).inner.on_hover_text(tr_s("Replace the current match and go to the next one")).clicked() {
+            if let Some(range) = current {
+                text.replace_range(range, &find.replacement);
+                find.jump = true;
+                changed = true;
+            }
+        }
+        if ui.add_enabled_ui(!matches.is_empty(), |ui| theme::button(ui, tr_s("Replace All"))).inner.clicked() {
+            *text = replace_all(text, matches, &find.replacement);
+            find.current = 0;
+            changed = true;
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if icons::small_button(ui, Icon::Close, tr_s("Hide replace")).clicked() {
+                find.replace = false;
+            }
+        });
+    });
+    changed
+}
+
+/// Заменить все совпадения (диапазоны не пересекаются и идут по порядку).
+fn replace_all(text: &str, matches: &[std::ops::Range<usize>], replacement: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for range in matches {
+        out.push_str(&text[last..range.start]);
+        out.push_str(replacement);
+        last = range.end;
+    }
+    out.push_str(&text[last..]);
+    out
+}
+
+/// Полоса «перейти к строке» (Ctrl+G): номер и Enter. Возвращает строку для перехода.
+fn goto_bar(ui: &mut egui::Ui, find: &mut Find, lines: usize) -> Option<usize> {
+    let mut go = None;
+    let mut close = false;
+    let text = find.goto_line.as_mut()?;
+    theme::toolbar_strip(ui, |ui| {
+        ui.label(egui::RichText::new(tr_s("Go to line")).color(theme::TEXT_MUTED));
+        let response = crate::controls::text_field(ui, text, &trf!("1 – {lines}", lines = lines), 90.0);
+        if std::mem::take(&mut find.goto_focus) {
+            response.request_focus();
+        }
+        let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let number = text.trim().parse::<usize>().ok().filter(|n| (1..=lines).contains(n));
+        if theme::button(ui, tr_s("Go")).clicked() || enter {
+            go = number;
+            close = number.is_some();
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if icons::small_button(ui, Icon::Close, tr_s("Close (Esc)")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                close = true;
+            }
+        });
+    });
+    if close {
+        find.goto_line = None;
+    }
+    go
+}
+
 fn find_bar(ui: &mut egui::Ui, find: &mut Find, count: usize) {
     theme::toolbar_strip(ui, |ui| {
-        let response = theme::search_field(ui, &mut find.query, "Find in file", 300.0);
+        let response = theme::search_field(ui, &mut find.query, tr_s("Find in file"), 300.0);
         if find.focus {
             response.request_focus();
             find.focus = false;
@@ -1125,7 +1282,7 @@ fn find_bar(ui: &mut egui::Ui, find: &mut Find, count: usize) {
         let shift = ui.input(|i| i.modifiers.shift);
         let summary = match count {
             0 if find.query.is_empty() => String::new(),
-            0 => "No results".to_string(),
+            0 => tr_s("No results").to_string(),
             n => format!("{} of {n}", find.current.min(n - 1) + 1),
         };
         ui.label(egui::RichText::new(summary).color(if count == 0 && !find.query.is_empty() { theme::ERROR } else { theme::TEXT_MUTED }));
@@ -1135,17 +1292,17 @@ fn find_bar(ui: &mut egui::Ui, find: &mut Find, count: usize) {
                 find.jump = true;
             }
         };
-        if icons::button(ui, Icon::ChevronDown, false, None, "Next match (Enter)").clicked() || (enter && !shift) {
+        if icons::button(ui, Icon::ChevronDown, false, None, tr_s("Next match (Enter)")).clicked() || (enter && !shift) {
             step(true);
         }
-        if icons::button(ui, Icon::ChevronUp, false, None, "Previous match (Shift+Enter)").clicked() || (enter && shift) {
+        if icons::button(ui, Icon::ChevronUp, false, None, tr_s("Previous match (Shift+Enter)")).clicked() || (enter && shift) {
             step(false);
         }
         if enter {
             response.request_focus();
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if icons::small_button(ui, Icon::Close, "Close (Esc)").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if icons::small_button(ui, Icon::Close, tr_s("Close (Esc)")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 find.open = false;
             }
         });
@@ -1169,7 +1326,7 @@ fn file_tree(editor: &mut Editor, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             ui.add_space(theme::SP_L);
             ui.label(
-                egui::RichText::new("No code folders. Start the editor with `EditorConfig::code_dir(\"src\")`.")
+                egui::RichText::new(tr_s("No code folders. Start the editor with `EditorConfig::code_dir(\"src\")`."))
                     .color(theme::TEXT_MUTED),
             );
         });
@@ -1272,6 +1429,15 @@ fn tree_line(ui: &mut egui::Ui, id: &str, label: &str, depth: usize, folder: boo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replace_all_swaps_every_match_and_keeps_the_rest() {
+        let text = "let speed = 1.0; speed += speed;";
+        let matches = find_matches(text, "speed");
+        assert_eq!(matches.len(), 3);
+        assert_eq!(replace_all(text, &matches, "pace"), "let pace = 1.0; pace += pace;");
+        assert_eq!(replace_all(text, &[], "x"), text);
+    }
 
     fn kinds(text: &str, language: Language) -> Vec<(Token, &str)> {
         tokenize(text, language)

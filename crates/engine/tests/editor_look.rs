@@ -278,6 +278,32 @@ fn look_gallery() {
         d.apply(Action::NewScene);
         shoot(&mut d, &dir, "20_dialog", &[], 8);
     }
+    if want("21_multi") {
+        let mut m = level1();
+        let ids: Vec<GameObjectId> = ["Platform A", "Platform B", "Platform C"].iter().map(|n| find(&m, n)).collect();
+        m.select_many(&ids, Some(ids[0]));
+        shoot(&mut m, &dir, "21_multi", &[], 8);
+    }
+    if want("22_getting_started") {
+        let mut g = level1();
+        g.show_getting_started(true);
+        shoot(&mut g, &dir, "22_getting_started", &[], 8);
+    }
+    if want("23_shortcuts") {
+        let mut k = level1();
+        k.show_shortcuts_help(true);
+        shoot(&mut k, &dir, "23_shortcuts", &[], 8);
+    }
+    if want("24_splash") {
+        let mut sp = demo3d();
+        sp.enable_splash();
+        let image = capture_with_input(&mut sp, SIZE.0, SIZE.1, 4, |_, _| Vec::new()).unwrap();
+        image.save(dir.join("24_splash.png")).unwrap();
+    }
+    if want("25_tools_menu") {
+        let mut t = level1();
+        shoot(&mut t, &dir, "25_tools_menu", &[Step::Click("Tools")], 8);
+    }
     if want("18_material") {
         let mut m = level1();
         m.select_asset("materials/painted_metal.material");
@@ -338,4 +364,32 @@ fn text_contrast_is_readable_on_every_surface() {
         assert!(contrast(theme::TEXT_MUTED, surface) >= 4.5, "muted text on {surface:?}");
     }
     assert!(contrast(theme::TEXT, theme::selection_fill()) >= 4.5, "text on the selection");
+}
+
+/// Замер запуска редактора по шагам (для заставки): `cargo test -p engine --test
+/// editor_look -- --ignored --nocapture startup_timings`.
+#[test]
+#[ignore = "needs a GPU; prints timings"]
+fn startup_timings() {
+    std::env::set_var("ENGINE_AUDIO", "off");
+    let t = std::time::Instant::now();
+    let mut app = engine::app();
+    scripts::register(&mut app);
+    let app_ms = t.elapsed().as_secs_f32() * 1000.0;
+    let t = std::time::Instant::now();
+    engine::mount_assets(&mut app, ASSETS).unwrap();
+    let mount_ms = t.elapsed().as_secs_f32() * 1000.0;
+    let t = std::time::Instant::now();
+    let mut editor = Editor::new(app, EditorConfig::default().open_scene("scenes/demo3d.scene")).unwrap();
+    let new_ms = t.elapsed().as_secs_f32() * 1000.0;
+    let t = std::time::Instant::now();
+    let _ = capture_with_input(&mut editor, 1280, 720, 2, |_, _| Vec::new()).unwrap();
+    let first_ms = t.elapsed().as_secs_f32() * 1000.0;
+    let t = std::time::Instant::now();
+    let _ = capture_with_input(&mut editor, 1280, 720, 12, |_, _| Vec::new()).unwrap();
+    let twelve_ms = t.elapsed().as_secs_f32() * 1000.0;
+    println!(
+        "STARTUP app+register {app_ms:.0} ms, mount_assets {mount_ms:.0} ms, Editor::new {new_ms:.0} ms, \
+         gpu init + 2 frames {first_ms:.0} ms, gpu init + 12 frames {twelve_ms:.0} ms"
+    );
 }

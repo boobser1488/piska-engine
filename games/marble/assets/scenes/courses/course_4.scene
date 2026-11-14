@@ -1,0 +1,2264 @@
+(
+    name: "Course 4",
+    objects: [
+        (
+            name: "Track",
+            id: 110740797287688,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Floor 1",
+                    id: 195264270189390,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, -0.3, -6.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.0, 0.6, 12.0),
+                    ),
+                ),
+                (
+                    name: "Rail L",
+                    id: 248108823936792,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (-3.85, 0.45, -6.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.3, 0.9, 12.0),
+                    ),
+                ),
+                (
+                    name: "Rail R",
+                    id: 35697109096308,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (3.85, 0.45, -6.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.3, 0.9, 12.0),
+                    ),
+                ),
+                (
+                    name: "Start Line",
+                    id: 55738249079547,
+                    prefab: Some("896cc5e8ac75b02a1a0c93f13f8f4451"),
+                    transform: (
+                        position: (0.0, 0.02, -2.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.5, 0.03, 0.35),
+                    ),
+                ),
+                (
+                    name: "Floor 2",
+                    id: 173492342510106,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, -0.3, -17.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.0, 0.6, 10.0),
+                    ),
+                ),
+                (
+                    name: "Wall",
+                    id: 19433941687134,
+                    prefab: Some("32712b02bd4d71993cd957e34709388e"),
+                    transform: (
+                        position: (0.0, 1.95, -22.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.0, 5.1, 1.0),
+                    ),
+                ),
+                (
+                    name: "Floor 3",
+                    id: 55780173648871,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, 4.2, -28.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.0, 0.6, 10.0),
+                    ),
+                ),
+                (
+                    name: "Rail L",
+                    id: 5084438660875,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (-2.85, 4.95, -28.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.3, 0.9, 10.0),
+                    ),
+                ),
+                (
+                    name: "Rail R",
+                    id: 42951829835532,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (2.85, 4.95, -28.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.3, 0.9, 10.0),
+                    ),
+                ),
+                (
+                    name: "Floor 4",
+                    id: 124438566560066,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, 4.2, -48.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.4, 0.6, 30.0),
+                    ),
+                ),
+                (
+                    name: "Floor 5",
+                    id: 161092523321819,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, 4.2, -66.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.0, 0.6, 6.0),
+                    ),
+                ),
+                (
+                    name: "Rail L",
+                    id: 44833006221961,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (-2.85, 4.95, -66.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.3, 0.9, 6.0),
+                    ),
+                ),
+                (
+                    name: "Rail R",
+                    id: 268127244839459,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (2.85, 4.95, -66.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.3, 0.9, 6.0),
+                    ),
+                ),
+                (
+                    name: "Floor 6",
+                    id: 175637186984533,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, 4.2, -74.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.0, 0.6, 10.0),
+                    ),
+                ),
+                (
+                    name: "Wall",
+                    id: 80294223776029,
+                    prefab: Some("32712b02bd4d71993cd957e34709388e"),
+                    transform: (
+                        position: (0.0, 6.7, -79.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.0, 5.6, 1.0),
+                    ),
+                ),
+                (
+                    name: "Floor 7",
+                    id: 204417000499001,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, 9.2, -84.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.0, 0.6, 8.0),
+                    ),
+                ),
+                (
+                    name: "Fan Pad",
+                    id: 44822858468812,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (4.7, 9.2, -84.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.4, 0.6, 5.0),
+                    ),
+                ),
+                (
+                    name: "Perch",
+                    id: 96026835990409,
+                    prefab: Some("32712b02bd4d71993cd957e34709388e"),
+                    transform: (
+                        position: (8.6, 13.0, -84.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.2, 0.6, 3.2),
+                    ),
+                ),
+                (
+                    name: "Floor 8",
+                    id: 75186024144989,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, 9.2, -92.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.0, 0.6, 8.0),
+                    ),
+                ),
+                (
+                    name: "Floor 9",
+                    id: 230677620276695,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, 5.2, -110.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.0, 0.6, 12.0),
+                    ),
+                ),
+                (
+                    name: "Corner 10",
+                    id: 157582586298201,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (0.0, 5.2, -120.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.0, 0.6, 8.0),
+                    ),
+                ),
+                (
+                    name: "Rail",
+                    id: 261270516647487,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (0.0, 5.95, -123.85),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.0, 0.9, 0.3),
+                    ),
+                ),
+                (
+                    name: "Rail",
+                    id: 127217017611190,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (3.85, 5.95, -120.0),
+                        rotation: (0.0, -90.0, 0.0),
+                        scale: (8.0, 0.9, 0.3),
+                    ),
+                ),
+                (
+                    name: "Floor 11",
+                    id: 179719714012998,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (-12.0, 5.2, -120.0),
+                        rotation: (0.0, 90.0, 0.0),
+                        scale: (5.0, 0.6, 16.0),
+                    ),
+                ),
+                (
+                    name: "Rail L",
+                    id: 65350725977769,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (-12.0, 5.95, -117.65),
+                        rotation: (0.0, 90.0, 0.0),
+                        scale: (0.3, 0.9, 16.0),
+                    ),
+                ),
+                (
+                    name: "Rail R",
+                    id: 156415892218845,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (-12.0, 5.95, -122.35),
+                        rotation: (0.0, 90.0, 0.0),
+                        scale: (0.3, 0.9, 16.0),
+                    ),
+                ),
+                (
+                    name: "Floor 12",
+                    id: 158673922832403,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (-25.0, 5.2, -120.0),
+                        rotation: (0.0, 90.0, 0.0),
+                        scale: (6.0, 0.6, 10.0),
+                    ),
+                ),
+                (
+                    name: "Wall",
+                    id: 59233512081221,
+                    prefab: Some("32712b02bd4d71993cd957e34709388e"),
+                    transform: (
+                        position: (-30.5, 7.2, -120.0),
+                        rotation: (0.0, 90.0, 0.0),
+                        scale: (6.0, 4.6, 1.0),
+                    ),
+                ),
+                (
+                    name: "Ramp 13",
+                    id: 154382788719984,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (-37.899097, 6.7174773, -120.0),
+                        rotation: (-19.6538, 90.0, 0.0),
+                        scale: (6.0, 0.6, 14.866069),
+                    ),
+                ),
+                (
+                    name: "Rail L",
+                    id: 16315692365490,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (-38.151352, 7.423784, -117.15),
+                        rotation: (-19.6538, 90.0, 0.0),
+                        scale: (0.3, 0.9, 14.866069),
+                    ),
+                ),
+                (
+                    name: "Rail R",
+                    id: 162764805350618,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (-38.151352, 7.423784, -122.85),
+                        rotation: (-19.6538, 90.0, 0.0),
+                        scale: (0.3, 0.9, 14.866069),
+                    ),
+                ),
+                (
+                    name: "Floor 14",
+                    id: 128103704449296,
+                    prefab: Some("80eaef65f505bfaacf56bb0368aa29d1"),
+                    transform: (
+                        position: (-51.0, 4.2, -120.0),
+                        rotation: (0.0, 90.0, 0.0),
+                        scale: (8.0, 0.6, 12.0),
+                    ),
+                ),
+                (
+                    name: "Rail L",
+                    id: 80340640006752,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (-51.0, 4.95, -116.15),
+                        rotation: (0.0, 90.0, 0.0),
+                        scale: (0.3, 0.9, 12.0),
+                    ),
+                ),
+                (
+                    name: "Rail R",
+                    id: 15599139878337,
+                    prefab: Some("161d0a581750952db2926b1df5b2342a"),
+                    transform: (
+                        position: (-51.0, 4.95, -123.85),
+                        rotation: (0.0, 90.0, 0.0),
+                        scale: (0.3, 0.9, 12.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Mechanisms",
+            id: 158354159612733,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Fan",
+                    id: 75830877232644,
+                    prefab: Some("64e6fd53f76cf17eff7329367d3eaad8"),
+                    overrides: [
+                        (
+                            component: "Fan",
+                            field: "height",
+                            value: Float(6.1),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "radius",
+                            value: Float(1.8),
+                        ),
+                        (
+                            path: "Grille",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(3.06, 0.08, 3.06),
+                        ),
+                        (
+                            path: "Ring",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(3.4199998, 0.06, 3.4199998),
+                        ),
+                        (
+                            path: "Rotor",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.6999998, 1.0, 2.6999998),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "shape_size",
+                            value: Vec3(1.4399999, 0.0, 0.0),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "start_speed",
+                            value: Vec2(5.49, 7.9299994),
+                        ),
+                    ],
+                    transform: (
+                        position: (0.0, 0.0, -19.8),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Checkpoint",
+                    id: 242234122395673,
+                    prefab: Some("8f948325d1581fa86dcb2950dd825cce"),
+                    transform: (
+                        position: (0.0, 4.5, -34.2),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Fan",
+                    id: 117130672339901,
+                    prefab: Some("64e6fd53f76cf17eff7329367d3eaad8"),
+                    overrides: [
+                        (
+                            component: "Fan",
+                            field: "height",
+                            value: Float(7.4),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "lift",
+                            value: Float(13.0),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "radius",
+                            value: Float(1.5),
+                        ),
+                        (
+                            path: "Grille",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.5500002, 0.08, 2.5500002),
+                        ),
+                        (
+                            path: "Ring",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.85, 0.06, 2.85),
+                        ),
+                        (
+                            path: "Rotor",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.25, 1.0, 2.25),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "shape_size",
+                            value: Vec3(1.2, 0.0, 0.0),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "start_speed",
+                            value: Vec2(6.66, 9.62),
+                        ),
+                    ],
+                    transform: (
+                        position: (-4.4, 5.5, -40.0),
+                        rotation: (0.0, 0.0, -90.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Fan",
+                    id: 19354979327518,
+                    prefab: Some("64e6fd53f76cf17eff7329367d3eaad8"),
+                    overrides: [
+                        (
+                            component: "Fan",
+                            field: "height",
+                            value: Float(7.4),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "lift",
+                            value: Float(13.0),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "radius",
+                            value: Float(1.5),
+                        ),
+                        (
+                            path: "Grille",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.5500002, 0.08, 2.5500002),
+                        ),
+                        (
+                            path: "Ring",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.85, 0.06, 2.85),
+                        ),
+                        (
+                            path: "Rotor",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.25, 1.0, 2.25),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "shape_size",
+                            value: Vec3(1.2, 0.0, 0.0),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "start_speed",
+                            value: Vec2(6.66, 9.62),
+                        ),
+                    ],
+                    transform: (
+                        position: (4.4, 5.5, -48.0),
+                        rotation: (0.0, 0.0, 90.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Fan",
+                    id: 257345018583730,
+                    prefab: Some("64e6fd53f76cf17eff7329367d3eaad8"),
+                    overrides: [
+                        (
+                            component: "Fan",
+                            field: "height",
+                            value: Float(7.4),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "lift",
+                            value: Float(13.0),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "radius",
+                            value: Float(1.5),
+                        ),
+                        (
+                            path: "Grille",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.5500002, 0.08, 2.5500002),
+                        ),
+                        (
+                            path: "Ring",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.85, 0.06, 2.85),
+                        ),
+                        (
+                            path: "Rotor",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.25, 1.0, 2.25),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "shape_size",
+                            value: Vec3(1.2, 0.0, 0.0),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "start_speed",
+                            value: Vec2(6.66, 9.62),
+                        ),
+                    ],
+                    transform: (
+                        position: (-4.4, 5.5, -56.0),
+                        rotation: (0.0, 0.0, -90.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Checkpoint",
+                    id: 202263311494070,
+                    prefab: Some("8f948325d1581fa86dcb2950dd825cce"),
+                    overrides: [
+                        (
+                            component: "Checkpoint",
+                            field: "index",
+                            value: Int(2),
+                        ),
+                    ],
+                    transform: (
+                        position: (0.0, 4.5, -70.2),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Fan",
+                    id: 231378879697755,
+                    prefab: Some("64e6fd53f76cf17eff7329367d3eaad8"),
+                    overrides: [
+                        (
+                            component: "Fan",
+                            field: "height",
+                            value: Float(6.6),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "radius",
+                            value: Float(1.8),
+                        ),
+                        (
+                            path: "Grille",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(3.06, 0.08, 3.06),
+                        ),
+                        (
+                            path: "Ring",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(3.4199998, 0.06, 3.4199998),
+                        ),
+                        (
+                            path: "Rotor",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.6999998, 1.0, 2.6999998),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "shape_size",
+                            value: Vec3(1.4399999, 0.0, 0.0),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "start_speed",
+                            value: Vec2(5.9399996, 8.58),
+                        ),
+                    ],
+                    transform: (
+                        position: (0.0, 4.5, -76.8),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Fan",
+                    id: 96094805856610,
+                    prefab: Some("64e6fd53f76cf17eff7329367d3eaad8"),
+                    overrides: [
+                        (
+                            component: "Fan",
+                            field: "height",
+                            value: Float(6.0),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "radius",
+                            value: Float(1.5),
+                        ),
+                        (
+                            path: "Grille",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.5500002, 0.08, 2.5500002),
+                        ),
+                        (
+                            path: "Ring",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.85, 0.06, 2.85),
+                        ),
+                        (
+                            path: "Rotor",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.25, 1.0, 2.25),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "shape_size",
+                            value: Vec3(1.2, 0.0, 0.0),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "start_speed",
+                            value: Vec2(5.3999996, 7.7999997),
+                        ),
+                    ],
+                    transform: (
+                        position: (4.8, 9.5, -84.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Fan",
+                    id: 79941279261004,
+                    prefab: Some("64e6fd53f76cf17eff7329367d3eaad8"),
+                    overrides: [
+                        (
+                            component: "Fan",
+                            field: "radius",
+                            value: Float(1.8),
+                        ),
+                        (
+                            path: "Grille",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(3.06, 0.08, 3.06),
+                        ),
+                        (
+                            path: "Ring",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(3.4199998, 0.06, 3.4199998),
+                        ),
+                        (
+                            path: "Rotor",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.6999998, 1.0, 2.6999998),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "shape_size",
+                            value: Vec3(1.4399999, 0.0, 0.0),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "start_speed",
+                            value: Vec2(4.95, 7.1499996),
+                        ),
+                    ],
+                    transform: (
+                        position: (0.0, 9.5, -94.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Checkpoint",
+                    id: 201096483833475,
+                    prefab: Some("8f948325d1581fa86dcb2950dd825cce"),
+                    overrides: [
+                        (
+                            component: "Collider",
+                            field: "size",
+                            value: Vec3(6.0, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Checkpoint",
+                            field: "index",
+                            value: Int(3),
+                        ),
+                        (
+                            path: "Post L",
+                            component: "Transform",
+                            field: "position",
+                            value: Vec3(-3.2, 1.6, 0.0),
+                        ),
+                        (
+                            path: "Post R",
+                            component: "Transform",
+                            field: "position",
+                            value: Vec3(3.2, 1.6, 0.0),
+                        ),
+                        (
+                            path: "Bar",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(6.8, 0.32, 0.32),
+                        ),
+                    ],
+                    transform: (
+                        position: (0.0, 5.5, -117.2),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Fan",
+                    id: 134404552990594,
+                    prefab: Some("64e6fd53f76cf17eff7329367d3eaad8"),
+                    overrides: [
+                        (
+                            component: "Fan",
+                            field: "height",
+                            value: Float(5.6),
+                        ),
+                        (
+                            component: "Fan",
+                            field: "radius",
+                            value: Float(1.8),
+                        ),
+                        (
+                            path: "Grille",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(3.06, 0.08, 3.06),
+                        ),
+                        (
+                            path: "Ring",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(3.4199998, 0.06, 3.4199998),
+                        ),
+                        (
+                            path: "Rotor",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(2.6999998, 1.0, 2.6999998),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "shape_size",
+                            value: Vec3(1.4399999, 0.0, 0.0),
+                        ),
+                        (
+                            path: "Flow",
+                            component: "ParticleSystem",
+                            field: "start_speed",
+                            value: Vec2(5.04, 7.2799997),
+                        ),
+                    ],
+                    transform: (
+                        position: (-27.8, 5.5, -120.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Finish",
+                    id: 158018370256998,
+                    prefab: Some("158578812555fbc7c36677daa210455d"),
+                    overrides: [
+                        (
+                            path: "Ring",
+                            component: "Transform",
+                            field: "scale",
+                            value: Vec3(3.72, 0.1, 3.72),
+                        ),
+                    ],
+                    transform: (
+                        position: (-53.0, 4.5, -120.0),
+                        rotation: (0.0, 90.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Pickups",
+            id: 122241000594459,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Gear",
+                    id: 17433084586878,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 0.95, -5.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 271781496346897,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 0.95, -7.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 114563767274932,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 0.95, -9.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 32677622783577,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 5.45, -25.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 197544602484815,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 5.45, -27.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 207506496251533,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 5.45, -30.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 38406746626226,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 5.45, -37.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 72595447953380,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 5.45, -43.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 58763059961373,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 5.45, -49.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 98182682029031,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 5.45, -55.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Golden Gear",
+                    id: 40608367423861,
+                    prefab: Some("ba78bd686a0f8047bbeb905b137a0703"),
+                    transform: (
+                        position: (8.6, 14.25, -84.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 68825180757605,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 6.45, -107.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 47331976442971,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 6.45, -109.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 279951989487353,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (0.0, 6.45, -112.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 194549773748213,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (-7.0, 6.45, -120.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 260179456730682,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (-10.0, 6.45, -120.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 246452726251218,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (-13.0, 6.45, -120.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Gear",
+                    id: 84356838811744,
+                    prefab: Some("c69791bd1a854a1715bd9a5b3089fcd3"),
+                    transform: (
+                        position: (-16.0, 6.45, -120.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Lamps",
+            id: 85279136105621,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Lamp Post",
+                    id: 66494107793214,
+                    prefab: Some("8ab1098e1249f1a15281518d7bbda063"),
+                    transform: (
+                        position: (-3.6, 1.1, -1.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.18, 2.2, 0.18),
+                    ),
+                ),
+                (
+                    name: "Lamp Post",
+                    id: 34175809159988,
+                    prefab: Some("8ab1098e1249f1a15281518d7bbda063"),
+                    overrides: [
+                        (
+                            path: "Lamp",
+                            component: "Blinker",
+                            field: "phase",
+                            value: Float(0.5),
+                        ),
+                    ],
+                    transform: (
+                        position: (3.6, 1.1, -1.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.18, 2.2, 0.18),
+                    ),
+                ),
+                (
+                    name: "Lamp",
+                    id: 21933756493144,
+                    prefab: Some("9442b57d3f46d48946973ad7c18a8143"),
+                    overrides: [
+                        (
+                            component: "MeshRenderer",
+                            field: "emissive",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "color",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "rate",
+                            value: Float(1.2),
+                        ),
+                    ],
+                    transform: (
+                        position: (-1.8, 0.4, -17.6),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.4, 0.4, 0.4),
+                    ),
+                ),
+                (
+                    name: "Lamp",
+                    id: 147972219199353,
+                    prefab: Some("9442b57d3f46d48946973ad7c18a8143"),
+                    overrides: [
+                        (
+                            component: "MeshRenderer",
+                            field: "emissive",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "color",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "phase",
+                            value: Float(0.5),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "rate",
+                            value: Float(1.2),
+                        ),
+                    ],
+                    transform: (
+                        position: (1.8, 0.4, -17.6),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.4, 0.4, 0.4),
+                    ),
+                ),
+                (
+                    name: "Lamp",
+                    id: 186566867335523,
+                    prefab: Some("9442b57d3f46d48946973ad7c18a8143"),
+                    overrides: [
+                        (
+                            component: "MeshRenderer",
+                            field: "emissive",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "color",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "rate",
+                            value: Float(1.2),
+                        ),
+                    ],
+                    transform: (
+                        position: (-1.8, 4.9, -74.6),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.4, 0.4, 0.4),
+                    ),
+                ),
+                (
+                    name: "Lamp",
+                    id: 124358788909415,
+                    prefab: Some("9442b57d3f46d48946973ad7c18a8143"),
+                    overrides: [
+                        (
+                            component: "MeshRenderer",
+                            field: "emissive",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "color",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "phase",
+                            value: Float(0.5),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "rate",
+                            value: Float(1.2),
+                        ),
+                    ],
+                    transform: (
+                        position: (1.8, 4.9, -74.6),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.4, 0.4, 0.4),
+                    ),
+                ),
+                (
+                    name: "Lamp",
+                    id: 155914498280448,
+                    prefab: Some("9442b57d3f46d48946973ad7c18a8143"),
+                    overrides: [
+                        (
+                            component: "MeshRenderer",
+                            field: "emissive",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "color",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "rate",
+                            value: Float(1.2),
+                        ),
+                    ],
+                    transform: (
+                        position: (-25.6, 5.9, -118.2),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.4, 0.4, 0.4),
+                    ),
+                ),
+                (
+                    name: "Lamp",
+                    id: 78567538864315,
+                    prefab: Some("9442b57d3f46d48946973ad7c18a8143"),
+                    overrides: [
+                        (
+                            component: "MeshRenderer",
+                            field: "emissive",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "color",
+                            value: Color(0.3, 1.7, 3.0, 1.0),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "phase",
+                            value: Float(0.5),
+                        ),
+                        (
+                            component: "Blinker",
+                            field: "rate",
+                            value: Float(1.2),
+                        ),
+                    ],
+                    transform: (
+                        position: (-25.6, 5.9, -121.8),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.4, 0.4, 0.4),
+                    ),
+                ),
+                (
+                    name: "Lamp Post",
+                    id: 48833118795906,
+                    prefab: Some("8ab1098e1249f1a15281518d7bbda063"),
+                    overrides: [
+                        (
+                            path: "Lamp",
+                            component: "MeshRenderer",
+                            field: "emissive",
+                            value: Color(0.3, 2.0, 0.8, 1.0),
+                        ),
+                        (
+                            path: "Lamp",
+                            component: "Blinker",
+                            field: "color",
+                            value: Color(0.3, 2.0, 0.8, 1.0),
+                        ),
+                    ],
+                    transform: (
+                        position: (-47.0, 5.6, -116.4),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.18, 2.2, 0.18),
+                    ),
+                ),
+                (
+                    name: "Lamp Post",
+                    id: 158111156717481,
+                    prefab: Some("8ab1098e1249f1a15281518d7bbda063"),
+                    overrides: [
+                        (
+                            path: "Lamp",
+                            component: "MeshRenderer",
+                            field: "emissive",
+                            value: Color(0.3, 2.0, 0.8, 1.0),
+                        ),
+                        (
+                            path: "Lamp",
+                            component: "Blinker",
+                            field: "color",
+                            value: Color(0.3, 2.0, 0.8, 1.0),
+                        ),
+                    ],
+                    transform: (
+                        position: (-47.0, 5.6, -123.6),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.18, 2.2, 0.18),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Decor",
+            id: 174491270009570,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Cloud Sea",
+                    id: 130685095473974,
+                    prefab: Some("6828c2588ce15ee4e233498999ecd96a"),
+                    transform: (
+                        position: (-22.0, -35.8, -65.175),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1600.0, 1.0, 1600.0),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 85234647619584,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-120.884605, -34.76352, 13.017693),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (26.686537, 5.536866, 16.258791),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 102567124717308,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-60.407104, -32.00723, -137.81802),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (17.357613, 4.622753, 19.822897),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 186548521342353,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-9.229585, -33.4354, -0.6529541),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (21.093184, 3.3398743, 19.697117),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 238244125519789,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-41.23728, -34.61044, 30.296661),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (30.927639, 3.1706624, 25.997276),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 173946863497724,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (33.451683, -33.13918, -29.163654),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (27.162165, 4.6526537, 28.908785),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 80439575849385,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (49.193275, -32.22118, 13.528496),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (29.03336, 5.209634, 30.073044),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 230246991367200,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-89.70645, -34.594822, -149.69733),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (19.913937, 5.3593006, 12.7945595),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 202682316718915,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-186.23329, -33.210983, -51.71436),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (16.2085, 4.6818743, 17.219162),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 269503039796749,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-13.710386, -34.354874, -166.2309),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (24.812996, 4.7778707, 17.536713),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 6858994359999,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-86.86597, -33.179638, -126.552704),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (16.63972, 5.800206, 12.088384),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 25012883301397,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (41.975906, -34.75619, 28.248062),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (19.990196, 5.923695, 19.746851),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 229662831953585,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-115.595924, -34.124626, -106.952614),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (28.736227, 5.37914, 24.769207),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 109538214581499,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-2.8330135, -33.232407, -129.31192),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (35.462894, 5.345459, 38.119312),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 23751040517291,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-127.17451, -33.404465, -72.41679),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (17.47927, 3.27114, 15.601286),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 43334559611794,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (143.09177, -33.02253, -116.243355),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (28.782457, 3.9853601, 20.062767),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 197093049645652,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-101.01434, -34.627373, 38.79786),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (32.744225, 3.9607048, 21.65724),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 4143505651423,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-161.73912, -32.941246, -168.04074),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (19.336996, 5.6224446, 20.56429),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 267091130683698,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (155.21536, -32.179455, -91.815704),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (22.029211, 5.333378, 20.449556),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 130017666946252,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (49.339752, -31.888557, -19.009762),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (14.552048, 5.734823, 11.242715),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 206967032128956,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (45.540375, -33.37755, -53.242905),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (21.058783, 3.859229, 13.506222),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 57723744716327,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-15.913359, -32.62014, 57.24537),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (19.871016, 5.699053, 20.794134),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 112373893450157,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (97.69418, -32.348713, -35.767),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (28.22731, 3.4238493, 18.819925),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 134512301044448,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-117.85525, -33.28623, -171.25314),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (34.977623, 4.967906, 37.833897),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 195097389827341,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-153.98633, -33.74208, -193.48436),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (22.027966, 5.990862, 22.300087),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 84390679378157,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-26.96276, -32.303337, -130.56476),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (24.352337, 3.20611, 22.638647),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 39098090664128,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (164.37875, -34.196648, -79.28552),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (14.316317, 5.3494415, 9.08766),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 239468615801118,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (35.501663, -32.358074, -39.577637),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (18.198433, 5.1940846, 16.45747),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 58277321308966,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (112.63327, -34.526066, -115.677345),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (27.477983, 3.9993093, 28.731403),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 227333128005795,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (15.349693, -33.179855, 27.824257),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (36.18451, 4.843416, 22.145823),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 156946639721916,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (95.98352, -34.123684, -166.52075),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (30.686394, 5.427704, 21.411278),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 188644012447448,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (8.335476, -33.696373, -8.141304),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (33.798027, 4.486709, 23.797224),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 174575098999112,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (117.617645, -33.755844, -155.27377),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (25.703259, 3.8103628, 28.057426),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 153440854150971,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (-39.111572, -32.51381, 36.539803),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (21.11251, 5.5744953, 14.553914),
+                    ),
+                ),
+                (
+                    name: "Cloud",
+                    id: 13384137954471,
+                    prefab: Some("9e8b4d24d1135e233e2de35176435b9e"),
+                    transform: (
+                        position: (69.78604, -34.576332, -13.271664),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (31.339218, 5.673957, 33.493114),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 168451569427188,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (84.4516, -26.123291, -46.753952),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.113321, 13.353416, 8.113321),
+                    ),
+                ),
+                (
+                    name: "Chimney Smoke",
+                    id: 220082616202687,
+                    prefab: Some("1f9e562c26946a2849413ed3aae89dbd"),
+                    transform: (
+                        position: (84.4516, -19.146584, -46.753952),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 257901627009516,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-9.435211, -25.042046, -104.36972),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (7.713612, 15.515907, 7.713612),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 136467998743377,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (1.8100224, -28.5221, -113.7294),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.252182, 8.555798, 8.252182),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 125286831652451,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-46.094475, -26.449104, 14.686775),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.4695497, 12.70179, 6.4695497),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 37062468158901,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-100.713875, -24.982998, -124.21742),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.6127205, 15.634003, 8.6127205),
+                    ),
+                ),
+                (
+                    name: "Chimney Smoke",
+                    id: 277879374309828,
+                    prefab: Some("1f9e562c26946a2849413ed3aae89dbd"),
+                    transform: (
+                        position: (-100.713875, -16.865997, -124.21742),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 156980563151618,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-55.340473, -28.140427, -116.3741),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.8392105, 9.319145, 8.8392105),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 273672069837497,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-91.222435, -27.946575, -58.727676),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (4.4749665, 9.706848, 4.4749665),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 29799591050850,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (63.53604, -25.685467, -90.657425),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.361635, 14.229067, 8.361635),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 42288067084439,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-70.639114, -25.345533, -130.11209),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (4.360141, 14.908932, 4.360141),
+                    ),
+                ),
+                (
+                    name: "Chimney Smoke",
+                    id: 96265106214502,
+                    prefab: Some("1f9e562c26946a2849413ed3aae89dbd"),
+                    transform: (
+                        position: (-70.639114, -17.591068, -130.11209),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 39094770919230,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-36.826595, -25.417175, 27.433418),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.927639, 14.765648, 8.927639),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 16819010729405,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (28.780102, -27.905283, -102.85317),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (8.329919, 9.789433, 8.329919),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 27106557060158,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-57.052265, -25.931168, -29.968174),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (4.596481, 13.737663, 4.596481),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 131181609929182,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-37.10737, -25.286108, -120.10747),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (7.9739733, 15.027782, 7.9739733),
+                    ),
+                ),
+                (
+                    name: "Chimney Smoke",
+                    id: 226304453541213,
+                    prefab: Some("1f9e562c26946a2849413ed3aae89dbd"),
+                    transform: (
+                        position: (-37.10737, -17.472218, -120.10747),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 54000731144832,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-94.46815, -25.07861, -113.28377),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.823745, 15.44278, 6.823745),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 103291400894157,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (1.1732063, -27.755959, -129.81471),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.0091734, 10.088079, 6.0091734),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 166489738791356,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (25.483604, -25.88988, -38.42691),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (5.0501957, 13.82024, 5.0501957),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 272448362883508,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-17.10185, -25.265764, -5.426117),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.727313, 15.06847, 3.727313),
+                    ),
+                ),
+                (
+                    name: "Chimney Smoke",
+                    id: 172352607069456,
+                    prefab: Some("1f9e562c26946a2849413ed3aae89dbd"),
+                    transform: (
+                        position: (-17.10185, -17.43153, -5.426117),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 70169772108869,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (4.140238, -27.280201, -139.32495),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.1668057, 11.039597, 3.1668057),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 215990673350942,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (10.309528, -24.745838, -120.88423),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.638871, 16.10832, 6.638871),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 217602471015808,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (74.2473, -27.66505, -52.654396),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (7.8367777, 10.269897, 7.8367777),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 272293835612014,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (6.3534927, -26.13216, -132.34717),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.9159443, 13.335678, 3.9159443),
+                    ),
+                ),
+                (
+                    name: "Chimney Smoke",
+                    id: 238176397456008,
+                    prefab: Some("1f9e562c26946a2849413ed3aae89dbd"),
+                    transform: (
+                        position: (6.3534927, -19.164322, -132.34717),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 192427368853797,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (30.58105, -26.850128, -90.63364),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (7.7199025, 11.89974, 7.7199025),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 61699716908738,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-9.22061, -25.6251, -0.31396484),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (6.7226725, 14.3498, 6.7226725),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 84834196390230,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-34.332844, -27.368206, -134.14688),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.0243807, 10.863586, 3.0243807),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 194302615356640,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-48.615326, -27.171322, -113.90538),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (4.45019, 11.257355, 4.45019),
+                    ),
+                ),
+                (
+                    name: "Chimney Smoke",
+                    id: 199326533390601,
+                    prefab: Some("1f9e562c26946a2849413ed3aae89dbd"),
+                    transform: (
+                        position: (-48.615326, -21.242645, -113.90538),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Pillar",
+                    id: 261793526406802,
+                    prefab: Some("52ec7456d4019f795c6a1d1fceb10f6f"),
+                    transform: (
+                        position: (-135.52702, -24.25314, -99.21675),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.45119, 17.093716, 3.45119),
+                    ),
+                ),
+                (
+                    name: "Cog",
+                    id: 251281419881782,
+                    prefab: Some("11f6e1cd0e9d072e6b6cc3e90dc864b1"),
+                    overrides: [
+                        (
+                            component: "Cog",
+                            field: "speed_deg",
+                            value: Float(4.0768023),
+                        ),
+                    ],
+                    transform: (
+                        position: (103.06407, -10.925193, -120.58513),
+                        rotation: (90.0, -23.8959, 0.0),
+                        scale: (15.568319, 15.568319, 15.568319),
+                    ),
+                ),
+                (
+                    name: "Cog",
+                    id: 2991405671081,
+                    prefab: Some("11f6e1cd0e9d072e6b6cc3e90dc864b1"),
+                    overrides: [
+                        (
+                            component: "Cog",
+                            field: "speed_deg",
+                            value: Float(-7.136261),
+                        ),
+                    ],
+                    transform: (
+                        position: (117.136826, -20.427675, -41.592907),
+                        rotation: (90.0, 9.6196, 0.0),
+                        scale: (29.258553, 29.258553, 29.258553),
+                    ),
+                ),
+                (
+                    name: "Cog",
+                    id: 250877992695604,
+                    prefab: Some("11f6e1cd0e9d072e6b6cc3e90dc864b1"),
+                    overrides: [
+                        (
+                            component: "Cog",
+                            field: "speed_deg",
+                            value: Float(5.669631),
+                        ),
+                    ],
+                    transform: (
+                        position: (-102.41243, -5.517082, 64.73718),
+                        rotation: (90.0, 121.7565, 0.0),
+                        scale: (15.483492, 15.483492, 15.483492),
+                    ),
+                ),
+                (
+                    name: "Cog",
+                    id: 167819280684025,
+                    prefab: Some("11f6e1cd0e9d072e6b6cc3e90dc864b1"),
+                    overrides: [
+                        (
+                            component: "Cog",
+                            field: "speed_deg",
+                            value: Float(-6.3346124),
+                        ),
+                    ],
+                    transform: (
+                        position: (-75.21082, -2.667657, -204.62634),
+                        rotation: (90.0, -110.8855, 0.0),
+                        scale: (19.27784, 19.27784, 19.27784),
+                    ),
+                ),
+                (
+                    name: "Cog",
+                    id: 33803016846250,
+                    prefab: Some("11f6e1cd0e9d072e6b6cc3e90dc864b1"),
+                    overrides: [
+                        (
+                            component: "Cog",
+                            field: "speed_deg",
+                            value: Float(8.527029),
+                        ),
+                    ],
+                    transform: (
+                        position: (62.523193, 2.1388063, 50.739693),
+                        rotation: (90.0, 53.9011, 0.0),
+                        scale: (16.655928, 16.655928, 16.655928),
+                    ),
+                ),
+                (
+                    name: "Cog",
+                    id: 99496222992375,
+                    prefab: Some("11f6e1cd0e9d072e6b6cc3e90dc864b1"),
+                    overrides: [
+                        (
+                            component: "Cog",
+                            field: "speed_deg",
+                            value: Float(-5.409753),
+                        ),
+                    ],
+                    transform: (
+                        position: (-18.306355, -11.337258, -193.29553),
+                        rotation: (90.0, -88.3487, 0.0),
+                        scale: (27.374762, 27.374762, 27.374762),
+                    ),
+                ),
+                (
+                    name: "Cog",
+                    id: 71891162108008,
+                    prefab: Some("11f6e1cd0e9d072e6b6cc3e90dc864b1"),
+                    overrides: [
+                        (
+                            component: "Cog",
+                            field: "speed_deg",
+                            value: Float(7.275156),
+                        ),
+                    ],
+                    transform: (
+                        position: (-143.7179, -17.724049, -144.73367),
+                        rotation: (90.0, -146.8301, 0.0),
+                        scale: (22.914127, 22.914127, 22.914127),
+                    ),
+                ),
+                (
+                    name: "Cog",
+                    id: 145640040425083,
+                    prefab: Some("11f6e1cd0e9d072e6b6cc3e90dc864b1"),
+                    overrides: [
+                        (
+                            component: "Cog",
+                            field: "speed_deg",
+                            value: Float(-7.72419),
+                        ),
+                    ],
+                    transform: (
+                        position: (68.4414, -17.851164, -170.4393),
+                        rotation: (90.0, -49.3314, 0.0),
+                        scale: (24.101515, 24.101515, 24.101515),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Camera",
+            id: 245060788942762,
+            prefab: Some("890265553cfa9998f5984149b3b80f52"),
+            transform: (
+                position: (0.0, 8.0, 14.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Sun",
+            id: 142488002686933,
+            prefab: Some("a354876564d16afc93d12f54004c48d7"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Environment",
+            id: 34182788014312,
+            prefab: Some("21910cc575bed277cadb6f4da3ef5ae8"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Game",
+            id: 139038537253336,
+            prefab: Some("79e5f51c6736df4804e4037a77c209ab"),
+            overrides: [
+                (
+                    component: "GameManager",
+                    field: "course",
+                    value: Int(3),
+                ),
+            ],
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Ball",
+            id: 217895143066749,
+            prefab: Some("cf89533c3d2e6fe0ca0a8f5501308d79"),
+            overrides: [
+                (
+                    component: "Ball",
+                    field: "kill_y",
+                    value: Float(-24.8),
+                ),
+            ],
+            transform: (
+                position: (0.0, 0.6, -3.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "HUD",
+            id: 163010586775423,
+            prefab: Some("52e3a7552daac633cb0fea5338160060"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Pause",
+            id: 266900200185299,
+            prefab: Some("075d475b2b061c2b9c665126d39dbe88"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Results",
+            id: 156170097955795,
+            prefab: Some("080bc87678e2d5ea516d35181a14b8f8"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Fade",
+            id: 279350254508776,
+            prefab: Some("022e0e3105d17d1e412b6b6b0c10d510"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+    ],
+)

@@ -947,11 +947,19 @@ impl Compiler {
             WriteBack::Var(name, p) => {
                 let before = self.here();
                 // Константу-вектор менять нельзя.
-                let is_const = match self.resolve(&name, p, false)? {
-                    Var::Local { constant, .. } | Var::Up { constant, .. } => constant,
-                    Var::Global(_) => self.global_const.contains(&name),
+                let (is_const, host_global) = match self.resolve(&name, p, false)? {
+                    Var::Local { constant, .. } | Var::Up { constant, .. } => (constant, None),
+                    Var::Global(i) => {
+                        (self.global_const.contains(&name), (!self.global_info[i as usize].declared).then_some(i))
+                    }
                 };
-                if is_const {
+                if let Some(i) = host_global {
+                    // Имя, которое скрипт не объявлял, — значение от движка (`self`, `scene`…).
+                    // `self.rotation = …` меняет поле объекта, а не саму переменную, поэтому
+                    // проверка «не объявлено» из `store_var` здесь не нужна. Обратная запись
+                    // выполняется только для значений-векторов (см. `after_set`).
+                    self.emit(Op::SetGlobal(i), p);
+                } else if is_const {
                     let msg: Rc<str> = format!(
                         "`{name}` is a const; vectors and colors are values, so changing a part of one changes `{name}` itself — declare it with `let`"
                     )

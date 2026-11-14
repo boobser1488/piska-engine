@@ -1,0 +1,276 @@
+# Единственный источник версий, ссылок, контрольных сумм и списков пакетов для
+# установщиков (install.ps1, install.sh), `piska-export doctor` (вшит через include_str!),
+# docs/install.md и тестов install/tests.
+#
+# Формат — ограниченное подмножество TOML, которое читают и PowerShell, и bash (awk), и
+# крейт `toml`: заголовки `[раздел]` / `[раздел.подраздел]`, строки `ключ = "значение"`,
+# целые числа и однострочные массивы строк `ключ = ["a", "b"]`. Комментарии — только
+# отдельными строками. Никаких многострочных значений.
+#
+# pin_status = "to-verify-in-ci": сумма переписана со страницы издателя без возможности
+# проверить офлайн; install/tests/verify-pins.sh (CI) сверяет её со страницей / index.json.
+#
+# Контрольные суммы: `sha256` — зафиксированная здесь (сверена с страницей издателя при
+# написании; перед выпуском сверьте заново); `sha256_url` — файл издателя с суммой,
+# скачиваемый по TLS вместе с файлом. Файл без одной из двух проверок установщик не
+# запускает (это проверяет install/tests).
+
+[project]
+repo = "https://github.com/boobser1488/piska-engine.git"
+# Сырой URL каталога install/ — работает, только когда репозиторий публичный (сейчас он приватный).
+raw_base = "https://raw.githubusercontent.com/boobser1488/piska-engine/main/install"
+branch = "main"
+install_dir_name = "PiskaEngine"
+state_dir_name = "PiskaEngine"
+# Собираемые программы основного рабочего пространства; модельер — отдельное рабочее
+# пространство (подмодуль git) в modeler/ и собирается через --manifest-path.
+binaries = ["piska-hub", "piska-editor", "piska-export"]
+modeler_manifest = "modeler/Cargo.toml"
+modeler_binary = "piska-modeler"
+# Файл проекта: расширение и описание для ассоциации файлов — те же, что в `engine_i18n::brand`
+# (PROJECT_EXTENSION, PROJECT_FILE_DESCRIPTION; это проверяет тест графического установщика).
+project_extension = "pks"
+project_file_description = "Piska project source"
+
+# Минимальные версии: по ним doctor решает «старая версия».
+[min]
+rust = "1.86"
+cmake = "3.20"
+ninja = "1.10"
+git = "2.30"
+java = "11"
+zig = "0.13"
+ndk_major = "23"
+android_api = "26"
+gpp = "9"
+
+[rust]
+toolchain = "stable"
+windows_host = "x86_64-pc-windows-msvc"
+components = ["clippy", "rustfmt"]
+rustup_init_windows_url = "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe"
+rustup_init_windows_sha256_url = "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe.sha256"
+# Скрипт rustup на Linux / macOS: скачивается в файл, проверяется и только потом запускается.
+rustup_init_linux_x86_64_url = "https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init"
+rustup_init_linux_aarch64_url = "https://static.rust-lang.org/rustup/dist/aarch64-unknown-linux-gnu/rustup-init"
+rustup_init_macos_x86_64_url = "https://static.rust-lang.org/rustup/dist/x86_64-apple-darwin/rustup-init"
+rustup_init_macos_aarch64_url = "https://static.rust-lang.org/rustup/dist/aarch64-apple-darwin/rustup-init"
+web_target = "wasm32-unknown-unknown"
+android_targets = ["aarch64-linux-android"]
+linux_target = "x86_64-unknown-linux-gnu"
+
+# winget-пакеты Windows.
+[winget]
+git = "Git.Git"
+buildtools = "Microsoft.VisualStudio.2022.BuildTools"
+cmake = "Kitware.CMake"
+ninja = "Ninja-build.Ninja"
+jdk = "EclipseAdoptium.Temurin.17.JDK"
+# Параметры установщика Visual Studio (переданы в --override).
+vs_workloads = ["Microsoft.VisualStudio.Workload.VCTools", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "Microsoft.VisualStudio.Component.Windows11SDK.22621"]
+vs_required_component = "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+
+# Android: версии, которые принимает piska-export (tools/piska-export/src/android.rs).
+[android]
+platform = "android-35"
+build_tools = "36.0.0"
+ndk = "28.2.13676358"
+jdk = "17"
+cargo_ndk = "4.1.2"
+cmdline_tools_build = "15859902"
+sdk_packages = ["platform-tools", "platforms;android-35", "build-tools;36.0.0", "ndk;28.2.13676358"]
+
+[download.android_cmdline_windows]
+url = "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip"
+sha256 = "90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a"
+pin_status = "to-verify-in-ci"
+size_mb = 156
+
+[download.android_cmdline_linux]
+url = "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip"
+sha256 = "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583"
+pin_status = "to-verify-in-ci"
+size_mb = 182
+
+[download.android_cmdline_macos_x86_64]
+url = "https://dl.google.com/android/repository/commandlinetools-mac_x86_64-15859902_latest.zip"
+sha256 = "c5a6378ab5cf7e0d5701921405115befff13e9ff7417fb588389338f8bd050f3"
+pin_status = "to-verify-in-ci"
+size_mb = 156
+
+[download.android_cmdline_macos_aarch64]
+url = "https://dl.google.com/android/repository/commandlinetools-mac_arm64-15859902_latest.zip"
+sha256 = "835b62a26162b229b441d1f6d4680383815a270809eb33522c0d480fa5002c4e"
+pin_status = "to-verify-in-ci"
+size_mb = 156
+
+# zig: версия закреплена; сумма закреплена здесь И сверяется с https://ziglang.org/download/index.json
+# (обе должны совпасть с суммой скачанного файла).
+[zig]
+version = "0.17.1"
+index_url = "https://ziglang.org/download/index.json"
+
+[download.zig_windows_x86_64]
+url = "https://ziglang.org/download/0.17.1/zig-x86_64-windows-0.17.1.zip"
+sha256 = "b03f477a1943673e02aca0f570e8030dffd536ce1f45cbc4d3326ec31159562e"
+index_key = "x86_64-windows"
+pin_status = "to-verify-in-ci"
+size_mb = 96
+
+[download.zig_linux_x86_64]
+url = "https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz"
+sha256 = "3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a"
+index_key = "x86_64-linux"
+pin_status = "to-verify-in-ci"
+size_mb = 55
+
+[download.zig_linux_aarch64]
+url = "https://ziglang.org/download/0.17.1/zig-aarch64-linux-0.17.1.tar.xz"
+sha256 = "a1546d5646eb184437918d6635ca6b762a0e889eac09cef720ee7a1ed3fe7795"
+index_key = "aarch64-linux"
+pin_status = "to-verify-in-ci"
+size_mb = 51
+
+[download.zig_macos_x86_64]
+url = "https://ziglang.org/download/0.17.1/zig-x86_64-macos-0.17.1.tar.xz"
+sha256 = "9af07b20319fbd0c92ee46ad23e81d6a782b1aaea2cfb8dcbff35f1d2c7ddbb7"
+index_key = "x86_64-macos"
+pin_status = "to-verify-in-ci"
+size_mb = 57
+
+[download.zig_macos_aarch64]
+url = "https://ziglang.org/download/0.17.1/zig-aarch64-macos-0.17.1.tar.xz"
+sha256 = "75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d"
+index_key = "aarch64-macos"
+pin_status = "to-verify-in-ci"
+size_mb = 52
+
+# rustup-init: сумма берётся у издателя (файл .sha256 рядом) в момент установки.
+[download.rustup_windows]
+url = "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe"
+sha256_url = "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe.sha256"
+size_mb = 14
+
+[download.rustup_linux_x86_64]
+url = "https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init"
+sha256_url = "https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init.sha256"
+size_mb = 20
+
+[download.rustup_linux_aarch64]
+url = "https://static.rust-lang.org/rustup/dist/aarch64-unknown-linux-gnu/rustup-init"
+sha256_url = "https://static.rust-lang.org/rustup/dist/aarch64-unknown-linux-gnu/rustup-init.sha256"
+size_mb = 20
+
+[download.rustup_macos_x86_64]
+url = "https://static.rust-lang.org/rustup/dist/x86_64-apple-darwin/rustup-init"
+sha256_url = "https://static.rust-lang.org/rustup/dist/x86_64-apple-darwin/rustup-init.sha256"
+size_mb = 15
+
+[download.rustup_macos_aarch64]
+url = "https://static.rust-lang.org/rustup/dist/aarch64-apple-darwin/rustup-init"
+sha256_url = "https://static.rust-lang.org/rustup/dist/aarch64-apple-darwin/rustup-init.sha256"
+size_mb = 15
+
+# Компоненты: размер на диске и назначение (выводятся установщиком и в docs/install.md);
+# download_* — примерный объём скачивания (графический установщик показывает его в таблице).
+[component.core]
+title = "Rust, C++ build tools, Git, GPU driver check"
+size_windows = "6 GB"
+size_unix = "1.5 GB"
+needs = []
+download_windows = "2 GB"
+download_unix = "600 MB"
+
+[component.cpp]
+title = "CMake + Ninja (hot-reloadable C++ plugins)"
+size_windows = "200 MB"
+size_unix = "150 MB"
+needs = ["core"]
+download_windows = "60 MB"
+download_unix = "30 MB"
+
+[component.web]
+title = "wasm32 target (web export)"
+size_windows = "60 MB"
+size_unix = "60 MB"
+needs = ["core"]
+download_windows = "30 MB"
+download_unix = "30 MB"
+
+[component.android]
+title = "JDK 17, Android SDK + NDK, cargo-ndk (APK export)"
+size_windows = "5 GB"
+size_unix = "5 GB"
+needs = ["core"]
+download_windows = "1.3 GB"
+download_unix = "1.3 GB"
+
+[component.linux-cross]
+title = "zig + Linux target (Linux export from Windows / macOS)"
+size_windows = "400 MB"
+size_unix = "400 MB"
+needs = ["core"]
+download_windows = "140 MB"
+download_unix = "100 MB"
+
+[component.engine]
+title = "Engine sources, hub, editor, modeler, shortcuts"
+size_windows = "3 GB"
+size_unix = "3 GB"
+needs = ["core"]
+download_windows = "800 MB"
+download_unix = "800 MB"
+
+# Linux: пакеты. `base` — нужно скриптам (скачать, распаковать); `build` — собрать движок;
+# `run` — запускать (Vulkan, X11 / Wayland); `cpp`, `jdk` — компоненты cpp и android.
+# Источник: docs/api/export.md §10.1 и .github/workflows/build.yml.
+[linux.debian]
+ids = ["debian", "ubuntu", "linuxmint", "pop", "raspbian", "neon", "elementary"]
+update = "apt-get update"
+install = "apt-get install -y"
+base = ["ca-certificates", "curl", "git", "unzip", "xz-utils"]
+build = ["build-essential", "pkg-config", "libasound2-dev", "libudev-dev"]
+run = ["mesa-vulkan-drivers", "libvulkan1", "libxkbcommon0", "libwayland-client0", "libx11-6"]
+cpp = ["cmake", "ninja-build"]
+jdk = ["openjdk-17-jdk-headless"]
+
+[linux.fedora]
+ids = ["fedora", "rhel", "centos", "rocky", "almalinux", "nobara"]
+update = "true"
+install = "dnf install -y"
+base = ["ca-certificates", "curl", "git", "unzip", "xz"]
+build = ["gcc", "gcc-c++", "pkgconf-pkg-config", "alsa-lib-devel", "systemd-devel"]
+run = ["mesa-vulkan-drivers", "vulkan-loader", "libxkbcommon", "libwayland-client", "libX11"]
+cpp = ["cmake", "ninja-build"]
+jdk = ["java-17-openjdk-devel"]
+
+[linux.arch]
+ids = ["arch", "manjaro", "endeavouros", "garuda", "cachyos"]
+update = "pacman -Sy"
+install = "pacman -S --needed --noconfirm"
+base = ["ca-certificates", "curl", "git", "unzip", "xz"]
+build = ["base-devel", "pkgconf", "alsa-lib", "systemd-libs"]
+run = ["vulkan-icd-loader", "vulkan-radeon", "libxkbcommon", "wayland", "libx11"]
+cpp = ["cmake", "ninja"]
+jdk = ["jdk17-openjdk"]
+
+[linux.suse]
+ids = ["opensuse-leap", "opensuse-tumbleweed", "opensuse", "sles", "suse"]
+update = "true"
+install = "zypper --non-interactive install"
+base = ["ca-certificates", "curl", "git", "unzip", "xz"]
+build = ["gcc", "gcc-c++", "pkgconf-pkg-config", "alsa-devel", "systemd-devel"]
+run = ["libvulkan1", "Mesa-vulkan-device-select", "libxkbcommon0", "libwayland-client0", "libX11-6"]
+cpp = ["cmake", "ninja"]
+jdk = ["java-17-openjdk-devel"]
+
+# macOS: Homebrew. Компилятор — Xcode Command Line Tools (xcode-select --install).
+[macos]
+update = "true"
+install = "brew install"
+install_cask = "brew install --cask"
+base = ["git", "curl", "unzip", "xz"]
+build = ["pkg-config"]
+run = []
+cpp = ["cmake", "ninja"]
+jdk_cask = ["temurin@17"]

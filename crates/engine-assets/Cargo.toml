@@ -19,7 +19,8 @@ thiserror.workspace = true
 log.workspace = true
 gltf = { workspace = true, features = ["names"], optional = true }
 web-time = "1"
+# Файлы данных `.json` (`AssetDatabase::load_data`).
+serde_json = "1"
+# Сторонние форматы моделей: .bbmodel, модели Minecraft, .vox, .ply, .stl (docs/api/model-formats.md).
+engine-model-formats.workspace = true
 
-[dev-dependencies]
-# Тесты импорта `.pmodel` и `.glb` из Piska Modeler.
-engine-modeler.workspace = true

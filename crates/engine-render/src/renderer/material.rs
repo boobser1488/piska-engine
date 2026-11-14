@@ -242,7 +242,8 @@ impl MeshPass {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: inputs.depth_format,
                     depth_write_enabled: !blend,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    // Обратная глубина (depth.rs): ближе — больше.
+                    depth_compare: wgpu::CompareFunction::Greater,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -477,7 +478,15 @@ impl Renderer {
             }
         };
         // Пиксель-арт остаётся резким, как и у встроенного материала.
-        let sampler = if srgb(base).nearest { &self.sampler_tiled_nearest } else { &self.sampler_tiled };
+        let sampler = if srgb(base).pixel {
+            &self.sampler_tiled_pixel
+        } else if srgb(base).nearest {
+            &self.sampler_tiled_nearest
+        } else if srgb(base).atlas {
+            &self.sampler_atlas
+        } else {
+            &self.sampler_tiled
+        };
         let buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("material params"),
             contents: bytemuck::bytes_of(&uniform),
@@ -641,11 +650,18 @@ impl Renderer {
         runtime: Option<&Materials>,
     ) {
         let parts = self.meshes.get(&object.key).map_or(0, |gpu| gpu.parts.len()).max(1);
+        // Правило: свечение материала + `MeshRenderer::emissive` объекта (как `tint` для цвета:
+        // своя добавка к общему материалу, пачки не рвутся). Чёрный — без добавки.
+        let extra = object.mesh.emissive;
+        let glow = |mut r: Resolved| {
+            r.emissive = [r.emissive[0] + extra.r, r.emissive[1] + extra.g, r.emissive[2] + extra.b, r.emissive[3]];
+            r
+        };
         let mut first: Option<Resolved> = None;
         let mut uniform = true;
         for part in 0..parts {
             let resolved = match self.part_material(cache, &object, part, assets, runtime) {
-                Some(resolved) => resolved,
+                Some(resolved) => glow(resolved),
                 None => self.inline_material(cache, object.mesh, assets),
             };
             match first {
@@ -681,7 +697,7 @@ impl Renderer {
         }
         for part in 0..parts {
             let resolved = match self.part_material(cache, &object, part, assets, runtime) {
-                Some(resolved) => resolved,
+                Some(resolved) => glow(resolved),
                 None => self.inline_material(cache, object.mesh, assets),
             };
             push(part as u32, resolved);

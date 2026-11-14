@@ -1,0 +1,196 @@
+(
+    name: "drying_line",
+    id: 128129693801018,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    children: [
+        (
+            name: "Pole",
+            id: 37421614701836,
+            transform: (
+                position: (-1.6, 1.25, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.08, 2.5, 0.08),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("ccf620ee9ec1576a1849ef73e0cfdfaf"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.5),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Cylinder"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Pole",
+            id: 264070062877312,
+            transform: (
+                position: (1.6, 1.25, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.08, 2.5, 0.08),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("ccf620ee9ec1576a1849ef73e0cfdfaf"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.5),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Cylinder"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Rope",
+            id: 45757382919892,
+            transform: (
+                position: (0.0, 2.4, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (3.12, 0.025, 0.025),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("ccf620ee9ec1576a1849ef73e0cfdfaf"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Cloth",
+            id: 271491110018822,
+            transform: (
+                position: (-0.75, 1.9375, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.2, 0.9, 0.02),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("0aec45f9288c5fd14eefcddb2765e8e1"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Cloth",
+            id: 35033275161573,
+            transform: (
+                position: (0.75, 2.0375, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.1, 0.7, 0.02),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("3e6a494883ef922233d793a5aa4dceee"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

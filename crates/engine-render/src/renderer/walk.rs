@@ -92,7 +92,9 @@ pub(crate) struct Frustum {
 }
 
 impl Frustum {
-    /// Из матрицы «мир → clip» (глубина wgpu: 0..1).
+    /// Из матрицы «мир → clip» (глубина wgpu: 0..1). Плоскости z = 0 и z = w — пара
+    /// «ближняя/дальняя» в любом порядке, поэтому годится и для обратной глубины сцены,
+    /// и для обычной у карты теней.
     pub fn from_view_proj(m: Mat4) -> Self {
         let rows = m.transpose();
         let (r0, r1, r2, r3) = (rows.x_axis, rows.y_axis, rows.z_axis, rows.w_axis);
@@ -160,13 +162,13 @@ mod tests {
 
     #[test]
     fn frustum_rejects_boxes_outside() {
-        let view_proj = Mat4::orthographic_rh(-10.0, 10.0, -5.0, 5.0, -100.0, 100.0);
+        let view_proj = crate::depth::orthographic(-10.0, 10.0, -5.0, 5.0, -100.0, 100.0);
         let frustum = Frustum::from_view_proj(view_proj);
         assert!(frustum.intersects_aabb(Vec3::splat(-1.0), Vec3::splat(1.0)));
         assert!(frustum.intersects_aabb(Vec3::new(9.5, 0.0, 0.0), Vec3::new(11.0, 1.0, 0.0)));
         assert!(!frustum.intersects_aabb(Vec3::new(11.0, 0.0, 0.0), Vec3::new(12.0, 1.0, 0.0)));
         assert!(!frustum.intersects_aabb(Vec3::new(0.0, -7.0, 0.0), Vec3::new(1.0, -6.0, 0.0)));
-        let perspective = Mat4::perspective_rh(1.0, 1.0, 0.1, 100.0) * Mat4::look_at_rh(Vec3::ZERO, Vec3::NEG_Z, Vec3::Y);
+        let perspective = crate::depth::perspective(1.0, 1.0, 0.1, 100.0) * Mat4::look_at_rh(Vec3::ZERO, Vec3::NEG_Z, Vec3::Y);
         let frustum = Frustum::from_view_proj(perspective);
         assert!(frustum.intersects_aabb(Vec3::new(-1.0, -1.0, -11.0), Vec3::new(1.0, 1.0, -9.0)));
         assert!(!frustum.intersects_aabb(Vec3::new(-1.0, -1.0, 9.0), Vec3::new(1.0, 1.0, 11.0)), "behind");

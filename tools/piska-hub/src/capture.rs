@@ -43,7 +43,8 @@ impl HubGpu {
                         view: target,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            // Фон окна темы: пустой первый кадр не чёрный и не белый.
+                            load: wgpu::LoadOp::Clear(theme_clear()),
                             store: wgpu::StoreOp::Store,
                         },
                     })],
@@ -111,4 +112,10 @@ pub fn capture(
         painter.paint(&ctx, full, &view, [width, height]);
     }
     read_texture(&painter.device, &painter.queue, &output, width, height).map_err(|e| e.to_string())
+}
+
+/// Цвет очистки кадра — фон окна темы редактора (поверхность не-sRGB).
+fn theme_clear() -> wgpu::Color {
+    let c = engine_editor::kit::theme::BG_APP;
+    wgpu::Color { r: f64::from(c.r()) / 255.0, g: f64::from(c.g()) / 255.0, b: f64::from(c.b()) / 255.0, a: 1.0 }
 }

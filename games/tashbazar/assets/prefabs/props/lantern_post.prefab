@@ -1,0 +1,257 @@
+(
+    name: "lantern_post",
+    id: 197823334908178,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    children: [
+        (
+            name: "Base",
+            id: 127388721741092,
+            transform: (
+                position: (0.0, 0.1, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.32, 0.2, 0.32),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("0a0051fa1a5727b9711963a4ccfd689f"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.5),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Box"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Pole",
+            id: 56190129608042,
+            transform: (
+                position: (0.0, 1.45, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.1, 2.5, 0.1),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("113be71f1726967f7f5ff377b8a97830"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.5),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Cylinder"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Arm",
+            id: 74047700713011,
+            transform: (
+                position: (0.3, 2.65, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.5, 0.06, 0.06),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("113be71f1726967f7f5ff377b8a97830"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Hook",
+            id: 241271914699137,
+            transform: (
+                position: (0.5, 2.6, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.03, 0.04, 0.03),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("113be71f1726967f7f5ff377b8a97830"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Cap",
+            id: 25425929570158,
+            transform: (
+                position: (0.5, 2.565, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.22, 0.03, 0.22),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("113be71f1726967f7f5ff377b8a97830"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Glass",
+            id: 47662078530629,
+            transform: (
+                position: (0.5, 2.43, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.17, 0.24, 0.17),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("2c1a59210088a5d9f06621fb82546184"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Light",
+            id: 177749428471316,
+            transform: (
+                position: (0.5, 2.3, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "Light",
+                    fields: {
+                        "color": Color(1.0, 0.68, 0.35, 1.0),
+                        "intensity": Float(2.0),
+                        "kind": Enum("Point"),
+                        "range": Float(9.0),
+                        "shadows": Bool(false),
+                    },
+                ),
+                (
+                    kind: "LanternFlicker",
+                    fields: {
+                        "amount": Float(0.1),
+                        "intensity": Float(2.0),
+                        "phase": Float(0.0),
+                        "speed": Float(6.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

@@ -1,6 +1,7 @@
 //! Интерфейс хаба: левая навигация (Projects, New Project, Samples, Settings),
 //! страницы, окно хода сборки и диалоги. Всё, что меняет состояние, — [`HubAction`].
 
+use engine_editor::kit::i18n::{Language, tr_s, trf, trn};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -20,7 +21,7 @@ use crate::paths;
 /// Ширина левой навигации.
 const NAV_WIDTH: f32 = 232.0;
 /// Поля страниц слева и справа.
-const PAD: f32 = 28.0;
+pub(crate) const PAD: f32 = 28.0;
 /// Высота строки списка проектов.
 const ROW: f32 = 64.0;
 /// Миниатюра в строке (16:9).
@@ -44,6 +45,9 @@ impl Hub {
             let texture = image.map(|image| ctx.load_texture(&key, image, egui::TextureOptions::LINEAR));
             self.textures.insert(key, texture);
         }
+        // Папка или файл проекта, брошенные на окно, идут в импорт.
+        self.drop_files(ctx);
+        let step = self.startup_step();
         // Окно снова в фокусе — файлы могли поменять в другой программе: обход в фоне.
         if ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(true)))) {
             self.refresh();
@@ -62,19 +66,34 @@ impl Hub {
             .exact_height(28.0)
             .frame(egui::Frame::none().fill(theme::BG_HEADER).inner_margin(Margin::symmetric(PAD - 8.0, 0.0)))
             .show(ctx, |ui| self.status_bar(ui));
+        if self.job.is_some() || !self.queue.is_empty() || self.prebuild.is_some() {
+            egui::TopBottomPanel::bottom("hub-tasks")
+                .exact_height(40.0)
+                .frame(egui::Frame::none().fill(theme::BG_HEADER).inner_margin(Margin::symmetric(PAD - 8.0, 0.0)))
+                .show(ctx, |ui| self.task_strip(ui));
+        }
+        if !self.works.is_empty() {
+            egui::TopBottomPanel::bottom("hub-works")
+                .exact_height(self.work_panel_height())
+                .frame(egui::Frame::none().fill(theme::BG_HEADER).inner_margin(Margin::symmetric(PAD - 8.0, 0.0)))
+                .show(ctx, |ui| self.work_rows(ui));
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(theme::BG_PANEL))
             .show(ctx, |ui| {
-                if self.job.is_some() {
+                // Сборка идёт в фоне; подробное окно — только если его открыли.
+                if self.show_job && self.job.is_some() {
                     self.job_view(ui);
-                } else if self.prebuild.as_ref().is_some_and(|p| p.finished) {
+                } else if self.show_job && self.prebuild.as_ref().is_some_and(|p| p.finished) {
                     self.prebuild_summary(ui);
                 } else {
                     match self.page {
                         Page::Projects => self.projects_page(ui),
                         Page::NewProject => self.wizard_page(ui),
                         Page::Samples => self.samples_page(ui),
+                        Page::Tools => self.tools_page(ui),
                         Page::Settings => self.settings_page(ui),
+                        Page::Import => self.import_page_ui(ui),
                     }
                 }
             });
@@ -85,6 +104,17 @@ impl Hub {
         if self.busy() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
+        // Заставка запуска поверх всего: знак, имя, версия и настоящий текущий шаг.
+        if let Some(splash) = self.splash.as_mut() {
+            splash.show(
+                ctx,
+                &engine_editor::kit::window::paint_engine_mark,
+                engine_editor::kit::i18n::brand::HUB_NAME,
+                &format!("{} {}", engine_editor::kit::i18n::brand::ENGINE_NAME, env!("CARGO_PKG_VERSION")),
+                step.as_deref(),
+            );
+        }
+        self.themed = true;
     }
 
     /// Тема и масштаб; `true` — шрифты только что поставлены (кадр рисовать рано).
@@ -102,12 +132,13 @@ impl Hub {
         }
         if applied != Some(self.prefs.accent) {
             theme::apply(ctx, applied.is_none());
+            theme::set_density(ctx, theme::Density::Comfortable);
             ctx.data_mut(|d| d.insert_temp(key, self.prefs.accent));
         }
         applied.is_none()
     }
 
-    fn push(&mut self, action: HubAction) {
+    pub(crate) fn push(&mut self, action: HubAction) {
         self.actions.push(action);
     }
 
@@ -198,35 +229,36 @@ impl Hub {
             }
         }
         let painter = ui.painter();
-        painter.text(pos2(mark.right() + 11.0, rect.center().y - 8.0), Align2::LEFT_CENTER, "Piska Hub", theme::strong(15.0), theme::TEXT);
+        painter.text(pos2(mark.right() + 11.0, rect.center().y - 8.0), Align2::LEFT_CENTER, tr_s("Piska Hub"), theme::strong(15.0), theme::TEXT);
         painter.text(
             pos2(mark.right() + 11.0, rect.center().y + 10.0),
             Align2::LEFT_CENTER,
-            format!("Piska Engine {}", env!("CARGO_PKG_VERSION")),
+            trf!("Piska Engine {}", env!("CARGO_PKG_VERSION")),
             theme::caption(),
             theme::TEXT_MUTED,
         );
-        ui.add_space(18.0);
+        ui.add_space(theme::SP_8);
         ui.spacing_mut().item_spacing.y = 2.0;
         let items = [
-            (Page::Projects, Icon::Folder, "Projects", Some(self.listed.len())),
-            (Page::NewProject, Icon::Plus, "New Project", None),
-            (Page::Samples, Icon::Tiles, "Samples & Docs", None),
-            (Page::Settings, Icon::Gear, "Settings", None),
+            (Page::Projects, Icon::Folder, tr_s("Projects"), Some(self.listed.len())),
+            (Page::NewProject, Icon::Plus, tr_s("New Project"), None),
+            (Page::Samples, Icon::Tiles, tr_s("Samples & Docs"), None),
+            (Page::Tools, Icon::Build, tr_s("Tools"), None),
+            (Page::Settings, Icon::Gear, tr_s("Settings"), None),
         ];
-        let current = if self.job.is_some() { None } else { Some(self.page) };
+        // Импорт — часть раздела Projects.
+        let current = if self.show_job { None } else { Some(if self.page == Page::Import { Page::Projects } else { self.page }) };
         for (page, icon, label, count) in items {
             if widgets::nav_item(ui, Hub::nav_id(page), icon, label, count, current == Some(page)).clicked() {
-                if self.job.as_ref().is_some_and(|job| !job.is_building()) {
-                    self.push(HubAction::CloseJob);
-                }
+                // Сборка продолжается в фоне — навигация никогда не заперта.
+                self.push(HubAction::ShowJob(false));
                 self.push(HubAction::Navigate(page));
             }
         }
 
         // Низ: что запущено и где движок.
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-            ui.spacing_mut().item_spacing.y = 3.0;
+            ui.spacing_mut().item_spacing.y = theme::SP_2;
             if let Some(root) = self.engine_root.clone() {
                 let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
                 widgets::paint_elided(
@@ -238,24 +270,24 @@ impl Hub {
                     rect.width() - 8.0,
                     Align2::LEFT_CENTER,
                 );
-                response.on_hover_text(format!("Engine checkout: {}", root.display()));
-                nav_caption(ui, "ENGINE");
+                response.on_hover_text(trf!("Engine checkout: {}", root.display()));
+                nav_caption(ui, tr_s("ENGINE"));
             }
             let running: Vec<(String, &'static str)> = self
                 .listed
                 .iter()
                 .filter_map(|l| {
                     if self.processes.running_key(&l.key, &JobKind::Open).is_some() {
-                        Some((l.title(), "Editor"))
+                        Some((l.title(), tr_s("Editor")))
                     } else if self.processes.running_key(&l.key, &JobKind::Play).is_some() {
-                        Some((l.title(), "Game"))
+                        Some((l.title(), tr_s("Game")))
                     } else {
                         None
                     }
                 })
                 .collect();
             if !running.is_empty() {
-                ui.add_space(10.0);
+                ui.add_space(theme::SP_4);
                 for (title, what) in running.iter().rev() {
                     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
                     ui.painter().circle_filled(pos2(rect.left() + 10.0, rect.center().y), 3.0, theme::OK);
@@ -277,10 +309,10 @@ impl Hub {
         let (icon, color, text) = match recent {
             Some(status) if status.error => (Icon::Warn, theme::WARN, status.text.clone()),
             Some(status) => (Icon::Check, theme::OK, status.text.clone()),
-            None => (Icon::Info, theme::TEXT_DISABLED, "Ready".to_string()),
+            None => (Icon::Info, theme::TEXT_DISABLED, tr_s("Ready").to_string()),
         };
         icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 8.0, y), vec2(12.0, 12.0)), icon, color);
-        let right = format!(
+        let right = trf!(
             "{} projects  ·  config {}",
             self.listed.len(),
             self.config_dir.as_ref().map(|d| d.join(paths::CONFIG_FILE).display().to_string()).unwrap_or_else(|| "not saved".into())
@@ -315,7 +347,7 @@ impl Hub {
     // Projects
     // -----------------------------------------------------------------------
 
-    fn page_header(&mut self, ui: &mut Ui, title: &str, subtitle: &str, right: impl FnOnce(&mut Self, &mut Ui)) {
+    pub(crate) fn page_header(&mut self, ui: &mut Ui, title: &str, subtitle: &str, right: impl FnOnce(&mut Self, &mut Ui)) {
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 76.0), Sense::hover());
         let inner = rect.shrink2(vec2(PAD, 0.0));
         let painter = ui.painter();
@@ -342,26 +374,29 @@ impl Hub {
         let total = self.listed.len();
         let pinned = self.listed.iter().filter(|l| l.favorite).count();
         let missing = self.listed.iter().filter(|l| l.missing()).count();
-        let mut subtitle = format!("{total} project{}", if total == 1 { "" } else { "s" });
+        let mut subtitle = trn!("{n} project", "{n} projects", total);
         if pinned > 0 {
-            subtitle.push_str(&format!("  ·  {pinned} pinned"));
+            subtitle.push_str(&trf!("  ·  {pinned} pinned", pinned = pinned));
         }
         if missing > 0 {
-            subtitle.push_str(&format!("  ·  {missing} missing"));
+            subtitle.push_str(&trf!("  ·  {missing} missing", missing = missing));
         }
-        subtitle.push_str("  ·  engine games/ and folders you added");
-        self.page_header(ui, "Projects", &subtitle, |hub, ui| {
-            if widgets::large_button(ui, Id::new("hub-new-project"), Some(Icon::Plus), "New Project", true).clicked() {
+        subtitle.push_str(tr_s("  ·  engine games/ and folders you added"));
+        self.page_header(ui, tr_s("Projects"), &subtitle, |hub, ui| {
+            if widgets::action_button(ui, Id::new("hub-new-project"), Some(Icon::Plus), tr_s("New Project"), true).clicked() {
                 hub.push(HubAction::Navigate(Page::NewProject));
             }
-            if widgets::large_button(ui, Id::new("hub-add-existing"), Some(Icon::FolderOpen), "Add Existing…", false).clicked() {
-                hub.push(HubAction::ShowAdd { locate: None });
+            if widgets::action_button(ui, Id::new("hub-import"), Some(Icon::FolderOpen), tr_s("Import…"), false)
+                .on_hover_text(tr_s("Import a project from a folder or a project file, with a pre-flight report and settings"))
+                .clicked()
+            {
+                hub.push(HubAction::ShowImport);
             }
             let idle = hub.job.is_none();
             let prebuild = ui
-                .add_enabled_ui(idle, |ui| widgets::large_button(ui, Id::new("hub-prebuild"), Some(Icon::Build), "Prebuild All", false))
+                .add_enabled_ui(idle, |ui| widgets::action_button(ui, Id::new("hub-prebuild"), Some(Icon::Build), tr_s("Prebuild All"), false))
                 .inner
-                .on_hover_text("Build the editor of every project that needs it, one after another, so Open is instant later");
+                .on_hover_text(tr_s("Build the editor of every project that needs it, one after another, so Open is instant later"));
             if prebuild.clicked() {
                 hub.push(HubAction::PrebuildAll);
             }
@@ -375,7 +410,7 @@ impl Hub {
                 .max_rect(bar.shrink2(vec2(PAD, 0.0)).with_max_y(bar.bottom() - 9.0))
                 .layout(Layout::left_to_right(Align::Center)),
         );
-        let search = theme::search_field(&mut left, &mut self.search, "Search by name, folder or path", 340.0);
+        let search = theme::search_field(&mut left, &mut self.search, tr_s("Search by name, folder or path"), 340.0);
         self.search_id = Some(search.id);
         let mut right = ui.new_child(
             UiBuilder::new()
@@ -384,28 +419,28 @@ impl Hub {
         );
         right.spacing_mut().item_spacing.x = 6.0;
         let mut view = self.config.settings.view;
-        if icon_segmented(&mut right, &mut view, &[(ViewMode::Grid, Icon::Tiles, "Grid"), (ViewMode::List, Icon::List, "List")]) {
+        if icon_segmented(&mut right, &mut view, &[(ViewMode::Grid, Icon::Tiles, tr_s("Grid")), (ViewMode::List, Icon::List, tr_s("List"))]) {
             self.push(HubAction::SetView(view));
         }
-        right.add_space(10.0);
+        right.add_space(theme::SP_4);
         let mut sort = self.config.settings.sort;
-        if theme::segmented(&mut right, &mut sort, &[(SortOrder::LastOpened, "Last opened", "Recently opened first"), (SortOrder::Name, "Name", "Alphabetical")]) {
+        if theme::segmented(&mut right, &mut sort, &[(SortOrder::LastOpened, tr_s("Last opened"), tr_s("Recently opened first")), (SortOrder::Name, tr_s("Name"), tr_s("Alphabetical"))]) {
             self.push(HubAction::SetSort(sort));
         }
-        right.label(egui::RichText::new("Sort").font(theme::caption()).color(theme::TEXT_MUTED));
+        right.label(egui::RichText::new(tr_s("Sort")).font(theme::caption()).color(theme::TEXT_MUTED));
 
         let visible: Vec<Listed> = self.visible_projects().into_iter().cloned().collect();
         if visible.is_empty() {
             if self.refreshing() && self.listed.is_empty() {
-                theme::empty_state(ui, Icon::Refresh, "Looking for projects…", "Reading the engine's games/ and the folders you added.");
+                theme::empty_state(ui, Icon::Refresh, tr_s("Looking for projects…"), tr_s("Reading the engine's games/ and the folders you added."));
             } else if self.search.trim().is_empty() {
-                theme::empty_state(ui, Icon::Folder, "No projects yet", "Create one with New Project or add a folder with Add Existing…");
+                theme::empty_state(ui, Icon::Folder, tr_s("No projects yet"), tr_s("Create one with New Project or add a folder with Add Existing…"));
             } else {
                 theme::empty_state(
                     ui,
                     Icon::Search,
-                    &format!("Nothing matches “{}”", self.search.trim()),
-                    "Search looks at project names, folders and paths.",
+                    &trf!("Nothing matches “{}”", self.search.trim()),
+                    tr_s("Search looks at project names, folders and paths."),
                 );
             }
             return;
@@ -426,13 +461,13 @@ impl Hub {
         let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
         let columns = Columns::new(head);
         let painter = ui.painter();
-        painter.text(pos2(columns.text, head.center().y), Align2::LEFT_CENTER, "NAME", theme::strong(10.5), theme::TEXT_DISABLED);
-        painter.text(pos2(columns.opened, head.center().y), Align2::LEFT_CENTER, "LAST OPENED", theme::strong(10.5), theme::TEXT_DISABLED);
+        painter.text(pos2(columns.text, head.center().y), Align2::LEFT_CENTER, tr_s("NAME"), theme::strong(10.5), theme::TEXT_DISABLED);
+        painter.text(pos2(columns.opened, head.center().y), Align2::LEFT_CENTER, tr_s("LAST OPENED"), theme::strong(10.5), theme::TEXT_DISABLED);
         painter.hline(head.x_range(), head.bottom() - 0.5, Stroke::new(1.0_f32, theme::LINE));
         for listed in visible {
             self.project_row(ui, listed);
         }
-        ui.add_space(24.0);
+        ui.add_space(theme::SP_12);
     }
 
     fn project_row(&mut self, ui: &mut Ui, listed: &Listed) {
@@ -471,7 +506,7 @@ impl Hub {
             };
             widgets::paint_star(ui.painter(), star_rect.center(), 6.5, listed.favorite, color);
         }
-        if star.on_hover_text(if listed.favorite { "Unpin" } else { "Pin to top" }).clicked() {
+        if star.on_hover_text(if listed.favorite { tr_s("Unpin") } else { tr_s("Pin to top") }).clicked() {
             self.push(HubAction::TogglePin(listed.path.clone()));
         }
 
@@ -500,8 +535,8 @@ impl Hub {
         let second = match &listed.info {
             Err(_) => Hub::problem(listed).unwrap_or_default(),
             Ok(_) => match &listed.location {
-                Some(location) => format!("{location}  ·  {}", listed.path.display()),
-                None => format!("External  ·  {}", listed.path.display()),
+                Some(location) => trf!("{location}  ·  {p0}", p0 = listed.path.display(), location = location),
+                None => trf!("External  ·  {}", listed.path.display()),
             },
         };
         let second_color = match &listed.info {
@@ -524,19 +559,13 @@ impl Hub {
 
         // Когда открывали.
         let (opened, opened_color) = match editor_pid {
-            Some(_) => ("Open in the editor".to_string(), theme::OK),
+            Some(_) => (tr_s("Open in the editor").to_string(), theme::OK),
             None => (crate::config::ago(listed.last_opened, self.now()), theme::TEXT_MUTED),
         };
         let now = self.now();
         let (built, built_color) = build_label(listed, now);
         let has_build = !built.is_empty();
         let opened_y = if has_build { rect.center().y - 9.0 } else { rect.center().y };
-        ui.painter()
-            .text(pos2(columns.opened, opened_y), Align2::LEFT_CENTER, opened, theme::caption(), opened_color);
-        if has_build {
-            ui.painter()
-                .text(pos2(columns.opened, rect.center().y + 10.0), Align2::LEFT_CENTER, built, theme::caption(), built_color);
-        }
 
         // Кнопки справа налево.
         let actions_rect = Rect::from_min_max(pos2(columns.actions, rect.top()), pos2(columns.right, rect.bottom()));
@@ -544,21 +573,21 @@ impl Hub {
         buttons.spacing_mut().item_spacing.x = 6.0;
         let more_id = id.with("more");
         if listed.missing() {
-            if widgets::compact_button(&mut buttons, id.with("remove"), None, "Remove", false).clicked() {
+            if widgets::button(&mut buttons, id.with("remove"), None, tr_s("Remove"), false).clicked() {
                 self.push(HubAction::Remove(listed.path.clone()));
             }
-            if widgets::compact_button(&mut buttons, id.with("locate"), Some(Icon::Search), "Locate…", true).clicked() {
+            if widgets::button(&mut buttons, id.with("locate"), Some(Icon::Search), tr_s("Locate…"), true).clicked() {
                 self.push(HubAction::ShowAdd {
                     locate: Some(listed.path.clone()),
                 });
             }
         } else {
-            let more = widgets::icon_button(&mut buttons, more_id, Icon::More, "More actions");
+            let more = widgets::icon_button(&mut buttons, more_id, Icon::More, tr_s("More actions"));
             self.more_menu(&buttons, &more, listed);
             if ok {
                 let play_tip = match listed.builds.game {
-                    crate::builds::BuildState::Fresh { .. } => "Play: run the game (already built)",
-                    _ => "Play: build and run the game",
+                    crate::builds::BuildState::Fresh { .. } => tr_s("Play: run the game (already built)"),
+                    _ => tr_s("Play: build and run the game"),
                 };
                 let play = buttons
                     .add_enabled_ui(listed.info.as_ref().is_ok_and(|i| i.game_bin.is_some()), |ui| {
@@ -569,27 +598,52 @@ impl Hub {
                     self.push(HubAction::Play(listed.path.clone()));
                 }
                 let open_tooltip = match (&listed.info, editor_pid) {
-                    (_, Some(pid)) => format!("Already open in the editor (process {pid})"),
+                    (_, Some(pid)) => trf!("Already open in the editor (process {pid})", pid = pid),
                     (Ok(info), None) => info.editor_problem().unwrap_or_else(|| match listed.builds.editor {
-                        crate::builds::BuildState::Fresh { .. } => "Open the editor now (it is built and up to date)".to_string(),
+                        crate::builds::BuildState::Fresh { .. } => tr_s("Open the editor now (it is built and up to date)").to_string(),
                         crate::builds::BuildState::Stale { .. } => {
-                            "The project changed since the last build: build, then open (⋯ → Open Last Build skips the build)".to_string()
+                            tr_s("The project changed since the last build: build, then open (⋯ → Open Last Build skips the build)").to_string()
                         }
-                        crate::builds::BuildState::Never => "Build the editor program, then open it".to_string(),
+                        crate::builds::BuildState::Never => tr_s("Build the editor program, then open it").to_string(),
                     }),
                     _ => String::new(),
                 };
                 let open = buttons
                     .add_enabled_ui(can_open, |ui| {
-                        widgets::compact_button(ui, id.with("open"), None, "Open", selected || row.hovered())
+                        widgets::button(ui, id.with("open"), None, tr_s("Open"), selected || row.hovered())
                     })
                     .inner;
                 if open.on_hover_text(open_tooltip).clicked() {
                     self.push(HubAction::Open(listed.path.clone()));
                 }
-            } else if widgets::compact_button(&mut buttons, id.with("remove"), None, "Remove", false).clicked() {
+            } else if widgets::button(&mut buttons, id.with("remove"), None, tr_s("Remove"), false).clicked() {
                 self.push(HubAction::Remove(listed.path.clone()));
             }
+        }
+        // «Когда открывали» и «собрано» — не дальше левого края кнопок (их ширина зависит
+        // от языка и масштаба); не влезает — «…» с подсказкой.
+        let room = buttons.min_rect().left().min(columns.right) - 10.0 - columns.opened;
+        widgets::caption_elided(
+            ui,
+            id.with("opened"),
+            pos2(columns.opened, opened_y),
+            &opened,
+            theme::caption(),
+            opened_color,
+            room,
+            Align2::LEFT_CENTER,
+        );
+        if has_build {
+            widgets::caption_elided(
+                ui,
+                id.with("built"),
+                pos2(columns.opened, rect.center().y + 10.0),
+                &built,
+                theme::caption(),
+                built_color,
+                room,
+                Align2::LEFT_CENTER,
+            );
         }
 
         if row.clicked() {
@@ -627,7 +681,7 @@ impl Hub {
         let card_w = (width - GAP * (columns as f32 - 1.0)) / columns as f32;
         let thumb_h = card_w * 9.0 / 16.0;
         let card_h = thumb_h + 86.0;
-        ui.add_space(18.0);
+        ui.add_space(theme::SP_8);
         for chunk in visible.chunks(columns) {
             let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), card_h), Sense::hover());
             for (i, listed) in chunk.iter().enumerate() {
@@ -639,7 +693,7 @@ impl Hub {
             }
             ui.add_space(GAP);
         }
-        ui.add_space(12.0);
+        ui.add_space(theme::SP_6);
     }
 
     fn project_card(&mut self, ui: &mut Ui, rect: Rect, thumb_h: f32, listed: &Listed) {
@@ -681,44 +735,49 @@ impl Hub {
             }
             x = widgets::paint_badge(ui.painter(), x, name_y + 22.0, &text, tone).right() + 5.0;
         }
-        let caption = if listed.info.is_err() {
-            Hub::problem(listed).unwrap_or_default()
-        } else {
-            match editor_pid {
-                Some(_) => "Open in the editor".to_string(),
-                None => format!("Opened {}", crate::config::ago(listed.last_opened, self.now()).to_lowercase()),
-            }
-        };
-        widgets::paint_elided(
-            ui.painter(),
-            pos2(rect.left() + 12.0, rect.bottom() - 17.0),
-            &caption,
-            theme::caption(),
-            if listed.info.is_err() { theme::WARN } else { theme::TEXT_MUTED },
-            rect.width() - 110.0,
-            Align2::LEFT_CENTER,
-        );
         let actions_rect = Rect::from_min_max(pos2(rect.left() + 12.0, rect.bottom() - 32.0), pos2(rect.right() - 8.0, rect.bottom() - 4.0));
         let mut buttons = ui.new_child(UiBuilder::new().max_rect(actions_rect).layout(Layout::right_to_left(Align::Center)));
         buttons.spacing_mut().item_spacing.x = 4.0;
         if listed.missing() {
-            if widgets::compact_button(&mut buttons, id.with("locate"), None, "Locate…", true).clicked() {
+            if widgets::button(&mut buttons, id.with("locate"), None, tr_s("Locate…"), true).clicked() {
                 self.push(HubAction::ShowAdd {
                     locate: Some(listed.path.clone()),
                 });
             }
         } else {
-            let more = widgets::icon_button(&mut buttons, id.with("more"), Icon::More, "More actions");
+            let more = widgets::icon_button(&mut buttons, id.with("more"), Icon::More, tr_s("More actions"));
             self.more_menu(&buttons, &more, listed);
             if listed.info.is_ok() {
                 let open = buttons
-                    .add_enabled_ui(can_open, |ui| widgets::compact_button(ui, id.with("open"), None, "Open", selected || card.hovered()))
+                    .add_enabled_ui(can_open, |ui| widgets::button(ui, id.with("open"), None, tr_s("Open"), selected || card.hovered()))
                     .inner;
                 if open.clicked() {
                     self.push(HubAction::Open(listed.path.clone()));
                 }
             }
         }
+        // Подпись — до левого края кнопок (ширина «Открыть» и «⋯» своя в каждом языке и
+        // масштабе): раньше ширина была постоянной, и «Открыт 13 часов назад» заходил под
+        // кнопку. Не влезает — «…» и полный текст в подсказке.
+        let caption = if listed.info.is_err() {
+            Hub::problem(listed).unwrap_or_default()
+        } else {
+            match editor_pid {
+                Some(_) => tr_s("Open in the editor").to_string(),
+                None => trf!("Opened {}", crate::config::ago(listed.last_opened, self.now()).to_lowercase()),
+            }
+        };
+        let caption_left = rect.left() + 12.0;
+        widgets::caption_elided(
+            ui,
+            id.with("caption"),
+            pos2(caption_left, rect.bottom() - 17.0),
+            &caption,
+            theme::caption(),
+            if listed.info.is_err() { theme::WARN } else { theme::TEXT_MUTED },
+            buttons.min_rect().left().min(rect.right() - 12.0) - 8.0 - caption_left,
+            Align2::LEFT_CENTER,
+        );
         if card.clicked() {
             self.push(HubAction::Select(Some(listed.path.clone())));
         }
@@ -750,6 +809,7 @@ impl Hub {
         let cwd = job.command.cwd.clone();
         let project = job.project.clone();
         let failed = matches!(state, JobState::Failed(_) | JobState::Cancelled);
+        let launches = self.job.as_ref().is_some_and(|j| j.launch);
         let diagnosis = self.job_diagnosis();
         let last_build = self.last_build(&project, &kind);
         let last_built = self
@@ -757,11 +817,11 @@ impl Hub {
             .and_then(|l| if kind == JobKind::Play { l.builds.game.built() } else { l.builds.editor.built() });
         let prebuild = self.prebuild.clone().filter(|p| !p.finished);
         let title = match &prebuild {
-            Some(p) => format!("Prebuilding editors: {} of {}", p.index, p.queue.len()),
+            Some(p) => trf!("Prebuilding editors: {} of {}", p.index, p.queue.len()),
             None => title,
         };
         let subtitle = match &prebuild {
-            Some(_) => format!("{}  ·  {command}", self.job.as_ref().map(|j| j.title.clone()).unwrap_or_default()),
+            Some(_) => trf!("{p0}  ·  {command}", p0 = self.job.as_ref().map(|j| j.title.clone()).unwrap_or_default(), command = command),
             None => format!("{command}   (in {})", cwd.display()),
         };
         self.page_header(ui, &title, &subtitle, |_, _| {});
@@ -770,23 +830,23 @@ impl Hub {
         let body = ui.available_rect_before_wrap().shrink2(vec2(PAD, 0.0));
         let mut ui = ui.new_child(UiBuilder::new().max_rect(body).layout(Layout::top_down(Align::Min)));
         let ui = &mut ui;
-        ui.add_space(20.0);
+        ui.add_space(theme::SP_8);
         if let Some(p) = &prebuild {
             // Общий ход: сколько проектов готово и где сейчас.
             let done = p.results.len();
             let failed_count = p.results.iter().filter(|r| !r.1).count();
             let current = progress.fraction().unwrap_or(0.0);
             let overall = (done as f32 + current) / p.queue.len().max(1) as f32;
-            let text = format!(
-                "{done} of {} done{}  ·  {} already up to date",
-                p.queue.len(),
-                if failed_count > 0 { format!(", {failed_count} failed") } else { String::new() },
-                p.skipped
-            );
+            let text = trf!(
+                "{done} of {p0} done{p1}  ·  {p2} already up to date",
+                p0 = p.queue.len(),
+                p1 = if failed_count > 0 { trf!(", {failed_count} failed", failed_count = failed_count) } else { String::new() },
+                p2 = p.skipped
+            , done = done);
             ui.label(egui::RichText::new(text).font(theme::caption()).color(theme::TEXT_MUTED));
-            ui.add_space(4.0);
+            ui.add_space(theme::SP_2);
             widgets::progress_bar(ui, Some(overall), false);
-            ui.add_space(14.0);
+            ui.add_space(theme::SP_6);
         }
 
         // Карточка состояния.
@@ -800,18 +860,18 @@ impl Hub {
                 let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
                 let (headline, color) = match &state {
                     JobState::Building => match (&progress.step, &progress.current) {
-                        (Some((done, total, step)), _) => (format!("Step {done} of {total}: {step}"), theme::TEXT),
+                        (Some((done, total, step)), _) => (trf!("Step {done} of {total}: {step}", done = done, total = total, step = step), theme::TEXT),
                         (None, _) if progress.waiting_for_lock => (
-                            "Waiting for another cargo build to release the build directory…".to_string(),
+                            tr_s("Waiting for another cargo build to release the build directory…").to_string(),
                             theme::TEXT,
                         ),
-                        (None, Some(current)) => (format!("Compiling {current}"), theme::TEXT),
-                        (None, None) => ("Starting cargo…".to_string(), theme::TEXT),
+                        (None, Some(current)) => (trf!("Compiling {current}", current = current), theme::TEXT),
+                        (None, None) => (tr_s("Starting cargo…").to_string(), theme::TEXT),
                     },
                     JobState::Failed(reason) => (reason.clone(), theme::ERROR),
-                    JobState::Cancelled => ("Cancelled".to_string(), theme::WARN),
-                    JobState::Succeeded => ("Finished".to_string(), theme::OK),
-                    JobState::Launched(pid) => (format!("Started (process {pid})"), theme::OK),
+                    JobState::Cancelled => (tr_s("Cancelled").to_string(), theme::WARN),
+                    JobState::Succeeded => (tr_s("Finished").to_string(), theme::OK),
+                    JobState::Launched(pid) => (trf!("Started (process {pid})", pid = pid), theme::OK),
                 };
                 let icon = match &state {
                     JobState::Building => Icon::Build,
@@ -830,29 +890,27 @@ impl Hub {
                     Align2::LEFT_CENTER,
                 );
                 let counts = match progress.total {
-                    Some(total) => format!("{} / {} units   {}", progress.artifacts, total.max(progress.artifacts), widgets::clock(elapsed)),
-                    None => format!("{} units   {}", progress.artifacts, widgets::clock(elapsed)),
+                    Some(total) => trf!("{} / {} units   {}", progress.artifacts, total.max(progress.artifacts), widgets::clock(elapsed)),
+                    None => trf!("{} units   {}", progress.artifacts, widgets::clock(elapsed)),
                 };
                 ui.painter()
                     .text(line.right_center(), Align2::RIGHT_CENTER, counts, theme::mono(), theme::TEXT_MUTED);
-                ui.add_space(10.0);
+                ui.add_space(theme::SP_4);
                 let fraction = if state == JobState::Building { progress.fraction() } else { Some(progress.fraction().unwrap_or(1.0)) };
                 widgets::progress_bar(ui, fraction, failed);
-                ui.add_space(10.0);
+                ui.add_space(theme::SP_4);
                 let fresh = progress.fresh;
-                let stats = format!(
-                    "{} compiled  ·  {} up to date  ·  {} warning{}  ·  {} error{}",
-                    progress.compiled,
-                    fresh,
-                    progress.warnings,
-                    if progress.warnings == 1 { "" } else { "s" },
-                    progress.errors.len(),
-                    if progress.errors.len() == 1 { "" } else { "s" }
+                let stats = trf!(
+                    "{compiled} compiled  ·  {fresh} up to date  ·  {warnings}  ·  {errors}",
+                    compiled = progress.compiled,
+                    fresh = fresh,
+                    warnings = trn!("{n} warning", "{n} warnings", progress.warnings),
+                    errors = trn!("{n} error", "{n} errors", progress.errors.len())
                 );
                 ui.label(egui::RichText::new(stats).font(theme::caption()).color(theme::TEXT_MUTED));
-                if state == JobState::Building && kind == JobKind::Open {
+                if state == JobState::Building && kind == JobKind::Open && launches {
                     ui.label(
-                        egui::RichText::new("The hub hides while the editor is open and comes back when you close it.")
+                        egui::RichText::new(tr_s("The hub hides while the editor is open and comes back when you close it."))
                             .font(theme::caption())
                             .color(theme::TEXT_DISABLED),
                     );
@@ -861,11 +919,11 @@ impl Hub {
 
         // Что происходит — простыми словами.
         if let Some(diagnosis) = &diagnosis {
-            ui.add_space(12.0);
+            ui.add_space(theme::SP_6);
             let built = last_built.map(|t| crate::config::ago(Some(t), self.now()).to_lowercase());
             let last_hint = match (&last_build, &built) {
-                (Some(_), Some(when)) => format!(" Open Last Build starts the editor built {when}."),
-                (Some(_), None) => " Open Last Build starts the previous build.".to_string(),
+                (Some(_), Some(when)) => trf!(" Open Last Build starts the editor built {when}.", when = when),
+                (Some(_), None) => tr_s(" Open Last Build starts the previous build.").to_string(),
                 _ => String::new(),
             };
             match diagnosis {
@@ -873,28 +931,28 @@ impl Hub {
                     ui,
                     Tone::Warn,
                     Icon::Warn,
-                    &format!("Waiting for another build ({})", widgets::clock(*seconds)),
-                    &format!(
+                    &trf!("Waiting for another build ({})", widgets::clock(*seconds)),
+                    &trf!(
                         "Another cargo build is using the {what}. This build continues by itself when that one finishes; nothing is wrong with your project. You can wait, cancel, or open what you built before.{last_hint}"
-                    ),
+                    , what = what, last_hint = last_hint),
                     None,
                 ),
                 crate::hub::Diagnosis::EngineBroken { package, error } => alert(
                     ui,
                     Tone::Error,
                     Icon::Error,
-                    "The engine source does not compile right now",
-                    &format!(
+                    tr_s("The engine source does not compile right now"),
+                    &trf!(
                         "The error is in `{package}`, not in your project: the engine is probably being edited at the moment. Try Again once it compiles.{last_hint}"
-                    ),
+                    , package = package, last_hint = last_hint),
                     Some(error),
                 ),
                 crate::hub::Diagnosis::ProjectError { error } => alert(
                     ui,
                     Tone::Error,
                     Icon::Error,
-                    &format!("Error in {}", if error.location().is_empty() { "the project".to_string() } else { error.location() }),
-                    &format!("Fix it in your code and press Try Again.{last_hint}"),
+                    &trf!("Error in {}", if error.location().is_empty() { "the project".to_string() } else { error.location() }),
+                    &trf!("Fix it in your code and press Try Again.{last_hint}", last_hint = last_hint),
                     Some(error),
                 ),
             }
@@ -905,10 +963,10 @@ impl Hub {
         let rest = ui.available_rect_before_wrap();
         let content = Rect::from_min_max(rest.min, pos2(rest.right(), rest.bottom() - buttons_h));
         let mut content_ui = ui.new_child(UiBuilder::new().max_rect(content).layout(Layout::top_down(Align::Min)));
-        content_ui.add_space(18.0);
+        content_ui.add_space(theme::SP_8);
         if !progress.errors.is_empty() {
-            widgets::section_label(&mut content_ui, &format!("Errors ({})", progress.errors.len()));
-            content_ui.add_space(4.0);
+            widgets::section_label(&mut content_ui, &trf!("Errors ({})", progress.errors.len()));
+            content_ui.add_space(theme::SP_2);
             let errors_h = (progress.errors.len() as f32 * 44.0 + 8.0).min(content.height() * 0.42);
             egui::ScrollArea::vertical()
                 .id_salt("hub-errors")
@@ -944,16 +1002,16 @@ impl Hub {
                         );
                         if let Some(file) = &error.file {
                             let resolved = resolve_source(file, &cwd, self.engine_root.as_deref());
-                            if row.on_hover_text(format!("Open {}", resolved.display())).clicked() {
+                            if row.on_hover_text(trf!("Open {}", resolved.display())).clicked() {
                                 self.actions.push(HubAction::OpenFile(resolved));
                             }
                         }
                     }
                 });
-            content_ui.add_space(14.0);
+            content_ui.add_space(theme::SP_6);
         }
-        widgets::section_label(&mut content_ui, "Output");
-        content_ui.add_space(4.0);
+        widgets::section_label(&mut content_ui, tr_s("Output"));
+        content_ui.add_space(theme::SP_2);
         let out_rect = content_ui.available_rect_before_wrap();
         egui::Frame::none()
             .fill(theme::BG_INSET)
@@ -963,7 +1021,7 @@ impl Hub {
             .show(&mut content_ui, |ui| {
                 ui.set_min_size(vec2(out_rect.width() - 22.0, (out_rect.height() - 18.0).max(40.0)));
                 if progress.tail.is_empty() {
-                    ui.label(egui::RichText::new("Waiting for cargo…").font(theme::mono()).color(theme::TEXT_DISABLED));
+                    ui.label(egui::RichText::new(tr_s("Waiting for cargo…")).font(theme::mono()).color(theme::TEXT_DISABLED));
                 }
                 // Только видимые строки: хвост в сотни строк не раскладывается каждый кадр.
                 let row_height = ui.fonts(|f| f.row_height(&egui::FontId::monospace(12.5))) + 1.0;
@@ -972,7 +1030,7 @@ impl Hub {
                     .auto_shrink([false, false])
                     .stick_to_bottom(true)
                     .show_rows(ui, row_height, progress.tail.len(), |ui, range| {
-                        ui.spacing_mut().item_spacing.y = 1.0;
+                        ui.spacing_mut().item_spacing.y = 0.0;
                         for line in progress.tail.range(range) {
                             let color = if line.starts_with("error") {
                                 theme::ERROR
@@ -989,7 +1047,7 @@ impl Hub {
         let bar = Rect::from_min_max(pos2(rest.left(), rest.bottom() - buttons_h), rest.max);
         let mut buttons = ui.new_child(UiBuilder::new().max_rect(bar.shrink2(vec2(0.0, 10.0))).layout(Layout::right_to_left(Align::Center)));
         buttons.spacing_mut().item_spacing.x = 8.0;
-        let open_last_label = if kind == JobKind::Play { "Play Last Build" } else { "Open Last Build" };
+        let open_last_label = if kind == JobKind::Play { tr_s("Play Last Build") } else { tr_s("Open Last Build") };
         let last_action = |path: PathBuf| {
             if kind == JobKind::Play {
                 HubAction::PlayLastBuild(path)
@@ -998,33 +1056,39 @@ impl Hub {
             }
         };
         if prebuild.is_some() {
-            if widgets::large_button(&mut buttons, Id::new("hub-prebuild-stop"), None, "Stop Prebuild", false).clicked() {
+            if widgets::action_button(&mut buttons, Id::new("hub-prebuild-stop"), None, tr_s("Stop Prebuild"), false).clicked() {
                 self.push(HubAction::CancelPrebuild);
             }
             return;
         }
         match state {
             JobState::Building => {
-                if widgets::large_button(&mut buttons, Id::new("hub-job-cancel"), None, "Cancel", false).clicked() {
+                if widgets::action_button(&mut buttons, Id::new("hub-job-hide"), None, tr_s("Continue in Background"), false)
+                    .on_hover_text(tr_s("Keep building and go back to the hub; the task bar shows progress"))
+                    .clicked()
+                {
+                    self.push(HubAction::ShowJob(false));
+                }
+                if widgets::action_button(&mut buttons, Id::new("hub-job-cancel"), None, tr_s("Cancel"), false).clicked() {
                     self.push(HubAction::CancelJob);
                 }
                 if last_build.is_some()
-                    && widgets::large_button(&mut buttons, Id::new("hub-job-last"), Some(Icon::Play), open_last_label, diagnosis.is_some())
-                        .on_hover_text("Stop this build and start the program from the previous build")
+                    && widgets::action_button(&mut buttons, Id::new("hub-job-last"), Some(Icon::Play), open_last_label, diagnosis.is_some())
+                        .on_hover_text(tr_s("Stop this build and start the program from the previous build"))
                         .clicked()
                 {
                     self.push(last_action(project.clone()));
                 }
             }
             JobState::Succeeded => {
-                if widgets::large_button(&mut buttons, Id::new("hub-job-done"), None, "Done", true).clicked() {
+                if widgets::action_button(&mut buttons, Id::new("hub-job-done"), None, tr_s("Done"), true).clicked() {
                     self.push(HubAction::CloseJob);
                 }
                 if let JobKind::Export { platform, .. } = &kind {
                     let folder = project.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                     if let Some(root) = &self.engine_root {
                         let out = root.join("dist").join(folder).join(platform);
-                        if widgets::large_button(&mut buttons, Id::new("hub-job-reveal"), Some(Icon::FolderOpen), "Show Output Folder", false).clicked() {
+                        if widgets::action_button(&mut buttons, Id::new("hub-job-reveal"), Some(Icon::FolderOpen), tr_s("Show Output Folder"), false).clicked() {
                             self.actions.push(HubAction::Reveal(out));
                         }
                     }
@@ -1033,18 +1097,299 @@ impl Hub {
             _ => {
                 let last = last_build.is_some() && matches!(kind, JobKind::Open | JobKind::Play);
                 if last
-                    && widgets::large_button(&mut buttons, Id::new("hub-job-last"), Some(Icon::Play), open_last_label, true)
-                        .on_hover_text("Start the program from the previous successful build")
+                    && widgets::action_button(&mut buttons, Id::new("hub-job-last"), Some(Icon::Play), open_last_label, true)
+                        .on_hover_text(tr_s("Start the program from the previous successful build"))
                         .clicked()
                 {
                     self.push(last_action(project.clone()));
                 }
-                if widgets::large_button(&mut buttons, Id::new("hub-job-retry"), Some(Icon::Refresh), "Try Again", !last).clicked() {
+                if widgets::action_button(&mut buttons, Id::new("hub-job-retry"), Some(Icon::Refresh), tr_s("Try Again"), !last).clicked() {
                     self.push(HubAction::RetryJob);
                 }
-                if widgets::large_button(&mut buttons, Id::new("hub-job-back"), None, "Back to Projects", false).clicked() {
+                if widgets::action_button(&mut buttons, Id::new("hub-job-back"), None, tr_s("Back to Projects"), false).clicked() {
                     self.push(HubAction::CloseJob);
                 }
+            }
+        }
+    }
+
+    /// Полоса задач: идущая сборка (ход, «Details», «Cancel»), очередь, итог. Хаб при
+    /// этом работает как обычно.
+    fn task_strip(&mut self, ui: &mut Ui) {
+        let rect = ui.max_rect();
+        ui.painter().hline(rect.x_range(), rect.top() + 0.5, Stroke::new(1.0_f32, theme::LINE));
+        let y = rect.center().y;
+        let queued = self.queue.len();
+        let (icon, color, text, fraction, building) = match &self.job {
+            Some(job) => {
+                let p = &job.progress;
+                let what = if let Some(prebuild) = self.prebuild.as_ref().filter(|p| !p.finished) {
+                    trf!("Prebuild {} of {}: {}", prebuild.index, prebuild.queue.len(), job.title)
+                } else {
+                    format!("{} {}", job.kind.verb(), job.title)
+                };
+                match &job.state {
+                    JobState::Building => {
+                        let detail = if p.waiting_for_lock {
+                            "waiting for another build".to_string()
+                        } else {
+                            match (&p.current, p.total) {
+                                (Some(current), Some(total)) => trf!("{current}  ·  {p0} / {total}", p0 = p.artifacts, current = current, total = total),
+                                (Some(current), None) => current.clone(),
+                                _ => tr_s("starting cargo…").to_string(),
+                            }
+                        };
+                        (Icon::Build, theme::accent(), trf!("{what}  —  {detail}", what = what, detail = detail), p.fraction(), true)
+                    }
+                    JobState::Failed(reason) => (Icon::Error, theme::ERROR, format!("{what}: {reason}"), Some(1.0), false),
+                    JobState::Cancelled => (Icon::Warn, theme::WARN, trf!("{what}: cancelled", what = what), None, false),
+                    _ => (Icon::Check, theme::OK, trf!("{what}: done", what = what), Some(1.0), false),
+                }
+            }
+            None => match &self.prebuild {
+                Some(p) if p.finished => {
+                    let failed = p.results.iter().filter(|r| !r.1).count();
+                    let color = if failed > 0 { theme::WARN } else { theme::OK };
+                    (Icon::Check, color, trf!("Prebuild finished: {p0} built, {failed} failed", p0 = p.results.len() - failed, failed = failed), None, false)
+                }
+                _ => (Icon::Build, theme::TEXT_MUTED, trn!("{n} build waiting", "{n} builds waiting", queued), None, false),
+            },
+        };
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 8.0, y), vec2(14.0, 14.0)), icon, color);
+        let bar_w = 160.0;
+        let buttons_w = 230.0;
+        let text_right = rect.right() - buttons_w - bar_w - 24.0;
+        widgets::paint_elided(
+            ui.painter(),
+            pos2(rect.left() + 24.0, y),
+            &text,
+            theme::caption(),
+            theme::TEXT,
+            (text_right - rect.left() - 24.0).max(60.0),
+            Align2::LEFT_CENTER,
+        );
+        if building {
+            let bar = Rect::from_min_size(pos2(text_right + 12.0, y - 3.0), vec2(bar_w, 6.0));
+            let mut child = ui.new_child(UiBuilder::new().max_rect(bar));
+            widgets::progress_bar(&mut child, fraction, false);
+        }
+        let area = Rect::from_min_max(pos2(rect.right() - buttons_w, rect.top()), rect.max);
+        let mut buttons = ui.new_child(UiBuilder::new().max_rect(area).layout(Layout::right_to_left(Align::Center)));
+        buttons.spacing_mut().item_spacing.x = 6.0;
+        if building {
+            if widgets::button(&mut buttons, Id::new("hub-task-cancel"), None, tr_s("Cancel"), false).clicked() {
+                self.push(HubAction::CancelJob);
+            }
+        } else if widgets::button(&mut buttons, Id::new("hub-task-dismiss"), None, tr_s("Dismiss"), false).clicked() {
+            self.push(HubAction::DismissJob);
+        }
+        if (self.job.is_some() || self.prebuild.is_some())
+            && widgets::button(&mut buttons, Id::new(Hub::TASK_DETAILS_ID), None, if self.show_job { tr_s("Hide Details") } else { tr_s("Details") }, false)
+                .clicked()
+        {
+            let show = !self.show_job;
+            self.push(HubAction::ShowJob(show));
+        }
+        if queued > 0 && self.job.is_some() {
+            buttons.label(egui::RichText::new(trf!("+{queued} queued", queued = queued)).font(theme::caption()).color(theme::TEXT_MUTED));
+        }
+    }
+
+    /// Tools: Piska Modeler, язык Scenario, экспорт выбранного проекта, руководства.
+    fn tools_page(&mut self, ui: &mut Ui) {
+        self.page_header(ui, tr_s("Tools"), tr_s("Programs that come with the engine, and where to start with each."), |_, _| {});
+        widgets::separator(ui);
+        let body = ui.available_rect_before_wrap().shrink2(vec2(PAD, 0.0));
+        let mut ui = ui.new_child(UiBuilder::new().max_rect(body).layout(Layout::top_down(Align::Min)));
+        let ui = &mut ui;
+        ui.add_space(theme::SP_8);
+        let modeler_built = self.tool_exe("piska-modeler").is_some();
+        let selected = self.selected.clone().filter(|p| self.listed(p).is_some_and(|l| l.info.is_ok()));
+        let selected_title = selected.as_deref().and_then(|p| self.listed(p)).map(Listed::title);
+        let docs: Vec<(String, PathBuf)> = ["modeler.md", "scenario.md", "editor.md", "export.md", "hub.md"]
+            .iter()
+            .filter_map(|file| self.docs.iter().find(|d| d.file == *file).map(|d| (d.title.clone(), d.path.clone())))
+            .collect();
+        let doc = |name: &str| docs.iter().find(|(_, p)| p.ends_with(name)).map(|(_, p)| p.clone());
+
+        // Карточки: столько колонок, сколько влезает (не уже CARD_MIN_W), одна высота у всех
+        // карточек ряда; кнопки — строками у нижнего края, не влезают в строку — перенос
+        // (раньше одна строка шире карточки: русские подписи вылезали за край).
+        const CARD_GAP: f32 = 16.0;
+        const CARD_PAD: f32 = 16.0;
+        const CARD_MIN_W: f32 = 240.0;
+        const BUTTON_GAP: f32 = 6.0;
+        let width = ui.available_width();
+        let columns = (((width + CARD_GAP) / (CARD_MIN_W + CARD_GAP)).floor() as usize).clamp(1, 3);
+        let card_w = (width - CARD_GAP * (columns as f32 - 1.0)) / columns as f32;
+        let inner_w = card_w - CARD_PAD * 2.0;
+        let cards = [
+            (
+                Icon::Cube,
+                tr_s("Model Editor"),
+                tr_s("Piska Modeler: low-poly models (.pmodel) built from boxes, cylinders and spheres, with paint and \
+                 materials. Models appear in the Project window of the editor."),
+            ),
+            (
+                Icon::Script,
+                tr_s("Scenario"),
+                tr_s("A small scripting language for levels and behaviour: saved files restart in Play without a build. \
+                 New projects start with a Scenario script."),
+            ),
+            (
+                Icon::Build,
+                tr_s("Export"),
+                tr_s("Build a game for the web, Windows or Android with piska-export. Exports the project selected in \
+                 the Projects list."),
+            ),
+        ];
+        // Кнопки карточек: (id, иконка, подпись, главная, подсказка, доступна, действие).
+        type CardButton = (Id, Option<Icon>, String, bool, String, bool, Option<HubAction>);
+        let mut card_buttons: Vec<Vec<CardButton>> = vec![Vec::new(), Vec::new(), Vec::new()];
+        {
+            let id = Id::new("hub-tool").with(0usize);
+            let label = if modeler_built { tr_s("Open Model Editor") } else { tr_s("Build and Open") };
+            card_buttons[0].push((
+                id.with("open"),
+                Some(Icon::Cube),
+                label.to_string(),
+                true,
+                tr_s("Starts Piska Modeler (built once in the background if it is missing)").to_string(),
+                true,
+                Some(HubAction::OpenModeler(None)),
+            ));
+            if let Some(path) = doc("modeler.md") {
+                card_buttons[0].push((id.with("doc"), None, tr_s("Guide").to_string(), false, String::new(), true, Some(HubAction::OpenFile(path))));
+            }
+            let id = Id::new("hub-tool").with(1usize);
+            if let Some(path) = doc("scenario.md") {
+                card_buttons[1].push((
+                    id.with("doc"),
+                    Some(Icon::File),
+                    tr_s("Open Documentation").to_string(),
+                    true,
+                    String::new(),
+                    true,
+                    Some(HubAction::OpenFile(path)),
+                ));
+            }
+            card_buttons[1].push((
+                id.with("new"),
+                Some(Icon::Plus),
+                tr_s("New Project").to_string(),
+                false,
+                tr_s("New project whose demo behaviour is a Scenario script (assets/scenarios/spin.scenario)").to_string(),
+                true,
+                None,
+            ));
+            let id = Id::new("hub-tool").with(2usize);
+            let label = match &selected_title {
+                Some(title) => trf!("Export “{title}”…", title = title),
+                None => tr_s("Export…").to_string(),
+            };
+            card_buttons[2].push((
+                id.with("export"),
+                Some(Icon::Build),
+                label,
+                true,
+                tr_s("Select a project in the Projects list first").to_string(),
+                selected.is_some(),
+                selected.clone().map(HubAction::ShowExport),
+            ));
+        }
+        // Раскладка каждой карточки: текст и строки кнопок.
+        let layouts: Vec<(std::sync::Arc<egui::Galley>, Vec<Vec<usize>>, Vec<f32>)> = cards
+            .iter()
+            .zip(&card_buttons)
+            .map(|((_, _, text), buttons)| {
+                let galley = ui.painter().layout(text.to_string(), theme::caption(), theme::TEXT_MUTED, inner_w);
+                let widths: Vec<f32> = buttons
+                    .iter()
+                    .map(|(_, icon, label, ..)| widgets::button_width(ui, *icon, label).min(inner_w))
+                    .collect();
+                let rows = widgets::wrap_rows(&widths, inner_w, BUTTON_GAP);
+                (galley, rows, widths)
+            })
+            .collect();
+        let card_height = |(galley, rows, _): &(std::sync::Arc<egui::Galley>, Vec<Vec<usize>>, Vec<f32>)| {
+            let buttons = rows.len() as f32 * widgets::CONTROL_H + (rows.len().max(1) as f32 - 1.0) * BUTTON_GAP;
+            CARD_PAD + 20.0 + 14.0 + galley.size().y + 18.0 + buttons + CARD_PAD
+        };
+        let mut chosen: Option<HubAction> = None;
+        let mut new_project = false;
+        for (row_index, chunk) in (0..cards.len()).collect::<Vec<_>>().chunks(columns).enumerate() {
+            let row_h = chunk.iter().map(|i| card_height(&layouts[*i])).fold(0.0_f32, f32::max).ceil();
+            if row_index > 0 {
+                ui.add_space(CARD_GAP);
+            }
+            let (row, _) = ui.allocate_exact_size(vec2(width, row_h), Sense::hover());
+            for (column, &i) in chunk.iter().enumerate() {
+                let (icon, title, _) = cards[i];
+                let (galley, rows, widths) = &layouts[i];
+                let rect = Rect::from_min_size(pos2(row.left() + column as f32 * (card_w + CARD_GAP), row.top()), vec2(card_w, row_h));
+                let content = rect.shrink(CARD_PAD);
+                let card_id = Id::new("hub-tool").with(i);
+                // Рамка внутри прямоугольника карточки; сам прямоугольник и поле содержимого —
+                // для проверок раскладки.
+                ui.painter().rect(rect.shrink(0.5), theme::R_M, theme::BG_RAISED, Stroke::new(1.0_f32, theme::LINE));
+                ui.interact(rect, card_id.with("card"), Sense::hover());
+                ui.ctx().data_mut(|d| d.insert_temp(card_id.with("content"), content));
+                icons::paint(ui.painter(), Rect::from_min_size(content.min, vec2(20.0, 20.0)), icon, theme::accent());
+                widgets::paint_elided(
+                    ui.painter(),
+                    pos2(content.left() + 30.0, content.top() + 10.0),
+                    title,
+                    theme::strong(15.0),
+                    theme::TEXT,
+                    content.width() - 30.0,
+                    Align2::LEFT_CENTER,
+                );
+                ui.painter().galley(pos2(content.left(), content.top() + 34.0), galley.clone(), theme::TEXT_MUTED);
+                // Строки кнопок снизу вверх: последняя строка — у нижнего поля карточки.
+                let mut y = content.bottom() - rows.len() as f32 * widgets::CONTROL_H - (rows.len().max(1) as f32 - 1.0) * BUTTON_GAP;
+                for line in rows {
+                    let mut x = content.left();
+                    for &b in line {
+                        let (id, icon, label, primary, tip, enabled, action) = &card_buttons[i][b];
+                        let slot = Rect::from_min_size(pos2(x, y), vec2(widths[b], widgets::CONTROL_H));
+                        let mut child = ui.new_child(UiBuilder::new().max_rect(slot).layout(Layout::left_to_right(Align::Center)));
+                        let response = child.add_enabled_ui(*enabled, |ui| widgets::button(ui, *id, *icon, label, *primary)).inner;
+                        let response = if tip.is_empty() { response } else { response.on_hover_text(tip.as_str()) };
+                        if response.clicked() {
+                            match action {
+                                Some(action) => chosen = Some(action.clone()),
+                                None => new_project = true,
+                            }
+                        }
+                        x += widths[b] + BUTTON_GAP;
+                    }
+                    y += widgets::CONTROL_H + BUTTON_GAP;
+                }
+            }
+        }
+        if new_project {
+            self.wizard.template = Template::Empty3D;
+            self.actions.push(HubAction::Navigate(Page::NewProject));
+        }
+        if let Some(action) = chosen {
+            self.actions.push(action);
+        }
+        ui.add_space(theme::SP_12);
+        widgets::section_label(ui, tr_s("Guides"));
+        ui.add_space(theme::SP_3);
+        ui.spacing_mut().item_spacing.y = 0.0;
+        for (i, (title, path)) in docs.iter().enumerate() {
+            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::hover());
+            let response = ui.interact(rect, Id::new("hub-tool-guide").with(i), Sense::click());
+            if response.hovered() {
+                ui.painter().rect_filled(rect, theme::R_S, theme::hover_fill());
+            }
+            ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0_f32, theme::LINE));
+            icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 12.0, rect.center().y), vec2(13.0, 13.0)), Icon::File, theme::TEXT_MUTED);
+            ui.painter()
+                .text(pos2(rect.left() + 30.0, rect.center().y), Align2::LEFT_CENTER, title, theme::body(), theme::TEXT);
+            if response.on_hover_text(path.display().to_string()).clicked() {
+                self.actions.push(HubAction::OpenFile(path.clone()));
             }
         }
     }
@@ -1055,16 +1400,16 @@ impl Hub {
             return;
         };
         let failed = prebuild.results.iter().filter(|r| !r.1).count();
-        let subtitle = format!(
-            "{} built, {failed} failed, {} were already up to date. Open is now instant for the built ones.",
-            prebuild.results.len() - failed,
-            prebuild.skipped
-        );
-        self.page_header(ui, "Prebuild finished", &subtitle, |_, _| {});
+        let subtitle = trf!(
+            "{p0} built, {failed} failed, {p1} were already up to date. Open is now instant for the built ones.",
+            p0 = prebuild.results.len() - failed,
+            p1 = prebuild.skipped
+        , failed = failed);
+        self.page_header(ui, tr_s("Prebuild finished"), &subtitle, |_, _| {});
         widgets::separator(ui);
         let body = ui.available_rect_before_wrap().shrink2(vec2(PAD, 0.0));
         let mut ui = ui.new_child(UiBuilder::new().max_rect(body).layout(Layout::top_down(Align::Min)));
-        ui.add_space(16.0);
+        ui.add_space(theme::SP_8);
         ui.spacing_mut().item_spacing.y = 0.0;
         for (name, ok, detail) in &prebuild.results {
             let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
@@ -1073,7 +1418,7 @@ impl Hub {
             icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 10.0, rect.center().y), vec2(14.0, 14.0)), icon, color);
             ui.painter()
                 .text(pos2(rect.left() + 28.0, rect.center().y), Align2::LEFT_CENTER, name, theme::body(), theme::TEXT);
-            let text = if *ok { "Built".to_string() } else { detail.clone() };
+            let text = if *ok { tr_s("Built").to_string() } else { detail.clone() };
             widgets::paint_elided(
                 ui.painter(),
                 pos2(rect.left() + 260.0, rect.center().y),
@@ -1084,9 +1429,9 @@ impl Hub {
                 Align2::LEFT_CENTER,
             );
         }
-        ui.add_space(16.0);
+        ui.add_space(theme::SP_8);
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            if widgets::large_button(ui, Id::new("hub-prebuild-done"), None, "Done", true).clicked() {
+            if widgets::action_button(ui, Id::new("hub-prebuild-done"), None, tr_s("Done"), true).clicked() {
                 self.actions.push(HubAction::CloseJob);
             }
         });
@@ -1099,8 +1444,8 @@ impl Hub {
     fn wizard_page(&mut self, ui: &mut Ui) {
         self.page_header(
             ui,
-            "New Project",
-            "A game crate with its own editor program, assets with .meta files, a starting scene, a headless test and a README.",
+            tr_s("New Project"),
+            tr_s("A game crate with its own editor program, assets with .meta files, a starting scene, a headless test and a README."),
             |_, _| {},
         );
         widgets::separator(ui);
@@ -1115,8 +1460,8 @@ impl Hub {
 
         // Шаблоны.
         let mut column = ui.new_child(UiBuilder::new().max_rect(left).layout(Layout::top_down(Align::Min)));
-        widgets::section_label(&mut column, "Template");
-        column.add_space(6.0);
+        widgets::section_label(&mut column, tr_s("Template"));
+        column.add_space(theme::SP_3);
         for (index, template) in Template::ALL.into_iter().enumerate() {
             let (rect, _) = column.allocate_exact_size(vec2(column.available_width(), 104.0), Sense::hover());
             let response = column.interact(rect, Id::new("hub-template").with(index), Sense::click());
@@ -1149,125 +1494,150 @@ impl Hub {
             if response.clicked() {
                 self.wizard.template = template;
             }
-            column.add_space(10.0);
+            column.add_space(theme::SP_4);
         }
 
         // Поля.
         let plan = self.wizard_plan();
-        let mut form = ui.new_child(UiBuilder::new().max_rect(right).layout(Layout::top_down(Align::Min)));
-        let ui = &mut form;
-        let full = ui.available_width();
-        widgets::section_label(ui, "Name");
-        ui.add_space(4.0);
-        widgets::text_field(ui, Id::new(Hub::WIZARD_NAME_ID), &mut self.wizard.name, "my_game", full);
-        ui.add_space(4.0);
-        let name_problem = (!self.wizard.name.trim().is_empty())
-            .then(|| crate::templates::validate_name(self.wizard.name.trim()).err())
-            .flatten();
-        let (hint, hint_color) = match (&name_problem, &plan) {
-            (Some(problem), _) => (problem.to_string(), theme::ERROR),
-            (None, Ok((dir, _, _))) => {
-                let shown = self
-                    .engine_root
-                    .as_deref()
-                    .and_then(|root| paths::relative_to(dir, root))
-                    .map(|relative| format!("{relative}  (in the engine workspace)"))
-                    .unwrap_or_else(|| dir.display().to_string());
-                (format!("Folder: {shown}"), theme::TEXT_MUTED)
+        // Кнопки — внизу колонки; поля над ними прокручиваются и никогда не заходят под кнопки.
+        let bar = Rect::from_min_max(pos2(right.left(), right.bottom() - 56.0), pos2(right.right(), right.bottom() - 12.0));
+        let form_rect = Rect::from_min_max(right.min, pos2(right.right(), bar.top() - theme::SP_4));
+        let mut form = ui.new_child(UiBuilder::new().max_rect(form_rect).layout(Layout::top_down(Align::Min)));
+        egui::ScrollArea::vertical().id_salt("hub-wizard-form").auto_shrink([false, false]).show(&mut form, |ui| {
+            let full = ui.available_width();
+            widgets::section_label(ui, tr_s("Name"));
+            ui.add_space(theme::SP_2);
+            let name_field = widgets::text_field(ui, Id::new(Hub::WIZARD_NAME_ID), &mut self.wizard.name, "my_game", full);
+            if std::mem::take(&mut self.focus_wizard_name) {
+                name_field.request_focus();
             }
-            (None, Err(_)) if self.wizard.name.trim().is_empty() => (
-                "Lowercase letters, digits, _ and -. It becomes the crate and folder name.".to_string(),
-                theme::TEXT_MUTED,
-            ),
-            (None, Err(problem)) => (problem.clone(), theme::ERROR),
-        };
-        ui.add(egui::Label::new(egui::RichText::new(hint).font(theme::caption()).color(hint_color)).wrap());
-        ui.add_space(14.0);
-
-        widgets::section_label(ui, "Location");
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            let browse_w = 92.0;
-            widgets::text_field(ui, Id::new("hub-wizard-location"), &mut self.wizard.location, "Folder for the project", full - browse_w - 6.0);
-            if widgets::sized_like_field(ui, Id::new("hub-wizard-browse"), "Browse…", browse_w).clicked() {
-                self.actions.push(HubAction::Browse(BrowseTarget::WizardLocation));
-            }
-        });
-        ui.add_space(6.0);
-        if let Some(root) = self.engine_root.clone() {
-            let games = root.join("games");
-            if !paths::same(Path::new(self.wizard.location.trim()), &games) {
-                let link = ui.add(egui::Label::new(egui::RichText::new("Use the engine's games/ folder").font(theme::caption()).color(theme::accent())).sense(Sense::click()));
-                if link.clicked() {
-                    self.wizard.location = games.display().to_string();
+            // Enter — создать и открыть, Esc — назад к списку (если не открыт диалог).
+            if self.dialog.is_none() {
+                let (enter, escape) = ui.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+                if enter && plan.is_ok() {
+                    self.push(HubAction::CreateAndOpen);
+                }
+                if escape {
+                    self.push(HubAction::Navigate(Page::Projects));
                 }
             }
-        }
-        ui.add_space(8.0);
-        match &plan {
-            Ok((_, true, _)) => widgets::note(
-                ui,
-                Icon::Info,
-                Tone::Neutral,
-                "Inside the engine workspace: the project shares the engine's build cache, so the first build only compiles the game.",
-            ),
-            Ok((_, false, _)) => widgets::note(
-                ui,
-                Icon::Warn,
-                Tone::Warn,
-                "Outside the engine: the project gets its own Cargo workspace with a path to this engine checkout. \
-                 Its first build compiles the whole engine — about 10–15 minutes and several GB of disk.",
-            ),
-            Err(_) => {}
-        }
-        ui.add_space(14.0);
-        widgets::section_label(ui, "Options");
-        ui.add_space(4.0);
-        ui.checkbox(&mut self.wizard.cpp, egui::RichText::new("C++ scripts folder (cpp/)").color(theme::TEXT));
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new("Adds build.rs and cpp/Wobble.cpp; components in cpp/*.cpp are compiled into the game. Needs a C++ compiler (MSVC or GCC).")
-                    .font(theme::caption())
-                    .color(theme::TEXT_MUTED),
-            )
-            .wrap(),
-        );
-        ui.add_space(14.0);
+            ui.add_space(theme::SP_2);
+            let name_problem = (!self.wizard.name.trim().is_empty())
+                .then(|| crate::templates::validate_name(self.wizard.name.trim()).err())
+                .flatten();
+            let (hint, hint_color) = match (&name_problem, &plan) {
+                (Some(problem), _) => (problem.to_string(), theme::ERROR),
+                (None, Ok((dir, _, _))) => {
+                    let shown = self
+                        .engine_root
+                        .as_deref()
+                        .and_then(|root| paths::relative_to(dir, root))
+                        .map(|relative| trf!("{relative}  (in the engine workspace)", relative = relative))
+                        .unwrap_or_else(|| dir.display().to_string());
+                    (trf!("Folder: {shown}", shown = shown), theme::TEXT_MUTED)
+                }
+                (None, Err(_)) if self.wizard.name.trim().is_empty() => (
+                    tr_s("Lowercase letters, digits, _ and -. It becomes the crate and folder name.").to_string(),
+                    theme::TEXT_MUTED,
+                ),
+                (None, Err(problem)) => (problem.clone(), theme::ERROR),
+            };
+            ui.add(egui::Label::new(egui::RichText::new(hint).font(theme::caption()).color(hint_color)).wrap());
+            ui.add_space(theme::SP_6);
 
-        if let Ok((_, _, files)) = &plan {
-            widgets::section_label(ui, &format!("Files ({})", files.len()));
-            ui.add_space(4.0);
-            let shown = 10usize;
-            let mut text = files.iter().take(shown).cloned().collect::<Vec<_>>().join("\n");
-            if files.len() > shown {
-                text.push_str(&format!("\n… and {} more", files.len() - shown));
+            widgets::section_label(ui, tr_s("Location"));
+            ui.add_space(theme::SP_2);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let browse_w = 92.0;
+                widgets::text_field(ui, Id::new("hub-wizard-location"), &mut self.wizard.location, tr_s("Folder for the project"), full - browse_w - 6.0);
+                if widgets::button_sized(ui, Id::new("hub-wizard-browse"), tr_s("Browse…"), browse_w).clicked() {
+                    self.actions.push(HubAction::Browse(BrowseTarget::WizardLocation));
+                }
+            });
+            ui.add_space(theme::SP_3);
+            if let Some(root) = self.engine_root.clone() {
+                let games = root.join("games");
+                if !paths::same(Path::new(self.wizard.location.trim()), &games) {
+                    let link = ui.add(egui::Label::new(egui::RichText::new(tr_s("Use the engine's games/ folder")).font(theme::caption()).color(theme::accent())).sense(Sense::click()));
+                    if link.clicked() {
+                        self.wizard.location = games.display().to_string();
+                    }
+                }
             }
-            ui.label(egui::RichText::new(text).font(egui::FontId::monospace(12.0)).color(theme::TEXT_MUTED));
-        }
-        if let Some(error) = self.wizard.error.clone() {
-            ui.add_space(8.0);
-            widgets::note(ui, Icon::Error, Tone::Error, &error);
-        }
+            ui.add_space(theme::SP_4);
+            match &plan {
+                Ok((_, true, _)) => widgets::note(
+                    ui,
+                    Icon::Info,
+                    Tone::Neutral,
+                    tr_s("Inside the engine workspace: the project shares the engine's build cache, so the first build only compiles the game."),
+                ),
+                Ok((_, false, _)) => widgets::note(
+                    ui,
+                    Icon::Warn,
+                    Tone::Warn,
+                    tr_s("Outside the engine: the project gets its own Cargo workspace with a path to this engine checkout. \
+                     It opens at once in the generic editor; once you add Rust or C++ code, its first build compiles \
+                     the whole engine — about 10–15 minutes and several GB of disk."),
+                ),
+                Err(_) => {}
+            }
+            ui.add_space(theme::SP_6);
+            widgets::section_label(ui, tr_s("Options"));
+            ui.add_space(theme::SP_2);
+            ui.checkbox(&mut self.wizard.cpp, egui::RichText::new(tr_s("C++ scripts folder (cpp/)")).color(theme::TEXT));
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(tr_s("Adds build.rs and cpp/Wobble.cpp; components in cpp/*.cpp are compiled into the game. Needs a C++ compiler (MSVC or GCC)."))
+                        .font(theme::caption())
+                        .color(theme::TEXT_MUTED),
+                )
+                .wrap(),
+            );
+            ui.add_space(theme::SP_6);
 
-        // Кнопки — внизу колонки.
-        let bar = Rect::from_min_max(pos2(right.left(), right.bottom() - 56.0), pos2(right.right(), right.bottom() - 12.0));
+            if let Ok((_, _, files)) = &plan {
+                widgets::section_label(ui, &trf!("Files ({})", files.len()));
+                ui.add_space(theme::SP_2);
+                let shown = 10usize;
+                let mut text = files.iter().take(shown).cloned().collect::<Vec<_>>().join("\n");
+                if files.len() > shown {
+                    text.push_str(&trf!("\n… and {} more", files.len() - shown));
+                }
+                ui.label(egui::RichText::new(text).font(egui::FontId::monospace(12.0)).color(theme::TEXT_MUTED));
+            }
+            if let Some(error) = self.wizard.error.clone() {
+                ui.add_space(theme::SP_4);
+                widgets::note(ui, Icon::Error, Tone::Error, &error);
+            }
+
+        });
         let mut buttons = ui.new_child(UiBuilder::new().max_rect(bar).layout(Layout::right_to_left(Align::Center)));
         buttons.spacing_mut().item_spacing.x = 8.0;
         let ready = plan.is_ok();
+        let create_open = buttons
+            .add_enabled_ui(ready, |ui| {
+                widgets::action_button(ui, Id::new(Hub::CREATE_OPEN_BUTTON_ID), Some(Icon::Play), tr_s("Create and Open"), true)
+            })
+            .inner
+            .on_hover_text(tr_s("Create the project and open it in the editor right away (Enter)"));
+        if create_open.clicked() {
+            self.push(HubAction::CreateAndOpen);
+        }
         let create = buttons
-            .add_enabled_ui(ready, |ui| widgets::large_button(ui, Id::new(Hub::CREATE_BUTTON_ID), Some(Icon::Plus), "Create Project", true))
+            .add_enabled_ui(ready, |ui| widgets::action_button(ui, Id::new(Hub::CREATE_BUTTON_ID), Some(Icon::Plus), tr_s("Create"), false))
             .inner;
         if create.clicked() {
             self.push(HubAction::CreateProject);
         }
-        if widgets::large_button(&mut buttons, Id::new("hub-wizard-cancel"), None, "Cancel", false).clicked() {
+        if widgets::action_button(&mut buttons, Id::new("hub-wizard-cancel"), None, tr_s("Cancel"), false).clicked() {
             self.push(HubAction::Navigate(Page::Projects));
         }
     }
 
     fn wizard_done(&mut self, ui: &mut Ui, created: &Path) {
-        ui.add_space(48.0);
+        ui.add_space(theme::SP_12 * 2.0);
         let title = self
             .listed(created)
             .map(Listed::title)
@@ -1277,30 +1647,30 @@ impl Hub {
             let (rect, _) = ui.allocate_exact_size(vec2(44.0, 44.0), Sense::hover());
             ui.painter().circle_filled(rect.center(), 22.0, theme::mix(theme::BG_PANEL, theme::OK, 0.2));
             icons::paint(ui.painter(), rect.shrink(12.0), Icon::Check, theme::OK);
-            ui.add_space(12.0);
-            ui.label(egui::RichText::new(format!("“{title}” is ready")).font(theme::strong(19.0)).color(theme::TEXT));
-            ui.add_space(4.0);
+            ui.add_space(theme::SP_6);
+            ui.label(egui::RichText::new(trf!("“{title}” is ready", title = title)).font(theme::strong(19.0)).color(theme::TEXT));
+            ui.add_space(theme::SP_2);
             ui.label(egui::RichText::new(created.display().to_string()).font(theme::mono()).color(theme::TEXT_MUTED));
-            ui.add_space(6.0);
+            ui.add_space(theme::SP_3);
             let first_build = if workspace {
-                "Open builds the game's editor program; the engine is already compiled in the workspace."
+                tr_s("Open builds the game's editor program; the engine is already compiled in the workspace.")
             } else {
-                "The first Open compiles the engine for this project: expect 10–15 minutes."
+                tr_s("The first Open compiles the engine for this project: expect 10–15 minutes.")
             };
             ui.label(egui::RichText::new(first_build).font(theme::caption()).color(theme::TEXT_MUTED));
-            ui.add_space(20.0);
+            ui.add_space(theme::SP_8);
             // Три кнопки по центру.
             let widths = 360.0;
             let (row, _) = ui.allocate_exact_size(vec2(widths + 120.0, 32.0), Sense::hover());
             let mut buttons = ui.new_child(UiBuilder::new().max_rect(row).layout(Layout::left_to_right(Align::Center)));
             buttons.spacing_mut().item_spacing.x = 8.0;
-            if widgets::large_button(&mut buttons, Id::new("hub-open-now"), Some(Icon::Play), "Open Now", true).clicked() {
+            if widgets::action_button(&mut buttons, Id::new("hub-open-now"), Some(Icon::Play), tr_s("Open Now"), true).clicked() {
                 self.actions.push(HubAction::Open(created.to_path_buf()));
             }
-            if widgets::large_button(&mut buttons, Id::new("hub-created-reveal"), Some(Icon::FolderOpen), "Show in File Manager", false).clicked() {
+            if widgets::action_button(&mut buttons, Id::new("hub-created-reveal"), Some(Icon::FolderOpen), tr_s("Show in File Manager"), false).clicked() {
                 self.actions.push(HubAction::Reveal(created.to_path_buf()));
             }
-            if widgets::large_button(&mut buttons, Id::new("hub-created-back"), None, "Back to Projects", false).clicked() {
+            if widgets::action_button(&mut buttons, Id::new("hub-created-back"), None, tr_s("Back to Projects"), false).clicked() {
                 self.wizard.created = None;
                 self.wizard.name.clear();
                 self.actions.push(HubAction::Navigate(Page::Projects));
@@ -1315,8 +1685,8 @@ impl Hub {
     fn samples_page(&mut self, ui: &mut Ui) {
         self.page_header(
             ui,
-            "Samples & Docs",
-            "Complete games made with the engine, and the API guides they were written from.",
+            tr_s("Samples & Docs"),
+            tr_s("Complete games made with the engine, and the API guides they were written from."),
             |_, _| {},
         );
         widgets::separator(ui);
@@ -1324,7 +1694,7 @@ impl Hub {
             .id_salt("hub-samples")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                ui.add_space(20.0);
+                ui.add_space(theme::SP_8);
                 const GAP: f32 = 18.0;
                 let width = ui.available_width() - PAD * 2.0;
                 let card_w = (width - GAP * 2.0) / 3.0;
@@ -1335,7 +1705,7 @@ impl Hub {
                     let rect = Rect::from_min_size(pos2(row.left() + PAD + i as f32 * (card_w + GAP), row.top()), vec2(card_w, card_h));
                     self.sample_card(ui, rect, pic_h, i);
                 }
-                ui.add_space(30.0);
+                ui.add_space(theme::SP_12);
                 let (label, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
                 ui.painter().text(
                     pos2(label.left() + PAD, label.center().y),
@@ -1344,10 +1714,10 @@ impl Hub {
                     theme::strong(11.0),
                     theme::TEXT_MUTED,
                 );
-                ui.add_space(6.0);
+                ui.add_space(theme::SP_3);
                 let docs = self.docs.clone();
                 if docs.is_empty() {
-                    ui.label(egui::RichText::new("      docs/api was not found in the engine checkout.").color(theme::TEXT_MUTED));
+                    ui.label(egui::RichText::new(tr_s("      docs/api was not found in the engine checkout.")).color(theme::TEXT_MUTED));
                 }
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (i, doc) in docs.iter().enumerate() {
@@ -1376,11 +1746,11 @@ impl Hub {
                         theme::TEXT_DISABLED,
                     );
                     icons::paint(ui.painter(), Rect::from_center_size(pos2(inner.right() - 14.0, inner.center().y), vec2(12.0, 12.0)), Icon::External, theme::TEXT_DISABLED);
-                    if response.on_hover_text("Open with the system's default app").clicked() {
+                    if response.on_hover_text(tr_s("Open with the system's default app")).clicked() {
                         self.actions.push(HubAction::OpenFile(doc.path.clone()));
                     }
                 }
-                ui.add_space(24.0);
+                ui.add_space(theme::SP_12);
             });
     }
 
@@ -1405,7 +1775,7 @@ impl Hub {
         if let Some(info) = &info {
             let mut tags: Vec<String> = info.dimension.label().map(str::to_string).into_iter().collect();
             if info.has_cpp {
-                tags.push("C++".into());
+                tags.push(tr_s("C++").into());
             }
             for tag in tags {
                 x = widgets::paint_badge(ui.painter(), x, y, &tag, Tone::Neutral).right() + 5.0;
@@ -1424,16 +1794,16 @@ impl Hub {
                 let editor_open = self.processes.running_key(&key, &JobKind::Open).is_some();
                 let open = buttons
                     .add_enabled_ui(info.editor_bin.is_some() && !editor_open, |ui| {
-                        widgets::compact_button(ui, id.with("open"), None, "Open", true)
+                        widgets::button(ui, id.with("open"), None, tr_s("Open"), true)
                     })
                     .inner;
                 if open.clicked() {
                     self.actions.push(HubAction::Open(path.clone()));
                 }
-                if widgets::compact_button(&mut buttons, id.with("play"), Some(Icon::Play), "Play", false).clicked() {
+                if widgets::button(&mut buttons, id.with("play"), Some(Icon::Play), tr_s("Play"), false).clicked() {
                     self.actions.push(HubAction::Play(path.clone()));
                 }
-                if widgets::icon_button(&mut buttons, id.with("folder"), Icon::FolderOpen, &format!("Show games/{} in the file manager", sample.folder))
+                if widgets::icon_button(&mut buttons, id.with("folder"), Icon::FolderOpen, &trf!("Show games/{} in the file manager", sample.folder))
                     .clicked()
                 {
                     self.actions.push(HubAction::Reveal(path));
@@ -1441,7 +1811,7 @@ impl Hub {
             }
             _ => {
                 buttons.label(
-                    egui::RichText::new(format!("games/{} is not in this engine checkout", sample.folder))
+                    egui::RichText::new(trf!("games/{} is not in this engine checkout", sample.folder))
                         .font(theme::caption())
                         .color(theme::TEXT_DISABLED),
                 );
@@ -1454,74 +1824,87 @@ impl Hub {
     // -----------------------------------------------------------------------
 
     fn settings_page(&mut self, ui: &mut Ui) {
-        self.page_header(ui, "Settings", "Interface scale and accent are shared with the editor's Preferences.", |_, _| {});
+        self.page_header(ui, tr_s("Settings"), tr_s("Interface scale and accent are shared with the editor's Preferences."), |_, _| {});
         widgets::separator(ui);
         let body = ui.available_rect_before_wrap().shrink2(vec2(PAD, 0.0));
         let mut ui = ui.new_child(UiBuilder::new().max_rect(body).layout(Layout::top_down(Align::Min)));
         let ui = &mut ui;
-        ui.add_space(8.0);
+        ui.add_space(theme::SP_4);
 
+        // Язык — первой строкой: общая настройка с редактором и редактором моделей.
+        let mut language = self.prefs.language;
+        setting_row(ui, tr_s("Language"), tr_s("Also used by the editor and the model editor. Auto follows the system language."), |ui| {
+            let auto = tr_s("Auto");
+            let options = [
+                (None, auto, auto),
+                (Some(Language::English), Language::English.native_name(), Language::English.native_name()),
+                (Some(Language::Russian), Language::Russian.native_name(), Language::Russian.native_name()),
+            ];
+            if theme::segmented(ui, &mut language, &options) {
+                self.actions.push(HubAction::SetLanguage(language));
+            }
+        });
         let games = self.engine_root.as_ref().map(|r| r.join("games"));
         let location = self.config.settings.default_location.clone().or(games.clone());
-        setting_row(ui, "Default project location", "New Project starts here.", |ui| {
+        setting_row(ui, tr_s("Default project location"), tr_s("New Project starts here."), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let text = location.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "(not set)".into());
-            let (rect, _) = ui.allocate_exact_size(vec2((ui.available_width() - 200.0).clamp(160.0, 460.0), 30.0), Sense::hover());
-            ui.painter().rect(rect, theme::R_S + 1.0, theme::BG_INSET, Stroke::new(1.0_f32, theme::LINE_STRONG));
-            widgets::paint_elided(ui.painter(), pos2(rect.left() + 8.0, rect.center().y), &text, theme::body(), theme::TEXT, rect.width() - 16.0, Align2::LEFT_CENTER);
-            if widgets::sized_like_field(ui, Id::new("hub-settings-browse"), "Browse…", 92.0).clicked() {
+            widgets::readonly_field(ui, &text, (ui.available_width() - 200.0).clamp(160.0, 460.0));
+            if widgets::button_sized(ui, Id::new("hub-settings-browse"), tr_s("Browse…"), 92.0).clicked() {
                 self.actions.push(HubAction::Browse(BrowseTarget::DefaultLocation));
             }
             let custom = self.config.settings.default_location.is_some();
-            let reset = ui.add_enabled_ui(custom, |ui| widgets::sized_like_field(ui, Id::new("hub-settings-reset"), "Reset", 70.0)).inner;
-            if reset.on_hover_text("Back to the engine's games/ folder").clicked() {
+            let reset = ui.add_enabled_ui(custom, |ui| widgets::button_sized(ui, Id::new("hub-settings-reset"), tr_s("Reset"), 70.0)).inner;
+            if reset.on_hover_text(tr_s("Back to the engine's games/ folder")).clicked() {
                 self.actions.push(HubAction::SetDefaultLocation(None));
             }
         });
         let mut after = self.config.settings.after_open;
-        setting_row(ui, "After opening a project", "Hidden, the hub comes back when the editor closes.", |ui| {
-            if theme::segmented(ui, &mut after, &[(AfterOpen::Hide, "Hide the hub", "Hide and come back when the editor closes"), (AfterOpen::Close, "Close the hub", "Close the window; the process exits with the editor")]) {
+        setting_row(ui, tr_s("After opening a project"), tr_s("Hidden, the hub comes back when the editor closes."), |ui| {
+            if theme::segmented(ui, &mut after, &[(AfterOpen::Hide, tr_s("Hide the hub"), tr_s("Hide and come back when the editor closes")), (AfterOpen::Close, tr_s("Close the hub"), tr_s("Close the window; the process exits with the editor"))]) {
                 self.actions.push(HubAction::SetAfterOpen(after));
             }
         });
         let mut scale = (self.prefs.ui_scale * 100.0).round() as u32;
-        setting_row(ui, "Interface scale", "Also used by the editor.", |ui| {
+        setting_row(ui, tr_s("Interface scale"), tr_s("Also used by the editor."), |ui| {
             let options: Vec<(u32, &str, &str)> = SCALES.iter().map(|(value, label)| (*value, *label, *label)).collect();
             if theme::segmented(ui, &mut scale, &options) {
                 self.actions.push(HubAction::SetUiScale(scale as f32 / 100.0));
             }
         });
         let accent = self.prefs.accent;
-        setting_row(ui, "Accent colour", "Selection, focus and main buttons. Also used by the editor.", |ui| {
+        setting_row(ui, tr_s("Accent colour"), tr_s("Selection, focus and main buttons. Also used by the editor."), |ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             for (index, (name, color)) in theme::ACCENTS.iter().enumerate() {
-                let (rect, _) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
+                let (rect, _) = ui.allocate_exact_size(vec2(widgets::CONTROL_H, widgets::CONTROL_H), Sense::hover());
                 let response = ui.interact(rect, Id::new("hub-accent").with(index), Sense::click());
+                // Кольцо — внутри квадрата контрола (половина толщины от края).
+                let ring = rect.width() * 0.5 - 1.0;
                 if index == accent {
-                    ui.painter().circle_stroke(rect.center(), 11.5, Stroke::new(1.5_f32, theme::TEXT));
+                    ui.painter().circle_stroke(rect.center(), ring, Stroke::new(1.5_f32, theme::TEXT));
                 } else if response.hovered() {
-                    ui.painter().circle_stroke(rect.center(), 11.5, Stroke::new(1.0_f32, theme::LINE_STRONG));
+                    ui.painter().circle_stroke(rect.center(), ring, Stroke::new(1.0_f32, theme::LINE_STRONG));
                 }
-                ui.painter().circle_filled(rect.center(), 8.0, *color);
-                if response.on_hover_text(*name).clicked() {
+                ui.painter().circle_filled(rect.center(), ring - theme::SP_2, *color);
+                if response.on_hover_text(tr_s(name)).clicked() {
                     self.actions.push(HubAction::SetAccent(index));
                 }
             }
         });
         let hidden = self.config.projects.iter().filter(|p| p.hidden).count();
-        setting_row(ui, "Removed engine games", "Games from games/ that you removed from the list.", |ui| {
-            ui.label(egui::RichText::new(format!("{hidden} removed")).color(theme::TEXT_MUTED));
-            let restore = ui.add_enabled_ui(hidden > 0, |ui| widgets::sized_like_field(ui, Id::new("hub-settings-restore"), "Restore", 80.0)).inner;
+        setting_row(ui, tr_s("Removed engine games"), tr_s("Games from games/ that you removed from the list."), |ui| {
+            ui.label(egui::RichText::new(trf!("{hidden} removed", hidden = hidden)).color(theme::TEXT_MUTED));
+            let restore = ui.add_enabled_ui(hidden > 0, |ui| widgets::button_sized(ui, Id::new("hub-settings-restore"), tr_s("Restore"), 80.0)).inner;
             if restore.clicked() {
                 self.actions.push(HubAction::RestoreHidden);
             }
         });
         let file = self.config_dir.as_ref().map(|d| d.join(paths::CONFIG_FILE));
-        setting_row(ui, "Project list file", "Projects, pins and times; RON, safe to edit while the hub is closed.", |ui| {
-            let text = file.as_ref().map(|f| f.display().to_string()).unwrap_or_else(|| "no config directory (set PISKA_HUB_CONFIG_DIR)".into());
+        setting_row(ui, tr_s("Project list file"), tr_s("Projects, pins and times; RON, safe to edit while the hub is closed."), |ui| {
+            let text = file.as_ref().map(|f| f.display().to_string()).unwrap_or_else(|| tr_s("no config directory (set PISKA_HUB_CONFIG_DIR)").into());
             ui.label(egui::RichText::new(text).font(theme::mono()).color(theme::TEXT_MUTED));
             if let Some(dir) = file.as_ref().and_then(|f| f.parent()).filter(|d| d.exists()) {
-                if widgets::icon_button(ui, Id::new("hub-settings-reveal"), Icon::FolderOpen, "Show in File Manager").clicked() {
+                if widgets::icon_button(ui, Id::new("hub-settings-reveal"), Icon::FolderOpen, tr_s("Show in File Manager")).clicked() {
                     self.actions.push(HubAction::Reveal(dir.to_path_buf()));
                 }
             }
@@ -1538,10 +1921,10 @@ impl Hub {
         };
         let mut keep = true;
         let mut actions: Vec<HubAction> = Vec::new();
-        let frame = egui::Frame::popup(&ctx.style())
-            .inner_margin(Margin::same(22.0))
-            .rounding(theme::R_L);
-        let modal = egui::Modal::new(Id::new("hub-dialog")).frame(frame).show(ctx, |ui| {
+        if let Dialog::Pack(pack) = &mut dialog {
+            self.refresh_pack_estimate(pack);
+        }
+        let modal = engine_editor::kit::window::dialog(Id::new("hub-dialog"), "").width(0.0).show(ctx, |ui| {
             // Своя колонка шириной 560: содержимое окна (прокрутка, плашки) не растягивает его.
             let height = ui.available_height().max(200.0);
             ui.allocate_ui_with_layout(vec2(DIALOG_WIDTH, height), Layout::top_down(Align::Min), |ui| {
@@ -1550,29 +1933,29 @@ impl Hub {
             match &mut dialog {
                 Dialog::Add { locate, browser } => {
                     let title = match locate {
-                        Some(old) => format!("Locate “{}”", old.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
-                        None => "Add Existing Project".to_string(),
+                        Some(old) => trf!("Locate “{}”", old.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+                        None => tr_s("Add Existing Project").to_string(),
                     };
                     dialog_title(ui, Icon::FolderOpen, theme::accent(), &title);
-                    dialog_text(ui, "Choose the game folder: the one with Cargo.toml, src/lib.rs and an `engine` dependency.");
+                    dialog_text(ui, tr_s("Choose the game folder: the one with Cargo.toml, src/lib.rs and an `engine` dependency."));
                     folder_browser(ui, browser);
                     let chosen = PathBuf::from(browser.path.trim());
                     let check = browser.check();
                     match &check {
                         Ok(info) => {
-                            let mut what = vec![info.dimension.label().unwrap_or("Game").to_string()];
+                            let mut what = vec![info.dimension.label().unwrap_or(tr_s("Game")).to_string()];
                             if info.has_cpp {
-                                what.push("C++".into());
+                                what.push(tr_s("C++").into());
                             }
-                            let editor = if info.editor_bin.is_some() { "editor program found" } else { "no editor program — Open will explain" };
-                            widgets::note_width(ui, Icon::Check, Tone::Ok, &format!("“{}” — {}, {editor}.", info.title, what.join(", ")), DIALOG_WIDTH);
+                            let editor = if info.editor_bin.is_some() { "editor program found" } else { tr_s("no editor program — Open will explain") };
+                            widgets::note_width(ui, Icon::Check, Tone::Ok, &trf!("“{p0}” — {p1}, {editor}.", p0 = info.title, p1 = what.join(", "), editor = editor), DIALOG_WIDTH);
                         }
                         Err(project::ProjectError::NoManifest(_)) if browser.entries.iter().any(|(_, _, crate_dir)| *crate_dir) => {
-                            widgets::note_width(ui, Icon::Info, Tone::Neutral, "Choose one of the crates below (marked with a cube).", DIALOG_WIDTH)
+                            widgets::note_width(ui, Icon::Info, Tone::Neutral, tr_s("Choose one of the crates below (marked with a cube)."), DIALOG_WIDTH)
                         }
                         Err(err) => widgets::note_width(ui, Icon::Warn, Tone::Warn, &err.to_string(), DIALOG_WIDTH),
                     }
-                    let confirm = if locate.is_some() { "Use This Folder" } else { "Add Project" };
+                    let confirm = if locate.is_some() { tr_s("Use This Folder") } else { tr_s("Add Project") };
                     match dialog_buttons(ui, confirm, check.is_ok(), false) {
                         Some(true) => {
                             actions.push(match locate.take() {
@@ -1586,27 +1969,53 @@ impl Hub {
                     }
                 }
                 Dialog::Browse { target, browser } => {
-                    dialog_title(ui, Icon::FolderOpen, theme::accent(), "Choose a Folder");
-                    dialog_text(ui, "New projects are created inside this folder.");
+                    let (title, hint, confirm) = match target {
+                        BrowseTarget::ImportFolder => (
+                            tr_s("Choose a Project Folder"),
+                            tr_s("A project folder, or a folder that contains several projects: they are found and listed.").to_string(),
+                            tr_s("Choose Folder"),
+                        ),
+                        BrowseTarget::ImportFile => (
+                            tr_s("Choose a Project File"),
+                            trf!("A .{} file made with Save Project As File…", engine_editor::kit::i18n::brand::PROJECT_EXTENSION),
+                            tr_s("Choose File"),
+                        ),
+                        BrowseTarget::ImportLocation => (
+                            tr_s("Choose a Folder"),
+                            tr_s("Each imported project gets its own folder inside this one.").to_string(),
+                            tr_s("Select Folder"),
+                        ),
+                        BrowseTarget::PackFolder => (
+                            tr_s("Choose a Folder"),
+                            tr_s("The project file is saved in this folder.").to_string(),
+                            tr_s("Select Folder"),
+                        ),
+                        _ => (tr_s("Choose a Folder"), tr_s("New projects are created inside this folder.").to_string(), tr_s("Select Folder")),
+                    };
+                    dialog_title(ui, Icon::FolderOpen, theme::accent(), title);
+                    dialog_text(ui, &hint);
                     folder_browser(ui, browser);
                     let chosen = PathBuf::from(browser.path.trim());
-                    let valid = chosen.is_dir();
-                    match dialog_buttons(ui, "Select Folder", valid, false) {
+                    let valid = if *target == BrowseTarget::ImportFile { chosen.is_file() } else { chosen.is_dir() };
+                    match dialog_buttons(ui, confirm, valid, false) {
                         Some(true) => {
                             actions.push(HubAction::SetBrowsed { target: *target, path: chosen });
                             keep = false;
                         }
-                        Some(false) => keep = false,
+                        Some(false) => {
+                            actions.push(HubAction::CloseDialog);
+                            keep = false;
+                        }
                         None => {}
                     }
                 }
                 Dialog::Delete { path, title, verdict } => {
-                    dialog_title(ui, Icon::Trash, theme::ERROR, &format!("Delete “{title}” from disk?"));
+                    dialog_title(ui, Icon::Trash, theme::ERROR, &trf!("Delete “{title}” from disk?", title = title));
                     match verdict.clone() {
                         Ok(()) => {
-                            dialog_text(ui, "This folder and everything in it is deleted permanently. This cannot be undone:");
+                            dialog_text(ui, tr_s("This folder and everything in it is deleted permanently. This cannot be undone:"));
                             ui.label(egui::RichText::new(path.display().to_string()).font(theme::mono()).color(theme::TEXT));
-                            match dialog_buttons(ui, "Delete", true, true) {
+                            match dialog_buttons(ui, tr_s("Delete"), true, true) {
                                 Some(true) => {
                                     actions.push(HubAction::Delete(path.clone()));
                                     keep = false;
@@ -1623,36 +2032,44 @@ impl Hub {
                         }
                     }
                 }
+                Dialog::Pack(pack) => match crate::import_ui::pack_dialog_ui(ui, pack, &mut actions, DIALOG_WIDTH) {
+                    Some(true) => keep = false,
+                    Some(false) => {
+                        actions.push(HubAction::CloseDialog);
+                        keep = false;
+                    }
+                    None => {}
+                },
                 Dialog::Export { path, title, platform, release } => {
-                    dialog_title(ui, Icon::Build, theme::accent(), &format!("Export “{title}”"));
+                    dialog_title(ui, Icon::Build, theme::accent(), &trf!("Export “{title}”", title = title));
                     let folder = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                    let mut platforms: Vec<(&'static str, &str, &str)> = vec![("web", "Web", "WebGPU / WebGL2 in the browser")];
+                    let mut platforms: Vec<(&'static str, &str, &str)> = vec![("web", tr_s("Web"), tr_s("WebGPU / WebGL2 in the browser"))];
                     if cfg!(windows) {
-                        platforms.push(("windows", "Windows", "A .exe with the assets next to it"));
+                        platforms.push(("windows", tr_s("Windows"), tr_s("A .exe with the assets next to it")));
                     }
                     if cfg!(target_os = "linux") {
-                        platforms.push(("linux", "Linux", "x86_64 build"));
+                        platforms.push(("linux", tr_s("Linux"), "x86_64 build"));
                     }
-                    platforms.push(("android", "Android", "APK; needs the SDK, NDK, Java and cargo-ndk"));
+                    platforms.push(("android", tr_s("Android"), tr_s("APK; needs the SDK, NDK, Java and cargo-ndk")));
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Platform").color(theme::TEXT_MUTED));
-                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new(tr_s("Platform")).color(theme::TEXT_MUTED));
+                        ui.add_space(theme::SP_4);
                         theme::segmented(ui, platform, &platforms);
                     });
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Build").color(theme::TEXT_MUTED));
-                        ui.add_space(24.0);
-                        theme::segmented(ui, release, &[(false, "Debug", "Faster to build"), (true, "Release", "Optimized, smaller")]);
+                        ui.label(egui::RichText::new(tr_s("Build")).color(theme::TEXT_MUTED));
+                        ui.add_space(theme::SP_12);
+                        theme::segmented(ui, release, &[(false, tr_s("Debug"), tr_s("Faster to build")), (true, tr_s("Release"), tr_s("Optimized, smaller"))]);
                     });
                     dialog_text(
                         ui,
-                        &format!(
-                            "Runs `cargo run -p piska-export -- {platform} --game {folder}{}`. The result goes to dist/{folder}/{platform}/. \
+                        &trf!(
+                            "Runs `cargo run -p piska-export -- {platform} --game {folder}{p0}`. The result goes to dist/{folder}/{platform}/. \
                              Same as File → Build… in the editor (docs/api/export.md).",
-                            if *release { " --release" } else { "" }
-                        ),
+                            p0 = if *release { " --release" } else { "" }
+                        , platform = platform, folder = folder),
                     );
-                    match dialog_buttons(ui, "Export", true, false) {
+                    match dialog_buttons(ui, tr_s("Export"), true, false) {
                         Some(true) => {
                             actions.push(HubAction::Export {
                                 path: path.clone(),
@@ -1670,6 +2087,7 @@ impl Hub {
         });
         if modal.should_close() {
             keep = false;
+            actions.push(HubAction::CloseDialog);
         }
         if keep && self.dialog.is_none() {
             self.dialog = Some(dialog);
@@ -1710,26 +2128,26 @@ fn badges(listed: &Listed, editor_open: bool) -> Vec<(String, Tone)> {
     match &listed.info {
         Ok(info) => {
             if editor_open {
-                badges.push(("Running".to_string(), Tone::Ok));
+                badges.push((tr_s("Running").to_string(), Tone::Ok));
             }
             if let Some(d) = info.dimension.label() {
                 badges.push((d.to_string(), Tone::Neutral));
             }
             if info.has_cpp {
-                badges.push(("C++".to_string(), Tone::Neutral));
+                badges.push((tr_s("C++").to_string(), Tone::Neutral));
             }
             if info.has_scenario {
-                badges.push(("Scenario".to_string(), Tone::Neutral));
+                badges.push((tr_s("Scenario").to_string(), Tone::Neutral));
             }
             if info.standalone {
-                badges.push(("Standalone".to_string(), Tone::Neutral));
+                badges.push((tr_s("Standalone").to_string(), Tone::Neutral));
             }
             if info.editor_bin.is_none() {
-                badges.push(("No editor".to_string(), Tone::Warn));
+                badges.push((tr_s("No editor").to_string(), Tone::Warn));
             }
         }
-        Err(_) if listed.missing() => badges.push(("Missing".to_string(), Tone::Warn)),
-        Err(_) => badges.push(("Not a Piska project".to_string(), Tone::Error)),
+        Err(_) if listed.missing() => badges.push((tr_s("Missing").to_string(), Tone::Warn)),
+        Err(_) => badges.push((tr_s("Not a Piska project").to_string(), Tone::Error)),
     }
     badges
 }
@@ -1739,58 +2157,65 @@ fn project_menu(ui: &mut Ui, listed: &Listed, editor_pid: Option<u32>, actions: 
     let path = listed.path.clone();
     let info = listed.info.as_ref().ok();
     let open_reason = match (editor_pid, info) {
-        (Some(_), _) => "Already open in the editor".to_string(),
+        (Some(_), _) => tr_s("Already open in the editor").to_string(),
         (None, Some(info)) => info.editor_problem().unwrap_or_default(),
         (None, None) => Hub::problem(listed).unwrap_or_default(),
     };
     let can_open = editor_pid.is_none() && info.is_some_and(|i| i.editor_bin.is_some());
-    if item("Open in Editor").icon(Icon::External).enabled_if(can_open, &open_reason).show(ui) {
+    if item(tr_s("Open in Editor")).icon(Icon::External).enabled_if(can_open, &open_reason).show(ui) {
         actions.push(HubAction::Open(path.clone()));
     }
     let has_editor_build = listed.builds.editor_exe.is_some();
-    if item("Open Last Build")
+    if item(tr_s("Open Last Build"))
         .icon(Icon::Play)
-        .enabled_if(can_open && has_editor_build, "There is no previous build of the editor yet")
+        .enabled_if(can_open && has_editor_build, tr_s("There is no previous build of the editor yet"))
         .show(ui)
     {
         actions.push(HubAction::OpenLastBuild(path.clone()));
     }
-    if item("Rebuild and Open").icon(Icon::Build).enabled_if(can_open, &open_reason).show(ui) {
+    if item(tr_s("Rebuild and Open")).icon(Icon::Build).enabled_if(can_open, &open_reason).show(ui) {
         actions.push(HubAction::RebuildAndOpen(path.clone()));
     }
     theme::menu_separator(ui);
     let can_play = info.is_some_and(|i| i.game_bin.is_some());
-    if item("Play").icon(Icon::Play).enabled_if(can_play, "No game program (src/main.rs)").show(ui) {
+    if item(tr_s("Play")).icon(Icon::Play).enabled_if(can_play, tr_s("No game program (src/main.rs)")).show(ui) {
         actions.push(HubAction::Play(path.clone()));
     }
-    if item("Rebuild and Play").icon(Icon::Build).enabled_if(can_play, "No game program (src/main.rs)").show(ui) {
+    if item(tr_s("Rebuild and Play")).icon(Icon::Build).enabled_if(can_play, tr_s("No game program (src/main.rs)")).show(ui) {
         actions.push(HubAction::RebuildAndPlay(path.clone()));
     }
     let exportable = info.is_some() && listed.source == Source::Workspace;
-    if item("Export…")
+    if item(tr_s("Export…"))
         .icon(Icon::Build)
-        .enabled_if(exportable, "piska-export builds games from the engine's games/ folder")
+        .enabled_if(exportable, tr_s("piska-export builds games from the engine's games/ folder"))
         .show(ui)
     {
         actions.push(HubAction::ShowExport(path.clone()));
     }
+    if item(tr_s("Save Project As File…"))
+        .icon(Icon::Save)
+        .enabled_if(info.is_some(), tr_s("Only a valid project can be saved as a file"))
+        .show(ui)
+    {
+        actions.push(HubAction::ShowPack(path.clone()));
+    }
     theme::menu_separator(ui);
-    if item("Show in File Manager").icon(Icon::FolderOpen).enabled_if(path.exists(), "The folder does not exist").show(ui) {
+    if item(tr_s("Show in File Manager")).icon(Icon::FolderOpen).enabled_if(path.exists(), tr_s("The folder does not exist")).show(ui) {
         actions.push(HubAction::Reveal(path.clone()));
     }
-    if item(if listed.favorite { "Unpin" } else { "Pin to Top" }).icon(Icon::ChevronUp).show(ui) {
+    if item(if listed.favorite { tr_s("Unpin") } else { tr_s("Pin to Top") }).icon(Icon::ChevronUp).show(ui) {
         actions.push(HubAction::TogglePin(path.clone()));
     }
-    if listed.missing() && item("Locate…").icon(Icon::Search).show(ui) {
+    if listed.missing() && item(tr_s("Locate…")).icon(Icon::Search).show(ui) {
         actions.push(HubAction::ShowAdd { locate: Some(path.clone()) });
     }
     theme::menu_separator(ui);
-    if item("Remove from List").icon(Icon::Close).show(ui) {
+    if item(tr_s("Remove from List")).icon(Icon::Close).show(ui) {
         actions.push(HubAction::Remove(path.clone()));
     }
-    if item("Delete from Disk…")
+    if item(tr_s("Delete from Disk…"))
         .tinted(Icon::Trash, theme::ERROR)
-        .enabled_if(info.is_some(), "Only a valid project folder can be deleted from here")
+        .enabled_if(info.is_some(), tr_s("Only a valid project folder can be deleted from here"))
         .show(ui)
     {
         actions.push(HubAction::AskDelete(path));
@@ -1843,26 +2268,31 @@ fn setting_row(ui: &mut Ui, label: &str, hint: &str, add: impl FnOnce(&mut Ui)) 
     add(&mut child);
 }
 
-fn dialog_title(ui: &mut Ui, icon: Icon, color: Color32, title: &str) {
+pub(crate) fn dialog_title(ui: &mut Ui, icon: Icon, color: Color32, title: &str) {
+    // В диалоге из общего набора окон заголовок — его полоса: тянуть, двойной щелчок, крестик.
+    if engine_editor::kit::window::inline_title(ui, title, &|painter, rect| {
+        icons::paint(painter, Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), icon, color)
+    }) {
+        return;
+    }
     ui.horizontal(|ui| {
         let (rect, _) = ui.allocate_exact_size(vec2(20.0, 22.0), Sense::hover());
         icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(17.0, 17.0)), icon, color);
         ui.label(egui::RichText::new(title).font(theme::strong(theme::FONT_HEADING)).color(theme::TEXT));
     });
-    ui.add_space(2.0);
+    ui.add_space(theme::SP_1);
 }
 
-fn dialog_text(ui: &mut Ui, text: &str) {
+pub(crate) fn dialog_text(ui: &mut Ui, text: &str) {
     ui.add(egui::Label::new(egui::RichText::new(text).color(theme::TEXT_MUTED)).wrap());
 }
 
 /// Кнопки диалога: `Some(true)` — подтвердили, `Some(false)` — отменили.
 /// Пустое `confirm` — только кнопка Close.
-fn dialog_buttons(ui: &mut Ui, confirm: &str, enabled: bool, danger: bool) -> Option<bool> {
-    ui.add_space(10.0);
+pub(crate) fn dialog_buttons(ui: &mut Ui, confirm: &str, enabled: bool, danger: bool) -> Option<bool> {
     let mut result = None;
-    ui.allocate_ui_with_layout(vec2(DIALOG_WIDTH, 34.0), Layout::right_to_left(Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
+    // Общая строка кнопок диалога: отступ от полей, кнопки справа, главная — правее всех.
+    engine_editor::kit::window::dialog_actions(ui, |ui| {
         if !confirm.is_empty() {
             let response = ui
                 .add_enabled_ui(enabled, |ui| {
@@ -1877,7 +2307,7 @@ fn dialog_buttons(ui: &mut Ui, confirm: &str, enabled: bool, danger: bool) -> Op
                 result = Some(true);
             }
         }
-        let cancel = if confirm.is_empty() { "Close" } else { "Cancel" };
+        let cancel = if confirm.is_empty() { tr_s("Close") } else { tr_s("Cancel") };
         if theme::secondary_button(ui, cancel).clicked() {
             result = Some(false);
         }
@@ -1894,14 +2324,16 @@ fn folder_browser(ui: &mut Ui, browser: &mut FolderBrowser) {
     let width = ui.available_width();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        if widgets::icon_button(ui, Id::new("hub-browse-up"), Icon::ChevronUp, "Up one level").clicked() {
+        if widgets::icon_button(ui, Id::new("hub-browse-up"), Icon::ChevronUp, tr_s("Up one level")).clicked() {
             browser.up();
         }
         let width = ui.available_width();
-        widgets::text_field(ui, Id::new("hub-browse-path"), &mut browser.path, "Folder path", width);
+        widgets::text_field(ui, Id::new("hub-browse-path"), &mut browser.path, tr_s("Folder path"), width);
     });
     browser.refresh();
     let entries = browser.entries.clone();
+    let files = browser.files.clone();
+    let mut pick_file: Option<PathBuf> = None;
     let mut enter: Option<PathBuf> = None;
     let mut pick: Option<PathBuf> = None;
     egui::Frame::none()
@@ -1919,8 +2351,8 @@ fn folder_browser(ui: &mut Ui, browser: &mut FolderBrowser) {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    if entries.is_empty() {
-                        ui.label(egui::RichText::new("  No subfolders").color(theme::TEXT_DISABLED));
+                    if entries.is_empty() && files.is_empty() {
+                        ui.label(egui::RichText::new(tr_s("  No subfolders")).color(theme::TEXT_DISABLED));
                     }
                     for (i, (name, path, is_project)) in entries.iter().enumerate() {
                         let (rect, _) = ui.allocate_exact_size(vec2(width - 18.0, 26.0), Sense::hover());
@@ -1936,7 +2368,7 @@ fn folder_browser(ui: &mut Ui, browser: &mut FolderBrowser) {
                             ui.painter().text(
                                 pos2(rect.right() - 8.0, rect.center().y),
                                 Align2::RIGHT_CENTER,
-                                "Rust crate",
+                                tr_s("Rust crate"),
                                 theme::caption(),
                                 theme::TEXT_MUTED,
                             );
@@ -1947,9 +2379,29 @@ fn folder_browser(ui: &mut Ui, browser: &mut FolderBrowser) {
                             pick = Some(path.clone());
                         }
                     }
+                    for (i, (name, path)) in files.iter().enumerate() {
+                        let (rect, _) = ui.allocate_exact_size(vec2(width - 18.0, 26.0), Sense::hover());
+                        let response = ui.interact(rect, Id::new("hub-browse-file").with(i), Sense::click());
+                        let chosen = browser.path == path.display().to_string();
+                        theme::list_row(ui.painter(), rect, chosen, true, response.hovered());
+                        icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 14.0, rect.center().y), vec2(14.0, 14.0)), Icon::Save, theme::accent());
+                        ui.painter().text(pos2(rect.left() + 30.0, rect.center().y), Align2::LEFT_CENTER, name, theme::body(), theme::TEXT);
+                        if response.clicked() || response.double_clicked() {
+                            pick_file = Some(path.clone());
+                        }
+                    }
                 });
         });
-    ui.label(egui::RichText::new("Click a folder to choose it, double-click to open it.").font(theme::caption()).color(theme::TEXT_DISABLED));
+    if let Some(file) = pick_file {
+        browser.path = file.display().to_string();
+        browser.listed = Some(file);
+    }
+    let caption = if browser.extension.is_some() {
+        tr_s("Click a file to choose it, double-click a folder to open it.")
+    } else {
+        tr_s("Click a folder to choose it, double-click to open it.")
+    };
+    ui.label(egui::RichText::new(caption).font(theme::caption()).color(theme::TEXT_DISABLED));
     if let Some(dir) = enter {
         browser.enter(&dir);
     } else if let Some(dir) = pick {
@@ -1965,13 +2417,17 @@ fn build_label(listed: &Listed, now: u64) -> (String, Color32) {
     if listed.info.as_ref().map_or(true, |i| i.editor_bin.is_none()) {
         return (String::new(), theme::TEXT_MUTED);
     }
+    // Без своего кода проект открывает общий редактор — собирать нечего.
+    if listed.info.as_ref().is_ok_and(|i| !i.native) {
+        return (tr_s("No build needed").to_string(), theme::TEXT_DISABLED);
+    }
     match listed.builds.editor {
         BuildState::Fresh { built } => (
-            format!("Built {}", crate::config::ago(Some(built), now).to_lowercase()),
+            trf!("Built {}", crate::config::ago(Some(built), now).to_lowercase()),
             theme::TEXT_DISABLED,
         ),
-        BuildState::Stale { .. } => ("Needs build".to_string(), theme::WARN),
-        BuildState::Never => ("Never built".to_string(), theme::TEXT_DISABLED),
+        BuildState::Stale { .. } => (tr_s("Needs build").to_string(), theme::WARN),
+        BuildState::Never => (tr_s("Never built").to_string(), theme::TEXT_DISABLED),
     }
 }
 
@@ -1996,12 +2452,12 @@ fn alert(ui: &mut Ui, tone: Tone, icon: Icon, title: &str, body: &str, detail: O
                 icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(15.0, 15.0)), icon, color);
                 ui.label(egui::RichText::new(title).font(theme::strong(theme::FONT_TITLE)).color(theme::TEXT));
             });
-            ui.add_space(2.0);
+            ui.add_space(theme::SP_1);
             ui.add(egui::Label::new(egui::RichText::new(body).color(theme::TEXT_MUTED)).wrap());
             if let Some(error) = detail {
-                ui.add_space(6.0);
+                ui.add_space(theme::SP_3);
                 let place = match (&error.package, error.location()) {
-                    (Some(package), location) if !location.is_empty() => format!("{package}  ·  {location}"),
+                    (Some(package), location) if !location.is_empty() => trf!("{package}  ·  {location}", package = package, location = location),
                     (Some(package), _) => package.clone(),
                     (None, location) => location,
                 };

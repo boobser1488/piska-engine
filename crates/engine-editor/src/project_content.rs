@@ -2,6 +2,7 @@
 //! или строками, рисование только видимых элементов (тысячи файлов не тормозят), выделение
 //! щелчками и резинкой, перетаскивание, переименование на месте и клавиатура.
 
+use crate::i18n::{tr_s, trf};
 use std::collections::BTreeSet;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -126,8 +127,8 @@ impl Editor {
             key: path.to_string(),
             name: file_name(path).to_string(),
             guid: Guid(0),
-            importer: "Folder".to_string(),
-            type_label: "Folder",
+            importer: tr_s("Folder").to_string(),
+            type_label: tr_s("Folder"),
             disk: root.join(path),
             dir,
             size: None,
@@ -138,8 +139,8 @@ impl Editor {
             key: format!("\u{2}{name}"),
             name: file_name(name).to_string(),
             guid: Guid(0),
-            importer: "Code".to_string(),
-            type_label: crate::sorting::type_label("Code", name),
+            importer: tr_s("Code").to_string(),
+            type_label: crate::sorting::type_label(tr_s("Code"), name),
             disk: path.clone(),
             dir: String::new(),
             size: None,
@@ -430,7 +431,7 @@ fn rename_field(ui: &mut egui::Ui, project: &mut crate::project::ProjectState, r
             let target = dir.join(&text);
             let same = text.eq_ignore_ascii_case(file_name(&from));
             if !same && (target.exists() || crate::project_fs::meta_of(&target).exists()) {
-                error = Some(format!("`{text}` already exists here"));
+                error = Some(trf!("`{text}` already exists here", text = text));
             }
         }
     }
@@ -657,7 +658,7 @@ fn draw_item(ui: &mut egui::Ui, env: &mut Env, index: usize, rect: Rect, viewpor
         }
     }
     let tip = match &thumb {
-        Thumb::Failed(reason) => format!("{}\nCannot preview: {reason}", item.name),
+        Thumb::Failed(reason) => trf!("{p0}\nCannot preview: {reason}", p0 = item.name, reason = reason),
         _ if item.dir.is_empty() => item.name.clone(),
         _ => format!("{}\nAssets/{}", item.name, item.dir),
     };
@@ -926,13 +927,13 @@ pub(crate) fn content(editor: &mut Editor, ui: &mut egui::Ui, root: &Path) {
     let total = listing.items.len();
     if total == 0 {
         let (title, hint) = if !listing.unknown_types.is_empty() {
-            ("Unknown type in the search", "Use t:script, t:scene, t:prefab, t:model, t:material, t:texture or t:audio")
+            (tr_s("Unknown type in the search"), tr_s("Use t:script, t:scene, t:prefab, t:model, t:material, t:texture or t:audio"))
         } else if !type_filters.is_empty() {
-            ("Nothing of the selected types here", "Click `All` above to show every type")
+            (tr_s("Nothing of the selected types here"), tr_s("Click `All` above to show every type"))
         } else if editor.project.filter.trim().is_empty() {
-            ("This folder is empty", "Drop files here from your file manager, or right-click for Create and Import New Asset")
+            (tr_s("This folder is empty"), tr_s("Drop files here from your file manager, or right-click for Create and Import New Asset"))
         } else {
-            ("Nothing matches", "Try another name, or search in All Assets")
+            (tr_s("Nothing matches"), tr_s("Try another name, or search in All Assets"))
         };
         theme::empty_state(ui, Icon::Folder, title, hint);
     }
@@ -1018,7 +1019,7 @@ pub(crate) fn content(editor: &mut Editor, ui: &mut egui::Ui, root: &Path) {
                             }
                         }
                         let on_screen = rubber.translate(origin.to_vec2());
-                        ui.painter().rect(on_screen, 0.0, theme::accent_soft().gamma_multiply(0.5), Stroke::new(1.0_f32, theme::accent()));
+                        crate::controls::paint_frame(ui.painter(), on_screen, 0.0, theme::accent_soft().gamma_multiply(0.5), theme::accent());
                         env.project.selection = selection;
                         env.project.selected_path = env.project.selection.iter().next_back().cloned();
                         env.project.sync_active();
@@ -1038,6 +1039,19 @@ pub(crate) fn content(editor: &mut Editor, ui: &mut egui::Ui, root: &Path) {
                 if background.clicked() && !modifiers.command {
                     env.project.clear_selection();
                     env.project.cmds.push(Cmd::Act(Action::InspectMaterial(None)));
+                }
+                if env.project.place == Place::Assets && !listing.searching {
+                    // Строка из иерархии — сохранить объект префабом в открытый каталог.
+                    // `dnd_release_payload` забирает груз любого типа: только строку иерархии.
+                    if background.dnd_hover_payload::<crate::hierarchy::DragObject>().is_some() {
+                        let area = ui.clip_rect().shrink(1.0);
+                        ui.painter().rect_stroke(area, theme::R_S, egui::Stroke::new(1.5_f32, theme::accent()));
+                        crate::hierarchy::drag_hint(ui.ctx(), tr_s("Release to save the object as a prefab here"));
+                        if let Some(payload) = background.dnd_release_payload::<crate::hierarchy::DragObject>() {
+                            let folder = env.project.folder.clone();
+                            env.project.cmds.push(Cmd::Act(Action::SavePrefabIn { object: payload.0, folder }));
+                        }
+                    }
                 }
                 if env.project.place == Place::Assets {
                     if let Some(payload) = background.dnd_release_payload::<DragAsset>() {

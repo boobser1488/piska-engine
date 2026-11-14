@@ -1,0 +1,19 @@
+// Настройки проекта (Edit -> Project Settings). Подробно: docs/api/settings.md.
+(
+    // Порядок скриптов: платформы и враги двигаются в on_update, игрок — в on_late_update.
+    script_order: { "LevelManager": -50 },
+    player: (title: "Хранитель фонаря", width: 1280, height: 720, default_scene: "scenes/menu.scene"),
+    physics2d: (gravity: (0.0, -9.81)),
+    tags_and_layers: (tags: ["Player", "Enemy", "Pickup", "MainCamera"]),
+    input: (actions: [
+        (name: "Horizontal", kind: Axis, negative: ["Key:A", "Key:Left", "Pad:DPadLeft"], positive: ["Key:D", "Key:Right", "Pad:DPadRight"], analog: ["LeftStickX"], dead_zone: 0.2),
+        (name: "Vertical", kind: Axis, negative: ["Key:S", "Key:Down", "Pad:DPadDown"], positive: ["Key:W", "Key:Up", "Pad:DPadUp"], analog: ["LeftStickY"], dead_zone: 0.2),
+        (name: "Jump", kind: Button, bindings: ["Key:Space", "Key:W", "Key:Up", "Pad:South"]),
+        (name: "Dash", kind: Button, bindings: ["Key:LShift", "Key:RShift", "Key:X", "Pad:West", "Pad:RightBumper", "Pad:RightTrigger"]),
+        (name: "Pause", kind: Button, bindings: ["Key:Escape", "Key:P", "Pad:Start"]),
+        (name: "Fire1", kind: Button, bindings: ["Key:LCtrl", "Pad:West"]),
+        (name: "Submit", kind: Button, bindings: ["Key:Enter", "Pad:South"]),
+        (name: "Cancel", kind: Button, bindings: ["Key:Escape", "Pad:East"]),
+    ]),
+    audio: (master_volume: 1.0, music_volume: 0.6),
+)

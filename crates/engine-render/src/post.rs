@@ -1,5 +1,7 @@
 //! Пост-обработка: сцена рисуется в HDR-текстуру, затем блум и сведение в цель кадра.
 
+use crate::grading::GradingParams;
+
 /// Формат, в котором рисуется сцена до пост-обработки.
 pub(crate) const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const BLOOM_LEVELS: usize = 5;
@@ -47,6 +49,11 @@ struct PostParams {
     vignette: f32,
     enabled: f32,
     pad: [f32; 3],
+    // Цветокоррекция (grading.rs): баланс, тон, тени, света.
+    balance: [f32; 4],
+    tone: [f32; 4],
+    lift: [f32; 4],
+    gain: [f32; 4],
 }
 
 /// Текстуры под конкретный размер кадра.
@@ -72,6 +79,8 @@ pub(crate) struct PostChain {
     up_pipeline: wgpu::RenderPipeline,
     composite_pipeline: wgpu::RenderPipeline,
     sized: Option<Sized>,
+    /// Цветокоррекция следующего `run` (рендерер ставит её из сцены каждый кадр).
+    grading: GradingParams,
 }
 
 impl PostChain {
@@ -173,7 +182,13 @@ impl PostChain {
             }),
             layout,
             sized: None,
+            grading: GradingParams::OFF,
         }
+    }
+
+    /// Цветокоррекция для следующих сведений кадра (`GradingParams::OFF` — без неё).
+    pub(crate) fn set_grading(&mut self, grading: GradingParams) {
+        self.grading = grading;
     }
 
     /// Подготовить текстуры под размер кадра (пересоздаются при его смене).
@@ -277,6 +292,10 @@ impl PostChain {
                 vignette: settings.vignette,
                 enabled: if settings.enabled { 1.0 } else { 0.0 },
                 pad: [0.0; 3],
+                balance: self.grading.balance,
+                tone: self.grading.tone,
+                lift: self.grading.lift,
+                gain: self.grading.gain,
             }),
         );
 

@@ -2,9 +2,12 @@
 //! сохранения. Всё детерминировано: шаг 1/60 с, ввод пишется в `world.input` вручную.
 
 use engine::prelude::*;
-use lantern::objects::{Checkpoint, Exit, Firefly, Gate, MovingPlatform};
+use lantern::scripts::{
+    bat::Bat, boss::Boss, brute::Brute, checkpoint::Checkpoint, crawler::Crawler, exit::Exit, firefly::Firefly, gate::Gate,
+    moving_platform::MovingPlatform, projectile::Projectile, spitter::Spitter,
+};
 use lantern::phys::Shared;
-use lantern::{LevelManager, LevelState, Player, Progress, LEVELS, LEVEL_COUNT};
+use lantern::{LevelManager, LevelState, Player, Progress, Rules, LEVEL_COUNT};
 
 const DT: f32 = 1.0 / 60.0;
 
@@ -141,15 +144,15 @@ fn level_content_grows_with_the_curve() {
     let mut kinds = Vec::new();
     for n in 0..LEVEL_COUNT {
         level(&mut app, n);
-        let enemies = count::<lantern::enemies::Crawler>(&app)
-            + count::<lantern::enemies::Bat>(&app)
-            + count::<lantern::enemies::Spitter>(&app)
-            + count::<lantern::enemies::Brute>(&app);
+        let enemies = count::<Crawler>(&app)
+            + count::<Bat>(&app)
+            + count::<Spitter>(&app)
+            + count::<Brute>(&app);
         kinds.push(enemies);
     }
     assert!(kinds[5] > kinds[0] && kinds[3] > kinds[0], "{kinds:?}");
     level(&mut app, 5);
-    assert_eq!(count::<lantern::boss::Boss>(&app), 1, "the last level has the boss");
+    assert_eq!(count::<Boss>(&app), 1, "the last level has the boss");
     level(&mut app, 3);
     assert!(count::<MovingPlatform>(&app) >= 2);
 }
@@ -193,9 +196,9 @@ fn drive(app: &mut App, bot: &mut Bot) {
     }
     if grounded && bot.gap == 0 {
         let near = |p: Vec2| p.x > f.x + 0.3 && p.x < f.x + 3.2 && (p.y - f.y).abs() < 2.5;
-        if positions::<lantern::enemies::Crawler>(app).into_iter().any(near)
-            || positions::<lantern::enemies::Bat>(app).into_iter().any(near)
-            || positions::<lantern::objects::Projectile>(app).into_iter().any(near)
+        if positions::<Crawler>(app).into_iter().any(near)
+            || positions::<Bat>(app).into_iter().any(near)
+            || positions::<Projectile>(app).into_iter().any(near)
         {
             want_jump = true;
         }
@@ -254,8 +257,8 @@ fn a_scripted_run_completes_the_first_level() {
 fn stomping_a_crawler_kills_it_and_bounces_the_player() {
     let mut app = game();
     level(&mut app, 0);
-    let crawler = positions::<lantern::enemies::Crawler>(&app)[0];
-    let before = count::<lantern::enemies::Crawler>(&app);
+    let crawler = positions::<Crawler>(&app)[0];
+    let before = count::<Crawler>(&app);
     teleport(&mut app, crawler + Vec2::new(0.0, 2.2));
     player_mut(&mut app).vel = Vec2::new(0.0, -6.0);
     let mut bounced = false;
@@ -263,7 +266,7 @@ fn stomping_a_crawler_kills_it_and_bounces_the_player() {
         tick_n(&mut app, 1);
         bounced |= player(&app).vel.y > 8.0;
     }
-    assert_eq!(count::<lantern::enemies::Crawler>(&app), before - 1, "the crawler was stomped");
+    assert_eq!(count::<Crawler>(&app), before - 1, "the crawler was stomped");
     assert!(bounced, "the player bounces off the enemy");
     assert_eq!(player(&app).hp, 3, "stomping does not hurt");
     assert_eq!(mgr(&app).kills, 1);
@@ -273,7 +276,7 @@ fn stomping_a_crawler_kills_it_and_bounces_the_player() {
 fn touching_an_enemy_from_the_side_hurts() {
     let mut app = game();
     level(&mut app, 0);
-    let crawler = positions::<lantern::enemies::Crawler>(&app)[0];
+    let crawler = positions::<Crawler>(&app)[0];
     teleport(&mut app, crawler + Vec2::new(-0.5, 0.0));
     tick_n(&mut app, 4);
     assert_eq!(player(&app).hp, 2);
@@ -361,7 +364,7 @@ fn double_jump_is_locked_until_level_two_is_finished() {
 
     // после прохождения второго уровня — есть
     let mut app = game();
-    app.world.resources.get_mut::<Progress>().unwrap().record(1, &lantern::RunResult { time: 60.0, fireflies: 10, total: 10, golden: false, deaths: 0 }, 100.0);
+    app.world.resources.get_mut::<Progress>().unwrap().record(1, &lantern::RunResult { time: 60.0, fireflies: 10, total: 10, golden: false, deaths: 0 }, 100.0, &Rules::default());
     level(&mut app, 2);
     assert!(player(&app).has_double_jump);
     tick_n(&mut app, 30);
@@ -381,11 +384,11 @@ fn double_jump_is_locked_until_level_two_is_finished() {
 #[test]
 fn dash_passes_through_a_brute_only_when_unlocked() {
     let mut app = game();
-    app.world.resources.get_mut::<Progress>().unwrap().record(3, &lantern::RunResult { time: 90.0, fireflies: 10, total: 10, golden: false, deaths: 0 }, 100.0);
+    app.world.resources.get_mut::<Progress>().unwrap().record(3, &lantern::RunResult { time: 90.0, fireflies: 10, total: 10, golden: false, deaths: 0 }, 100.0, &Rules::default());
     level(&mut app, 4);
     assert!(player(&app).has_dash);
     // туннель с тяжеляком: пол на высоте 6, тяжеляк около x=48
-    let brute = positions::<lantern::enemies::Brute>(&app)[0];
+    let brute = positions::<Brute>(&app)[0];
     // ставим игрока перед тяжеляком и рывок: враг не ранит
     teleport(&mut app, Vec2::new(brute.x - 2.0, 6.0));
     tick_n(&mut app, 10);
@@ -405,7 +408,7 @@ fn dash_passes_through_a_brute_only_when_unlocked() {
     let mut app = game();
     level(&mut app, 4);
     assert!(!player(&app).has_dash);
-    let brute = positions::<lantern::enemies::Brute>(&app)[0];
+    let brute = positions::<Brute>(&app)[0];
     teleport(&mut app, Vec2::new(brute.x - 0.6, 6.0));
     tick_n(&mut app, 8);
     assert!(player(&app).hp < 3, "a brute hurts");
@@ -502,9 +505,9 @@ fn pause_freezes_the_game() {
     let dim = app.world.scene.find_by_name("PauseDim").unwrap();
     assert!(app.world.scene.get(dim).unwrap().active);
     // враги тоже стоят
-    let crawlers = positions::<lantern::enemies::Crawler>(&app);
+    let crawlers = positions::<Crawler>(&app);
     tick_n(&mut app, 30);
-    assert_eq!(positions::<lantern::enemies::Crawler>(&app), crawlers);
+    assert_eq!(positions::<Crawler>(&app), crawlers);
     // Esc ещё раз — продолжаем
     key(&mut app, Key::Escape, 1);
     assert_eq!(mgr(&app).state, LevelState::Playing);
@@ -549,7 +552,7 @@ fn level_select_shows_progress_and_locks_the_rest() {
     let mut app = game();
     {
         let p = app.world.resources.get_mut::<Progress>().unwrap();
-        p.record(0, &lantern::RunResult { time: 70.0, fireflies: 40, total: 45, golden: true, deaths: 0 }, 100.0);
+        p.record(0, &lantern::RunResult { time: 70.0, fireflies: 40, total: 45, golden: true, deaths: 0 }, 100.0, &Rules::default());
     }
     // меню строится при загрузке сцены: перезагрузим его
     app.world.scenes().load("menu");
@@ -605,9 +608,9 @@ fn press_slider_left(app: &mut App, name: &str) {
 
 #[test]
 fn the_boss_fight_can_be_won() {
-    use lantern::boss::{st, Boss, BOSS_HP};
+    use lantern::scripts::boss::{st, BOSS_HP};
     let mut app = game();
-    app.world.resources.get_mut::<Progress>().unwrap().record(3, &lantern::RunResult { time: 90.0, fireflies: 10, total: 10, golden: false, deaths: 0 }, 100.0);
+    app.world.resources.get_mut::<Progress>().unwrap().record(3, &lantern::RunResult { time: 90.0, fireflies: 10, total: 10, golden: false, deaths: 0 }, 100.0, &Rules::default());
     level(&mut app, 5);
     let boss_id = app.world.scene.find_with::<Boss>()[0];
     // Игрок входит в арену: дверь закрывается, бой начинается
@@ -669,7 +672,6 @@ fn finishing_a_level_unlocks_the_next_one_across_restarts() {
     assert_eq!(p.unlocked, 2);
     assert!(p.completed[0]);
     assert!(p.best_time[0] > 0.0);
-    assert!(LEVELS[1].scene == "level2");
 }
 
 // ------------------------------------------------------------------ касания
@@ -701,7 +703,7 @@ fn touches_tap_menu_buttons_and_level_cards() {
     tick_n(&mut app, 2);
 
     // с прогрессом: «Уровни» -> карточка второго уровня
-    app.world.resources.get_mut::<Progress>().unwrap().record(0, &lantern::RunResult { time: 70.0, fireflies: 40, total: 45, golden: true, deaths: 0 }, 100.0);
+    app.world.resources.get_mut::<Progress>().unwrap().record(0, &lantern::RunResult { time: 70.0, fireflies: 40, total: 45, golden: true, deaths: 0 }, 100.0, &Rules::default());
     app.world.scenes().load("menu");
     tick_n(&mut app, 4);
     tap(&mut app, Vec2::new(640.0, 491.0));
@@ -727,4 +729,45 @@ fn touch_pads_drive_the_player_without_clicking_the_ui() {
     // кнопка паузы HUD — настоящая кнопка: касание ставит игру на паузу
     tap(&mut app, Vec2::new(1280.0 - 24.0 - 30.0, 18.0 + 26.0));
     assert_eq!(mgr(&app).state, LevelState::Paused);
+}
+
+// ------------------------------------------------------------------ сценарии
+
+fn text_of(app: &App, name: &str) -> String {
+    let id = app.world.scene.find_by_name(name).unwrap_or_else(|| panic!("no `{name}`"));
+    app.world.scene.get_component::<Text>(id).expect("Text").text.clone()
+}
+
+#[test]
+fn the_level_scenario_shows_the_intro_and_the_hints() {
+    let mut app = game();
+    level(&mut app, 0);
+    tick_n(&mut app, 12);
+    assert_eq!(text_of(&app, "CardTitle"), "Тихая пещера", "the intro card is filled from data/levels.ron by the scenario");
+    assert!(screen_active(&app, "Card"));
+    // подсказка у первого врага
+    let hint_spot = Vec2::new(33.5, 5.0);
+    teleport(&mut app, hint_spot);
+    tick_n(&mut app, 12);
+    assert!(text_of(&app, "BannerText").contains("Прыгайте на врагов"), "{}", text_of(&app, "BannerText"));
+    assert!(screen_active(&app, "Banner"));
+    // заставка гаснет сама
+    tick_n(&mut app, 60 * 4);
+    assert!(!screen_active(&app, "Card"), "the intro card is hidden by the scenario");
+}
+
+#[test]
+fn level_data_comes_from_assets() {
+    let mut app = game();
+    level(&mut app, 3);
+    let m = mgr(&app);
+    assert_eq!(m.title, "Ржавые шахты");
+    assert_eq!(m.need, 18);
+    assert_eq!(m.par_time, 280.0);
+    assert_eq!(m.music, "music_deep");
+    // карта ввода из project.settings
+    assert!(app.world.input.has_button("Dash") && app.world.input.has_button("Pause"));
+    // звук — файлы ассетов
+    assert!(app.world.resources.get::<Audio>().unwrap().has_clip("jump"));
+    assert!(app.world.resources.get::<Audio>().unwrap().has_clip("music_boss"));
 }

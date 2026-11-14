@@ -1,0 +1,23 @@
+-- Уровень 4 «Ржавые шахты»: заставка с названием и подсказки.
+-- Сгенерировано tools/gen_levels.py (hints у уровня); править можно и руками — сценарий
+-- перезагружается сам при сохранении.
+wait_frame(2)   -- менеджер уровня успел прочитать таблицу data/levels.ron
+ui.text("CardNumber", "Уровень " .. (self.get("LevelManager.index") + 1))
+ui.text("CardTitle", self.get("LevelManager.title"))
+ui.text("CardSub", self.get("LevelManager.subtitle"))
+ui.show("Card")
+
+-- Подсказка: зона вокруг точки (x, y) шириной w и высотой h; срабатывает один раз.
+wait_until(() => find_tag("Player") != nil)
+const player = find_tag("Player")
+function hint(x, y, w, h, text) {
+    start(() => {
+        wait_until(() => abs(player.world_position.x - x) < w / 2 + 0.3 and abs(player.world_position.y + 0.5 - y) < h / 2 + 0.5)
+        self.send("hint", text)
+    })
+}
+
+wait(2.4)
+find("Card").tween("CanvasGroup.alpha", 0, 0.8)
+wait(0.8)
+ui.hide("Card")

@@ -546,3 +546,23 @@ fn sample_materials_load_and_the_demo_scene_wears_them() {
     save_shot(&image, "demo3d_materials.png");
     assert!(stats.material_bind_groups >= 5, "{stats:?}");
 }
+
+/// Правило свечения: у объекта с материалами-ассетами `MeshRenderer::emissive` добавляется
+/// к свечению материала (раньше молча игнорировалось); чёрный — ничего не меняет.
+#[test]
+fn mesh_renderer_emissive_adds_to_the_material_glow() {
+    let _gpu = gpu_lock();
+    let assets = TempAssets::new("emissive");
+    let mut renderer = Renderer::headless().expect("GPU");
+    let scene = |extra: Color, name: &str, renderer: &mut Renderer| {
+        let mut app = app_with(&assets);
+        let dark = add_material(&mut app, Material::new().color(Color::rgb(0.05, 0.05, 0.05)).roughness(1.0));
+        app.spawn("Cube").scale(3.0, 3.0, 3.0).with(MeshRenderer::cube().with_material_asset(dark).with_emissive(extra));
+        let (image, _) = shot(renderer, &mut app, Vec3::new(0.0, 0.0, 8.0), Vec3::ZERO, name);
+        px(&image, SIZE / 2, SIZE / 2)
+    };
+    let plain = scene(Color::BLACK, "emissive_off.png", &mut renderer);
+    let glowing = scene(Color::rgb(2.0, 0.0, 0.0), "emissive_on.png", &mut renderer);
+    assert!(plain[0] < 60, "a dark material without glow stays dark: {plain:?}");
+    assert!(glowing[0] > plain[0] + 80 && glowing[0] > glowing[1] + 60, "the renderer glow is added: {glowing:?} vs {plain:?}");
+}

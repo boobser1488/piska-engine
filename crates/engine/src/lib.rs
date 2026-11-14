@@ -49,6 +49,9 @@ pub mod scenario;
 /// Коллайдеры рельефа. Нужна возможность `physics3d`.
 #[cfg(feature = "physics3d")]
 pub mod terrain_physics;
+/// Контроллер от первого лица (`FpsController`). Нужна возможность `physics3d`.
+#[cfg(feature = "physics3d")]
+pub mod fps;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 #[cfg(target_os = "android")]
@@ -78,11 +81,16 @@ pub mod prelude {
     pub use engine_physics::{
         CharacterController, Collider, JointId, Physics3D, RaycastHit3D, Rigidbody, Shape3D,
     };
+    #[cfg(feature = "physics3d")]
+    pub use engine_physics::{CastShape3D, QueryFilter3D, ShapeHit3D};
+    #[cfg(feature = "physics3d")]
+    pub use crate::fps::{FpsController, FpsRuntime, UserCmd};
     #[cfg(feature = "scenario")]
     pub use crate::scenario::ScenarioRunner;
     pub use engine_core::settings::{FullscreenMode, GraphicsSettings, QualityLevel};
     pub use engine_render::{
-        Background, Camera, Environment, Light, LightKind, MeshRenderer, MeshShape, Projection,
+        Background, Camera, ColorGrading, Environment, Fog, Light, LightKind, MeshRenderer, MeshShape, Projection,
+        SkyColors,
         RenderStats,
         SpriteRenderer, WindowConfig,
     };
@@ -181,6 +189,8 @@ pub fn app() -> App {
         app.world.add_settings_hook("physics3d", engine_physics::apply_project_settings_3d);
         // Коллайдеры рельефа (`Terrain`) для 3D-физики.
         app.add_subsystem(terrain_physics::TerrainPhysicsSystem::default());
+        // Контроллер от первого лица.
+        fps::register(&mut app.world.registry);
         #[cfg(feature = "cpp")]
         terrain_physics::install_services(&mut app.world);
     }
@@ -295,6 +305,7 @@ pub fn run(app: App, config: WindowConfig) -> Result<(), EngineError> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn run_native(mut app: App, mut config: WindowConfig) -> Result<(), EngineError> {
+    gui_startup();
     use engine_render::Renderer;
     let frames = std::env::var("ENGINE_FRAMES")
         .ok()
@@ -396,6 +407,13 @@ pub fn edit(app: App, mut config: engine_editor::EditorConfig) -> Result<(), Eng
     if std::env::var("ENGINE_PLAY").is_ok_and(|v| v != "0") {
         editor.apply(engine_editor::Action::Play);
     }
+    // Общий редактор открыл проект со своим кодом, который ещё не собран
+    // (`editor_project::open_project`): сразу Build — собрать программу проекта и
+    // перезапуститься в неё. Перезапущенному процессу переменная уже не нужна.
+    if std::env::var("PISKA_BUILD_ON_START").is_ok_and(|v| v == "1") && engine_editor::session_from_args().is_none() {
+        std::env::remove_var("PISKA_BUILD_ON_START");
+        editor.apply(engine_editor::Action::Build);
+    }
 
     if let Ok(path) = std::env::var("ENGINE_SCREENSHOT") {
         let image = engine_editor::capture(&mut editor, width, height, frames.unwrap_or(3) as u32)?;
@@ -415,10 +433,40 @@ pub fn edit(app: App, mut config: engine_editor::EditorConfig) -> Result<(), Eng
 /// браузере — консоль браузера и перехват паники; на Android — logcat (тег `piska`)
 /// и перехват паники. Повторные вызовы безвредны.
 pub fn init_logger() {
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    gui_startup();
     #[cfg(target_arch = "wasm32")]
     web::init_logger();
     #[cfg(target_os = "android")]
     android::init_logger();
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     engine_core::logging::init();
+}
+
+/// Первое, что делает программа с окном (на Windows у неё нет своей консоли, см.
+/// `engine_build::windows_app`): запущена из терминала — подключиться к нему, чтобы
+/// `--help`, журнал и паника печатались туда; запущена из проводника — stdout и stderr в
+/// `%APPDATA%/piska/logs/<программа>.log`, паника показывает окно с этим путём.
+/// Повторные вызовы безвредны; на других системах ничего не делает.
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+pub fn gui_startup() -> engine_build::host::Output {
+    static OUTPUT: std::sync::OnceLock<engine_build::host::Output> = std::sync::OnceLock::new();
+    OUTPUT
+        .get_or_init(|| {
+            let program = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.file_stem().map(|s| s.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| "piska".to_string());
+            let output = engine_build::host::gui_startup(&program, engine_i18n::brand::CONFIG_DIR_NAME);
+            if let engine_build::host::Output::LogFile(path) = &output {
+                // Журнал ещё не настроен: путь — в него чуть позже (его видно и в Console).
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    log::info!("this program has no console; its log is written to {}", path.display());
+                });
+            }
+            output
+        })
+        .clone()
 }

@@ -16,7 +16,7 @@ struct Globals {
     sky_zenith: vec4<f32>,     // rgb, w — сила ambient
     sky_horizon: vec4<f32>,    // rgb, w — плотность тумана
     shadow_params: vec4<f32>,  // x — тени включены, y — тексель (uv), z — сдвиг по нормали (м), w — bias глубины
-    counts: vec4<f32>,         // x — число точечных источников
+    counts: vec4<f32>,         // x — число точечных источников; yzw — туман: начало (м), спад с высотой (1/м), высота
     points: array<PointLight, 4>,
 };
 
@@ -57,14 +57,44 @@ fn sky_color(dir: vec3<f32>) -> vec3<f32> {
     return mix(color, globals.sky_horizon.rgb * 0.5, below);
 }
 
-// Туман растворяет даль ровно в цвет неба у горизонта, поэтому край земли не виден.
+// Туман растворяет даль в цвет неба у горизонта (край земли не виден). До `counts.y`
+// метров его нет; плотность спадает с высотой над `counts.w` как e^(−counts.z · Δy) —
+// интеграл вдоль луча считается точно (экспоненциальный высотный туман).
 fn apply_fog(color: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> {
+    let density = globals.sky_horizon.w;
+    if (density <= 0.0) {
+        return color;
+    }
     let offset = world_position - globals.camera_position.xyz;
     let distance = length(offset);
     let direction = offset / max(distance, 1e-4);
-    let amount = 1.0 - exp(-distance * globals.sky_horizon.w);
+    let travelled = max(distance - globals.counts.y, 0.0);
+    // Средняя плотность вдоль пройденного в тумане отрезка.
+    let falloff = globals.counts.z;
+    let start_y = globals.camera_position.y + direction.y * min(globals.counts.y, distance) - globals.counts.w;
+    let k = falloff * direction.y * travelled;
+    var height_term = exp(clamp(-falloff * start_y, -20.0, 4.0));
+    if (abs(k) > 1e-4) {
+        height_term *= (1.0 - exp(clamp(-k, -20.0, 20.0))) / k;
+    }
+    let amount = 1.0 - exp(-density * travelled * height_term);
     let fog_color = sky_color(normalize(vec3<f32>(direction.x, 0.02, direction.z)));
     return mix(color, fog_color, clamp(amount, 0.0, 1.0));
+}
+
+// Половинный вектор без NaN: при v = −l (камера смотрит вдоль лучей солнца) `normalize`
+// нуля дал бы NaN, а он в HDR-кадре — чёрная или белая точка.
+fn safe_half(v: vec3<f32>, l: vec3<f32>) -> vec3<f32> {
+    let s = v + l;
+    return s * inverseSqrt(max(dot(s, s), 1e-12));
+}
+
+// Нормаль для освещения не смотрит от камеры: у краёв холмов и на склонах против света
+// интерполированная нормаль с картой деталей бывает повёрнута от глаза, и множители
+// Френеля и геометрии при n·v → 0 превращают блик в одиночный белый пиксель.
+fn facing_normal(n: vec3<f32>, v: vec3<f32>) -> vec3<f32> {
+    let d = dot(n, v);
+    return normalize(n + v * max(0.05 - d, 0.0));
 }
 
 // Полусферный ambient: приглушённое небо сверху, тёплый отсвет земли снизу —

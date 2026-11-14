@@ -1,0 +1,178 @@
+# Литералы, которые похожи на текст интерфейса, но им не являются (идентификаторы команд, имена
+# ключей, клавиши, шаблоны файлов). По строке на литерал; только однострочные.
+\n[dependencies]\n# Редактор в игру не входит: экспорт собирает только рантайм.\n
+# Piska Hub: recently opened projects (time	name	path), newest first\n
+(L {active}
+.gitignore
+Alt+
+Box
+CXX
+Cargo.toml
+Circle
+Ctrl+
+Ctrl+0
+Ctrl+1
+Ctrl+3
+Ctrl+7
+Ctrl+A
+Ctrl+C
+Ctrl+D
+Ctrl+G
+Ctrl+N
+Ctrl+R
+Ctrl+S
+Ctrl+V
+Ctrl+X
+Ctrl+Y
+Ctrl+Z
+Del
+Enter
+Esc
+H
+LF
+M
+N
+New Folder
+New Scene.scene
+POSIX file "{}"
+R {r}  G {g}  B {b}  A {a}
+README.md
+Rust: build
+S
+Self
+Shift+
+Some
+U
+UTF-8
+V
+build = "build.rs"\n
+build-code
+build.rs
+code -g {file}:{line}
+column_start
+copy
+create-empty
+create-empty-child
+cut
+delete
+description = "{}: игра на Piska Engine."\n
+duplicate
+engine = {{ path = "{crates}/engine", default-features = false, features = ["full"] }}\n
+frame-selected
+group
+line_start
+log = "0.4"\n
+maximize-panel
+min_sdk
+name = "{package}"\n
+new-scene
+paste
+paste-child
+pause
+play
+preferences
+project-settings
+quit
+redo
+refresh
+rename
+save
+save-as
+select-none
+src/main.rs
+src/scripts/mod.rs
+step
+tell application "Finder" to delete {{{}}}
+toggle-snap
+undo
+usage: piska-modeler [model.pmodel…] [--screenshot out.png --size 1440x860 --frames 6 --sample crate|lantern|pine|rover --paint --tool NAME --view front|top|… --ortho --select NODE --face north|… --pointer X,Y --scale 1.0 --cpu] [--reference mesh.obj] | --bench [--size WxH --frames N --cpu]
+version = "0.1.0"\nedition = "2021"\n
+version_code
+view-3d
+view-gizmos
+view-grid
+{name}  ·  {key}\n{what}
+{prefix}New Material {suffix}.material
+{prefix}New Material.material
+{texture_name}  {tw}×{th}
+Проект лежит в `games/` движка и собирается в его рабочем пространстве.
+cargo build -p piska-modeler
+shortcuts-help
+# Piska Hub: recently opened projects (time	name	path), newest first
+W
+ px
+Piska Modeler
+{}{} — Piska Modeler
+bad X
+bad Y
+cannot open the GPU: {e}
+tool-move
+tool-rotate
+tool-scale
+cargo build --manifest-path modeler/Cargo.toml -p piska-modeler
+modeler.paint_mirror
+Add {}
+`{name}` needs a value
+cannot open a window: {e}
+unknown option `{other}` (see --help)
+{} item(s)
+B  E  G  L  U  I  D
+Ctrl+1  Ctrl+3  Ctrl+7
+Ctrl+C  Ctrl+V  Ctrl+D
+Ctrl+N  Ctrl+S
+Ctrl+Z  Ctrl+Y
+Ctrl+O
+Del  Ctrl+G  M  H
+Q  W  E  R  P
+Tab
+X
+Y
+Z
+P
+open-scene
+PID eq {pid}
+Ctrl
+# piska-installer: план для «Copy Plan» — тот же английский текст, что печатает сухой прогон скрипта
+Components: {}
+[{}/{}] SKIP {} - {}{why}
+[{}/{}] STEP {} - {}
+ (found: {found})
+# piska-installer: названия продуктов и языков, аргументы команд, имена кнопок для тестов, внутренние ошибки
+Android SDK
+Apache-2.0
+MIT
+Visual Studio Build Tools
+CMake
+Git
+Ninja
+Linux
+Windows
+English
+Русский
+Bypass
+C:\
+Rust target
+source-download
+source-existing
+out of GPU memory
+packages.toml: no [component.{id}]
+packages.toml: no `{section}.{key}`
+packages.toml: {e}
+settings_combo
+{screen}: control {:?} is {:.1} tall, not CONTROL_H: {:?}
+{screen}: frame {:?} (stroke {:.1}) paints outside its control {:?} {:?}
+{screen}: row members differ: {:?} h{:.1} cy{:.1} vs {:?} h{:.1} cy{:.1}
+focus {id:?}
+hover {id:?}
+modeler.face_texture
+modeler.shape
+press {id:?}
+{screen}: control {:?} is {:.1} tall, not {:.0}: {:?}
+{screen}: control {:?} {:?} leaves its container {rect:?}
+{screen}: frame {visual:?} (stroke {stroke:.1}) paints outside its control {:?} {:?}
+{screen}: gap {gap:.1} between {:?} and {:?} is not on the spacing scale
+{screen}: row members differ: {:?} top{:.1} bottom{:.1} vs {:?} top{:.1} bottom{:.1}
+{screen}: text {t:?} is closer than {:.0} to the edge of {:?} {:?}
+{screen}: text {t:?} runs under control {:?} {:?}
+settings_input_analog
+terrain_paint_layer

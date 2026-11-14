@@ -68,6 +68,12 @@ impl Setup {
         )
         .unwrap();
         templates::create(&plan, &engine).unwrap();
+        // Свой код на Rust — проекту нужна своя программа редактора.
+        std::fs::write(
+            plan.dir.join("src").join("scripts").join("mover.rs"),
+            "use engine::prelude::*;\ncomponent! { pub struct Mover {} }\nimpl Component for Mover {}\n",
+        )
+        .unwrap();
         age_inputs(&plan.dir, self.base);
         let exe = exe_age.map(|age| {
             let exe = self.root.join("bin").join(format!("{name}-editor.exe"));
@@ -89,9 +95,22 @@ impl Setup {
     }
 
     fn hub(&self) -> Hub {
+        self.hub_with_tools(false)
+    }
+
+    /// `tools` — в каталоге программ движка есть (поддельные) piska-editor и piska-player.
+    fn hub_with_tools(&self, tools: bool) -> Hub {
+        let dir = self.root.join("tools");
+        std::fs::create_dir_all(&dir).unwrap();
+        if tools {
+            for name in ["piska-editor", "piska-player"] {
+                std::fs::write(dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX)), "fake").unwrap();
+            }
+        }
         Hub::new(HubOptions {
             config_dir: Some(self.config.clone()),
             dry_run: true,
+            tools_dir: Some(dir),
             ..HubOptions::default()
         })
     }
@@ -174,6 +193,46 @@ fn a_project_never_built_builds_and_has_no_last_build() {
     assert_eq!(saved.entry(&dir).unwrap().editor_exe.as_deref(), Some(built.as_path()));
     let again = setup.hub();
     assert!(matches!(state(&again, &dir), BuildState::Fresh { .. }), "the new build is remembered");
+}
+
+#[test]
+fn projects_without_own_code_open_in_the_generic_editor_at_once() {
+    let setup = Setup::new("generic");
+    let engine = paths::find_engine_root().unwrap();
+    let plan = templates::plan(
+        &NewProject {
+            name: "hub_plain".into(),
+            location: setup.root.clone(),
+            template: Template::Empty3D,
+            cpp: false,
+        },
+        &engine,
+    )
+    .unwrap();
+    templates::create(&plan, &engine).unwrap();
+    let dir = paths::clean(&plan.dir);
+    let file = setup.config.join(paths::CONFIG_FILE);
+    let (mut config, _) = HubConfig::load(&file);
+    config.entry_mut(&dir);
+    config.save(&file).unwrap();
+    let mut hub = setup.hub_with_tools(true);
+    let info = hub.projects().iter().find(|l| paths::same(&l.path, &dir)).unwrap().info.clone().unwrap();
+    assert!(!info.native, "a new project has no code to compile");
+    hub.apply(HubAction::Open(dir.clone()));
+    let tools = setup.root.join("tools");
+    let editor = tools.join(format!("piska-editor{}", std::env::consts::EXE_SUFFIX));
+    assert_eq!(hub.dry_log, [format!("launch {} --project {}", editor.display(), dir.display())], "no cargo at all");
+    assert!(hub.job().is_none());
+    hub.apply(HubAction::Play(dir.clone()));
+    let player = tools.join(format!("piska-player{}", std::env::consts::EXE_SUFFIX));
+    assert_eq!(hub.dry_log.last().unwrap(), &format!("launch {} --project {}", player.display(), dir.display()));
+
+    // Свой код появился, программа проекта не собрана — общий редактор сразу, с `--build`.
+    let (native, _) = setup.project("hub_native_new", None);
+    hub.apply(HubAction::Refresh);
+    hub.apply(HubAction::Open(native.clone()));
+    assert_eq!(hub.dry_log.last().unwrap(), &format!("launch {} --project {} --build", editor.display(), native.display()));
+    assert!(hub.job().is_none(), "the build happens inside the editor, the hub stays free");
 }
 
 fn serde_json_string(path: &Path) -> String {
@@ -266,7 +325,34 @@ fn prebuild_all_builds_what_needs_it_one_after_another() {
     assert!(!prebuild.results[0].1 && prebuild.results[0].2.contains("boom"), "{:?}", prebuild.results[0]);
     assert!(prebuild.results[1..].iter().all(|r| r.1));
     assert!(hub.dry_log.iter().all(|line| !line.starts_with("launch")), "{:?}", hub.dry_log);
-    assert!(hub.job().is_none());
+    // Дальше в очереди — только программы движка, которых нет (общий редактор, Piska Modeler).
+    assert!(hub.job().is_none_or(|j| j.tool && !j.launch), "after the project editors only engine tools build");
+    assert!(hub.queued().all(|q| q.tool.is_some()));
     hub.apply(HubAction::CloseJob);
-    assert!(hub.prebuild().is_none());
+}
+
+#[test]
+fn open_does_not_start_a_second_editor_for_a_project_that_is_already_open() {
+    let setup = Setup::new("open-twice");
+    let (dir, _exe) = setup.project("hub_open_twice", Some(60));
+    let mut hub = setup.hub();
+    // Редактор проекта запущен не этим хабом: метка проекта — у него.
+    let mut other = if cfg!(windows) {
+        std::process::Command::new("ping").args(["-n", "30", "127.0.0.1"]).stdout(std::process::Stdio::null()).spawn()
+    } else {
+        std::process::Command::new("sleep").arg("30").spawn()
+    }
+    .unwrap();
+    engine_editor::instance::acquire(&dir, other.id()).unwrap();
+    hub.apply(HubAction::Open(dir.clone()));
+    let result = (hub.dry_log.clone(), hub.status().map(|s| s.text.clone()));
+    let _ = other.kill();
+    let _ = other.wait();
+    engine_editor::instance::release(&dir, other.id());
+    assert!(result.0.is_empty(), "nothing is launched: {:?}", result.0);
+    let status = result.1.unwrap_or_default();
+    assert!(status.contains("already open in the editor") && status.contains(&other.id().to_string()), "{status}");
+    // Того редактора больше нет (метки нет или она устарела) — Open снова работает.
+    hub.apply(HubAction::Open(dir.clone()));
+    assert_eq!(hub.dry_log.len(), 1, "{:?}", hub.dry_log);
 }

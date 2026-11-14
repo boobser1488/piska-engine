@@ -1,0 +1,21 @@
+(
+    name: "Sun",
+    id: 265984964775444,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (-35.5234, 34.3775, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Light",
+            fields: {
+                "color": Color(1.0, 0.86, 0.68, 1.0),
+                "intensity": Float(4.6),
+                "kind": Enum("Directional"),
+                "range": Float(10.0),
+                "shadows": Bool(true),
+            },
+        ),
+    ],
+)

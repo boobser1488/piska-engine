@@ -1,0 +1,22 @@
+(
+    name: "Environment",
+    id: 238100942237774,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Environment",
+            fields: {
+                "ambient": Float(0.32),
+                "bloom": Float(0.1),
+                "exposure": Float(1.0),
+                "fog_density": Float(0.0004),
+                "shadow_distance": Float(80.0),
+                "vignette": Float(0.2),
+            },
+        ),
+    ],
+)

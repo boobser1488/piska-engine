@@ -1,0 +1,12 @@
+// Звуки игры: имя клипа -> файл (синтезатор движка, эффекты — пик −2 дБFS). Можно заменить своими .wav.
+(
+    effects: [
+        ("step_a", "audio/step_a.wav"),
+        ("step_b", "audio/step_b.wav"),
+        ("land", "audio/land.wav"),
+        ("jump", "audio/jump.wav"),
+        ("checkpoint", "audio/checkpoint.wav"),
+        ("finish", "audio/finish.wav"),
+        ("ui_click", "audio/ui_click.wav"),
+    ],
+)

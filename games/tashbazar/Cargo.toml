@@ -1,0 +1,34 @@
+[package]
+name = "tashbazar"
+description = "Ташбазар: контроллер от первого лица с классической физикой движения и карта — пустынный городок для командной игры 5 на 5. Сцены, префабы, интерфейс и скрипты на Rust."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[package.metadata.piska]
+title = "Ташбазар"
+
+[dependencies]
+# Подсистемы — только те, что игра использует (docs/design/engine-features.md).
+engine = { path = "../../crates/engine", default-features = false, features = ["physics3d", "audio", "audio-wav", "ui", "gamepad"] }
+log.workspace = true
+serde.workspace = true
+ron.workspace = true
+
+[dev-dependencies]
+# Инструмент сборки ассетов (examples/bake_assets.rs) рисует текстуры.
+image.workspace = true
+
+[build-dependencies]
+# Значок приложения в exe на Windows.
+engine-build = { path = "../../crates/engine-build" }
+
+[features]
+# Программа редактора: `cargo run -p tashbazar --features editor --bin tashbazar-editor`.
+editor = ["engine/editor"]
+
+[[bin]]
+name = "tashbazar-editor"
+required-features = ["editor"]

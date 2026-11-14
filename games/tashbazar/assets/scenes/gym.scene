@@ -1,0 +1,1231 @@
+(
+    name: "Gym",
+    objects: [
+        (
+            name: "Gym",
+            id: 232959348378059,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Floor",
+                    id: 68077646350447,
+                    prefab: Some("c939676953666e4463bd7ad8db1c3753"),
+                    transform: (
+                        position: (0.0, -0.5, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (60.0, 1.0, 48.0),
+                    ),
+                ),
+                (
+                    name: "Wall",
+                    id: 66574172554400,
+                    prefab: Some("5375b419e168eb5e993e86d2beedd8bf"),
+                    transform: (
+                        position: (0.0, 3.0, -24.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (62.0, 6.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Wall Band",
+                    id: 147392306601942,
+                    prefab: Some("3bb9efaedefb1b0afc76ff0044dc7ae6"),
+                    transform: (
+                        position: (0.0, 6.15, -24.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (62.0, 0.3000002, 1.0),
+                    ),
+                ),
+                (
+                    name: "Wall",
+                    id: 180950159632169,
+                    prefab: Some("5375b419e168eb5e993e86d2beedd8bf"),
+                    transform: (
+                        position: (0.0, 3.0, 24.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (62.0, 6.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Wall Band",
+                    id: 191459465258254,
+                    prefab: Some("3bb9efaedefb1b0afc76ff0044dc7ae6"),
+                    transform: (
+                        position: (0.0, 6.15, 24.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (62.0, 0.3000002, 1.0),
+                    ),
+                ),
+                (
+                    name: "Wall",
+                    id: 132196406702694,
+                    prefab: Some("5375b419e168eb5e993e86d2beedd8bf"),
+                    transform: (
+                        position: (-30.5, 3.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 6.0, 48.0),
+                    ),
+                ),
+                (
+                    name: "Wall Band",
+                    id: 156772147755078,
+                    prefab: Some("3bb9efaedefb1b0afc76ff0044dc7ae6"),
+                    transform: (
+                        position: (-30.5, 6.15, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 0.3000002, 48.0),
+                    ),
+                ),
+                (
+                    name: "Wall",
+                    id: 132654825852472,
+                    prefab: Some("5375b419e168eb5e993e86d2beedd8bf"),
+                    transform: (
+                        position: (30.5, 3.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 6.0, 48.0),
+                    ),
+                ),
+                (
+                    name: "Wall Band",
+                    id: 105121556663967,
+                    prefab: Some("3bb9efaedefb1b0afc76ff0044dc7ae6"),
+                    transform: (
+                        position: (30.5, 6.15, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 0.3000002, 48.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Steps",
+            id: 77687426836110,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Step",
+                    id: 182925080586589,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (-26.0, 0.0762, -12.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 0.1524, 4.0),
+                    ),
+                ),
+                (
+                    name: "Ступень 8 ед (0.15 м) — заходим шагом",
+                    id: 149148757385669,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ступень 8 ед (0.15 м) — заходим шагом"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-26.0, 1.0, -9.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Step",
+                    id: 275726477122101,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (-23.0, 0.1524, -12.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 0.3048, 4.0),
+                    ),
+                ),
+                (
+                    name: "Ступень 16 ед (0.30 м) — заходим шагом",
+                    id: 264698597023231,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ступень 16 ед (0.30 м) — заходим шагом"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-23.0, 1.0, -9.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Step",
+                    id: 235227636606990,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (-20.0, 0.17145, -12.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 0.3429, 4.0),
+                    ),
+                ),
+                (
+                    name: "Ступень 18 ед (0.34 м) — заходим шагом",
+                    id: 176038394472196,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ступень 18 ед (0.34 м) — заходим шагом"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-20.0, 1.0, -9.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Step",
+                    id: 153998500261647,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (-17.0, 0.180975, -12.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 0.36195, 4.0),
+                    ),
+                ),
+                (
+                    name: "Ступень 19 ед (0.36 м) — уже только прыжком",
+                    id: 265025588433468,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ступень 19 ед (0.36 м) — уже только прыжком"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-17.0, 1.0, -9.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Jump Boxes",
+            id: 135189507278737,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Box",
+                    id: 232142664237761,
+                    prefab: Some("9ad1910ae123358b1c1aa77fa2db0c38"),
+                    transform: (
+                        position: (-26.0, 0.381, 11.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 0.762, 2.0),
+                    ),
+                ),
+                (
+                    name: "Ящик 40 ед (0.76 м) — запрыгиваем",
+                    id: 172905885524598,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.5),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ящик 40 ед (0.76 м) — запрыгиваем"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-26.0, 1.0, 8.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Box",
+                    id: 231128656673815,
+                    prefab: Some("9ad1910ae123358b1c1aa77fa2db0c38"),
+                    transform: (
+                        position: (-23.0, 0.5334, 11.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 1.0668, 2.0),
+                    ),
+                ),
+                (
+                    name: "Ящик 56 ед (1.07 м) — запрыгиваем",
+                    id: 253551313828090,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.5),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ящик 56 ед (1.07 м) — запрыгиваем"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-23.0, 1.0, 8.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Box",
+                    id: 99290911727656,
+                    prefab: Some("215e0565429f2260984e767383c0e466"),
+                    transform: (
+                        position: (-20.0, 0.55245, 11.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 1.1049, 2.0),
+                    ),
+                ),
+                (
+                    name: "Ящик 58 ед (1.10 м) — только с приседом в прыжке",
+                    id: 31357807446638,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.5),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ящик 58 ед (1.10 м) — только с приседом в прыжке"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-20.0, 1.0, 8.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Box",
+                    id: 66123918867492,
+                    prefab: Some("215e0565429f2260984e767383c0e466"),
+                    transform: (
+                        position: (-17.0, 0.6096, 11.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 1.2192, 2.0),
+                    ),
+                ),
+                (
+                    name: "Ящик 64 ед (1.22 м) — только с приседом в прыжке",
+                    id: 197465195671314,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.5),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ящик 64 ед (1.22 м) — только с приседом в прыжке"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-17.0, 1.0, 8.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Box",
+                    id: 100304514398099,
+                    prefab: Some("215e0565429f2260984e767383c0e466"),
+                    transform: (
+                        position: (-14.0, 0.70485, 11.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 1.4097, 2.0),
+                    ),
+                ),
+                (
+                    name: "Ящик 74 ед (1.41 м) — только с приседом в прыжке",
+                    id: 76210238910862,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.5),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ящик 74 ед (1.41 м) — только с приседом в прыжке"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-14.0, 1.0, 8.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Box",
+                    id: 260150773921434,
+                    prefab: Some("8889d47204cb5753cc64c5ebac9030af"),
+                    transform: (
+                        position: (-11.0, 0.7239, 11.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 1.4478, 2.0),
+                    ),
+                ),
+                (
+                    name: "Ящик 76 ед (1.45 м) — не достать",
+                    id: 278307261707652,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 3.0, 2.5),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ящик 76 ед (1.45 м) — не достать"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-11.0, 1.0, 8.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Slopes",
+            id: 3178393553314,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Slope",
+                    id: 217642499577644,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (2.0, 0.56698734, -7.982051),
+                        rotation: (30.0, 0.0, 0.0),
+                        scale: (3.0, 1.0, 4.0),
+                    ),
+                ),
+                (
+                    name: "Slope Top",
+                    id: 40572819670353,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (2.0, 1.0, -10.464102),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.0, 2.0, 2.0),
+                    ),
+                ),
+                (
+                    name: "Склон 30° — ходим",
+                    id: 119920362221188,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(3.0, 3.0, 2.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Склон 30° — ходим"),
+                        ),
+                    ],
+                    transform: (
+                        position: (2.0, 1.0, -4.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Slope",
+                    id: 35605590913030,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (6.0, 0.64644665, -7.3535533),
+                        rotation: (45.0, 0.0, 0.0),
+                        scale: (3.0, 1.0, 2.828427),
+                    ),
+                ),
+                (
+                    name: "Slope Top",
+                    id: 42117696749820,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (6.0, 1.0, -9.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.0, 2.0, 2.0),
+                    ),
+                ),
+                (
+                    name: "Склон 45° — ходим",
+                    id: 238305642326724,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(3.0, 3.0, 2.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Склон 45° — ходим"),
+                        ),
+                    ],
+                    transform: (
+                        position: (6.0, 1.0, -4.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Slope",
+                    id: 97036234411522,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (10.0, 0.6526709, -7.325359),
+                        rotation: (46.0, 0.0, 0.0),
+                        scale: (3.0, 1.0, 2.780327),
+                    ),
+                ),
+                (
+                    name: "Slope Top",
+                    id: 106003648679571,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (10.0, 1.0, -8.931377),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.0, 2.0, 2.0),
+                    ),
+                ),
+                (
+                    name: "Склон 46° — скользим (нормаль < 0.7)",
+                    id: 62863627382686,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(3.0, 3.0, 2.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Склон 46° — скользим (нормаль < 0.7)"),
+                        ),
+                    ],
+                    transform: (
+                        position: (10.0, 1.0, -4.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Slope",
+                    id: 16454543511450,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (14.0, 0.7500001, -7.010363),
+                        rotation: (60.0, 0.0, 0.0),
+                        scale: (3.0, 1.0, 2.309401),
+                    ),
+                ),
+                (
+                    name: "Slope Top",
+                    id: 62333855961923,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (14.0, 1.0, -8.1547),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.0, 2.0, 2.0),
+                    ),
+                ),
+                (
+                    name: "Склон 60° — скользим (нормаль < 0.7)",
+                    id: 57969796081009,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(3.0, 3.0, 2.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Склон 60° — скользим (нормаль < 0.7)"),
+                        ),
+                    ],
+                    transform: (
+                        position: (14.0, 1.0, -4.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Surf Ramp",
+                    id: 48718082311964,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (24.0, 2.6, 0.0),
+                        rotation: (0.0, 0.0, 60.0),
+                        scale: (6.0, 0.6, 30.0),
+                    ),
+                ),
+                (
+                    name: "Рампа 60° — сёрф: стрейф в сторону рампы держит на ней",
+                    id: 231978017604568,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(4.0, 5.0, 30.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Рампа 60° — сёрф: стрейф в сторону рампы держит на ней"),
+                        ),
+                    ],
+                    transform: (
+                        position: (20.0, 2.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Crawl",
+            id: 156316572902761,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Crawl Side",
+                    id: 205912721325125,
+                    prefab: Some("df51e7d58d8b88084db97b8608caf5f6"),
+                    transform: (
+                        position: (-7.8, 0.8, 1.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.4000001, 1.6, 6.0),
+                    ),
+                ),
+                (
+                    name: "Crawl Side",
+                    id: 141921240367028,
+                    prefab: Some("df51e7d58d8b88084db97b8608caf5f6"),
+                    transform: (
+                        position: (-5.2, 0.8, 1.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.4000001, 1.6, 6.0),
+                    ),
+                ),
+                (
+                    name: "Crawl Roof",
+                    id: 166176236787241,
+                    prefab: Some("df51e7d58d8b88084db97b8608caf5f6"),
+                    transform: (
+                        position: (-6.5, 1.3334, 1.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.0, 0.5332, 6.0),
+                    ),
+                ),
+                (
+                    name: "Лаз 56 ед (1.07 м) — только в приседе",
+                    id: 269720585982348,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.2, 1.0, 6.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Лаз 56 ед (1.07 м) — только в приседе"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-6.5, 0.5, 1.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Door Wall",
+                    id: 32428610201393,
+                    prefab: Some("8213d767dccf0f29ccb1fe975c7ece0d"),
+                    transform: (
+                        position: (-18.825, 1.7, 1.25),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.3500004, 3.4, 0.5),
+                    ),
+                ),
+                (
+                    name: "Door Wall",
+                    id: 214879495062903,
+                    prefab: Some("8213d767dccf0f29ccb1fe975c7ece0d"),
+                    transform: (
+                        position: (-15.175, 1.7, 1.25),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.3500004, 3.4, 0.5),
+                    ),
+                ),
+                (
+                    name: "Door Lintel",
+                    id: 90821105450570,
+                    prefab: Some("8213d767dccf0f29ccb1fe975c7ece0d"),
+                    transform: (
+                        position: (-17.0, 2.8000002, 1.25),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.2999992, 1.2, 0.5),
+                    ),
+                ),
+                (
+                    name: "Дверь 2.2 × 1.3 м",
+                    id: 85180754903360,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(1.3, 2.2, 2.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Дверь 2.2 × 1.3 м"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-17.0, 1.0, 1.25),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Corridor Wall",
+                    id: 229498549543183,
+                    prefab: Some("df51e7d58d8b88084db97b8608caf5f6"),
+                    transform: (
+                        position: (-26.75, 1.5, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.5, 3.0, 8.0),
+                    ),
+                ),
+                (
+                    name: "Corridor Wall",
+                    id: 9310342698437,
+                    prefab: Some("df51e7d58d8b88084db97b8608caf5f6"),
+                    transform: (
+                        position: (-23.75, 1.5, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.5, 3.0, 8.0),
+                    ),
+                ),
+                (
+                    name: "Corridor Wall",
+                    id: 88048183842835,
+                    prefab: Some("df51e7d58d8b88084db97b8608caf5f6"),
+                    transform: (
+                        position: (-19.25, 1.5, -4.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (0.5, 3.0, 4.0),
+                    ),
+                ),
+                (
+                    name: "Коридор 2.5 м",
+                    id: 19740070781929,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.5, 3.0, 8.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Коридор 2.5 м"),
+                        ),
+                    ],
+                    transform: (
+                        position: (-25.25, 1.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Gaps",
+            id: 253339294788428,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Gap Stairs",
+                    id: 184200933928370,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (5.0, 0.125, 16.75),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 0.25, 0.5),
+                    ),
+                ),
+                (
+                    name: "Gap Stairs",
+                    id: 54977672262058,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (5.0, 0.25, 16.25),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 0.5, 0.5),
+                    ),
+                ),
+                (
+                    name: "Gap Stairs",
+                    id: 90447976758298,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (5.0, 0.375, 15.75),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 0.75, 0.5),
+                    ),
+                ),
+                (
+                    name: "Gap Stairs",
+                    id: 89078636922022,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (5.0, 0.5, 15.25),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 1.0, 0.5),
+                    ),
+                ),
+                (
+                    name: "Ledge",
+                    id: 14375471088606,
+                    prefab: Some("4f9ede59997bc204c8e4c4d59eda019d"),
+                    transform: (
+                        position: (5.0, 0.5, 10.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 1.0, 9.0),
+                    ),
+                ),
+                (
+                    name: "Ledge",
+                    id: 102128931980750,
+                    prefab: Some("4f9ede59997bc204c8e4c4d59eda019d"),
+                    transform: (
+                        position: (5.0, 0.5, 1.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 1.0, 4.0),
+                    ),
+                ),
+                (
+                    name: "Ledge",
+                    id: 5611657086789,
+                    prefab: Some("4f9ede59997bc204c8e4c4d59eda019d"),
+                    transform: (
+                        position: (5.0, 0.5, -9.4),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (2.0, 1.0, 7.9999995),
+                    ),
+                ),
+                (
+                    name: "Щель 3 м — прыжок с разбега",
+                    id: 215985756498938,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 2.0, 3.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Щель 3 м — прыжок с разбега"),
+                        ),
+                    ],
+                    transform: (
+                        position: (5.0, 2.0, 4.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Щель 4.4 м — прыжок со стрейфом",
+                    id: 38527622920089,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(2.0, 2.0, 4.4),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Щель 4.4 м — прыжок со стрейфом"),
+                        ),
+                    ],
+                    transform: (
+                        position: (5.0, 2.0, -3.2),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Lift",
+            id: 138121775171504,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            children: [
+                (
+                    name: "Lift Stand",
+                    id: 16660561133873,
+                    prefab: Some("0274054007e30c674a25ea007a02b74f"),
+                    transform: (
+                        position: (13.5, 0.45, 15.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.0, 0.9, 3.0),
+                    ),
+                ),
+                (
+                    name: "Moving Platform",
+                    id: 91770573054479,
+                    prefab: Some("9ad1910ae123358b1c1aa77fa2db0c38"),
+                    transform: (
+                        position: (13.5, 0.75, 12.5),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (3.0, 0.3, 3.0),
+                    ),
+                    components: [
+                        (
+                            kind: "Rigidbody",
+                            fields: {
+                                "angular_damping": Float(0.05),
+                                "angular_velocity": Vec3(0.0, 0.0, 0.0),
+                                "body_type": Enum("Kinematic"),
+                                "ccd": Bool(false),
+                                "gravity_scale": Float(1.0),
+                                "interpolate": Bool(true),
+                                "linear_damping": Float(0.0),
+                                "lock_rotation": Bool(false),
+                                "velocity": Vec3(0.0, 0.0, 0.0),
+                            },
+                        ),
+                        (
+                            kind: "MovingPlatform",
+                            fields: {
+                                "period": Float(5.0),
+                                "spin_deg": Float(0.0),
+                                "start": Vec3(0.0, 0.0, 0.0),
+                                "time": Float(0.0),
+                                "travel": Vec3(0.0, 1.5, -12.0),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "Подвижная платформа — стоим, и она везёт",
+                    id: 96128612316030,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(3.0, 4.0, 16.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Подвижная платформа — стоим, и она везёт"),
+                        ),
+                    ],
+                    transform: (
+                        position: (13.5, 2.0, 5.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "crate_small",
+                    id: 82375254624647,
+                    prefab: Some("430028478eb1c0ac17e7e880defd4562"),
+                    transform: (
+                        position: (20.0, 0.0, 18.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "crate_big",
+                    id: 9534977923365,
+                    prefab: Some("2c302378cac0759541bf849ea2f70c34"),
+                    transform: (
+                        position: (22.0, 0.0, 18.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "barrel",
+                    id: 72110322431627,
+                    prefab: Some("a3bee5ba7519891f4651aff79c4fee97"),
+                    transform: (
+                        position: (24.0, 0.0, 18.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+                (
+                    name: "Ящики карты: 0.9 м (прыжок) и 1.25 м (с приседом)",
+                    id: 221564862253388,
+                    prefab: Some("fc6930a1928a32ed3fa6dd2c76f4cb70"),
+                    overrides: [
+                        (
+                            component: "MapZone",
+                            field: "size",
+                            value: Vec3(7.0, 3.0, 3.0),
+                        ),
+                        (
+                            component: "MapZone",
+                            field: "title",
+                            value: Str("Ящики карты: 0.9 м (прыжок) и 1.25 м (с приседом)"),
+                        ),
+                    ],
+                    transform: (
+                        position: (22.0, 1.0, 18.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                ),
+            ],
+        ),
+        (
+            name: "Spawn",
+            id: 212994593870350,
+            prefab: Some("2edef17df060f070eb7d055d41ceec8d"),
+            transform: (
+                position: (-10.0, 0.0, 16.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Environment",
+            id: 113061803626841,
+            prefab: Some("00109442389c9e874be3607ed2f1bca9"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Sun",
+            id: 34057718157614,
+            prefab: Some("ce13aee16e1d0057410142b0ab1c8473"),
+            transform: (
+                position: (0.0, 60.0, 0.0),
+                rotation: (-52.0, -35.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Player",
+            id: 59561438538256,
+            prefab: Some("113b7d00b075a15f8cb5ff0b30b49b40"),
+            transform: (
+                position: (-10.0, 0.0, 16.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Main Menu",
+            id: 218013755784820,
+            prefab: Some("bf83f98e01ed5054d1e2514175315684"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Options",
+            id: 279552277186017,
+            prefab: Some("87bf5621b220d47cbfb5e95902ea2b5e"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Pause",
+            id: 146602157370872,
+            prefab: Some("4ddd48c920aade9022b4f36e2b900e9a"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Results",
+            id: 237068764727721,
+            prefab: Some("99fab1a291691024b9f64192519059f1"),
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "HUD",
+            id: 196751372825053,
+            prefab: Some("bad529d2abcc7fbb374c05a9ef574157"),
+            overrides: [
+                (
+                    component: "Hud",
+                    field: "player",
+                    value: Object(59561438538256),
+                ),
+            ],
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+        (
+            name: "Game",
+            id: 235804783764338,
+            prefab: Some("d52a334352a3de6b3e79a03fb2e4cc97"),
+            overrides: [
+                (
+                    component: "GameManager",
+                    field: "hud",
+                    value: Object(196751372825053),
+                ),
+                (
+                    component: "GameManager",
+                    field: "main_menu",
+                    value: Object(218013755784820),
+                ),
+                (
+                    component: "GameManager",
+                    field: "menu_scene",
+                    value: Str("tashbazar"),
+                ),
+                (
+                    component: "GameManager",
+                    field: "options_menu",
+                    value: Object(279552277186017),
+                ),
+                (
+                    component: "GameManager",
+                    field: "pause_menu",
+                    value: Object(146602157370872),
+                ),
+                (
+                    component: "GameManager",
+                    field: "player",
+                    value: Object(59561438538256),
+                ),
+                (
+                    component: "GameManager",
+                    field: "results",
+                    value: Object(237068764727721),
+                ),
+                (
+                    component: "GameManager",
+                    field: "start_playing",
+                    value: Bool(true),
+                ),
+            ],
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+        ),
+    ],
+)

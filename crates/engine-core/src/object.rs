@@ -81,6 +81,8 @@ pub struct GameObject {
     pub(crate) has_tombstones: bool,
     /// Ссылка на префаб, из которого создан объект (для сохранения переопределений).
     pub(crate) prefab: Option<String>,
+    /// Стабильный номер объекта (см. [`crate::objref`]); выдаёт и учитывает сцена.
+    pub(crate) uid: u64,
     /// Номер слота в сцене и журнал сцены (см. [`Journal`]).
     pub(crate) slot: u32,
     pub(crate) journal: Option<Journal>,
@@ -102,6 +104,7 @@ impl GameObject {
             components: Vec::new(),
             has_tombstones: false,
             prefab: None,
+            uid: 0,
             slot: 0,
             journal: None,
             queued: Cell::new(false),
@@ -125,6 +128,13 @@ impl GameObject {
 
     pub fn children(&self) -> &[GameObjectId] {
         &self.children
+    }
+
+    /// Стабильный номер объекта: записывается в файл сцены и переживает сохранение,
+    /// загрузку и переименование. По нему работают поля-ссылки
+    /// [`ObjectRef`](crate::objref::ObjectRef); объект по номеру — `Scene::find_by_uid`.
+    pub fn uid(&self) -> u64 {
+        self.uid
     }
 
     /// Префаб-источник, если объект — экземпляр префаба.

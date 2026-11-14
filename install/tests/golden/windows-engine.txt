@@ -1,0 +1,34 @@
+Components: core, engine
+DRY RUN: nothing is installed, downloaded or changed. Detection below only reads.
+[1/10] STEP core.git - Git
+         elevation: The Git installer may ask Windows for administrator rights (one UAC prompt).
+         run      winget install --id Git.Git --exact --source winget --accept-source-agreements --accept-package-agreements --silent
+[2/10] STEP core.buildtools - Visual Studio Build Tools (C++ workload + Windows SDK)
+         elevation: Visual Studio Build Tools install system-wide: Windows will show ONE administrator (UAC) prompt for it.
+         licence: Visual Studio Build Tools (https://visualstudio.microsoft.com/license-terms/) - accepted only with -AcceptLicenses or your answer
+         run      winget install --id Microsoft.VisualStudio.2022.BuildTools --exact --source winget --accept-source-agreements --accept-package-agreements --silent --override "--passive --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --includeRecommended"
+         note     about 5 GB; a reboot may be requested afterwards (the installer then stops: re-run with -Resume)
+[3/10] STEP core.rustup - Rust (rustup, stable, MSVC)
+         download https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe (~14 MB)
+         verify   sha256 from https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe.sha256
+         cache    <FAKE>\Install\cache
+         run      rustup-init.exe -y --default-host x86_64-pc-windows-msvc --default-toolchain stable --profile minimal
+[4/10] STEP core.rust-components - Rust components (clippy, rustfmt)
+         run      rustup component add clippy rustfmt
+[5/10] STEP core.vulkan - Vulkan runtime (GPU driver)
+         note     vulkan-1.dll is installed by your GPU driver. If it is missing, install the current driver from NVIDIA / AMD / Intel (the engine also runs on DX12).
+[6/10] STEP engine.source - Engine sources (with the modeler submodule)
+         run      git -C "<REPO>" submodule update --init --recursive   (the modeler is a submodule in modeler\; skipped when it is already there)
+[7/10] STEP engine.build - Build hub, editor, export tool and modeler (release)
+         run      cargo build --release -p piska-hub -p piska-editor -p piska-export   (in <REPO>; 20-40 minutes, about 3 GB)
+         run      cargo build --release --manifest-path modeler/Cargo.toml -p piska-modeler   (in <REPO>)
+[8/10] STEP engine.shortcuts - Start-menu shortcuts
+         shortcut <FAKE>\Roaming\Microsoft\Windows\Start Menu\Programs\Piska Engine\Piska Hub.lnk -> <REPO>\target\release\piska-hub.exe  (icon <REPO>\assets\branding\icon.ico)
+         shortcut <FAKE>\Roaming\Microsoft\Windows\Start Menu\Programs\Piska Engine\Piska Editor.lnk -> <REPO>\target\release\piska-editor.exe  (icon <REPO>\assets\branding\icon.ico)
+         shortcut <FAKE>\Roaming\Microsoft\Windows\Start Menu\Programs\Piska Engine\Piska Modeler.lnk -> <REPO>\modeler\target\release\piska-modeler.exe  (icon <REPO>\assets\branding\icon.ico)
+[9/10] STEP engine.uninstaller - Uninstall script
+         copy     install.ps1 + packages.toml to <FAKE>\Install  (uninstall.ps1 removes only what the manifest lists)
+[10/10] STEP config.preferences - Editor preferences: Build & Tools paths
+         prefs    tool_cargo = <FAKE>\Home\.cargo\bin\cargo.exe
+         file     <FAKE>\Roaming\PiskaEngine\editor.ron  (merged: existing values are kept, a backup .piska-backup-<time> is made first)
+DRY RUN finished: no changes were made.

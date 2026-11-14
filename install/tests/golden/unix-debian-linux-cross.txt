@@ -1,0 +1,32 @@
+Components: core linux-cross
+DRY RUN: nothing is installed, downloaded or changed. Detection below only reads.
+[1/8] STEP core.packages - System packages (compiler, pkg-config, ALSA, udev, Vulkan, X11/Wayland libraries)
+         elevation: administrator rights are needed for the package manager (sudo asks for your password; the command is shown first)
+         run      sudo apt-get update
+         run      sudo apt-get install -y ca-certificates curl git unzip xz-utils build-essential pkg-config libasound2-dev libudev-dev mesa-vulkan-drivers libvulkan1 libxkbcommon0 libwayland-client0 libx11-6
+         note     the package manager runs through sudo and asks for your password
+[2/8] STEP core.rustup - Rust (rustup, stable)
+         download https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init (~20 MB)
+         verify   sha256 from https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init.sha256
+         cache    <FAKE>/prefix/cache
+         run      rustup-init -y --default-toolchain stable --profile minimal
+[3/8] STEP core.rust-components - Rust components (clippy rustfmt)
+         run      rustup component add clippy rustfmt
+[4/8] STEP core.vulkan - Vulkan runtime (GPU driver)
+         note     libvulkan.so.1 comes from the Vulkan loader + a driver (Mesa or NVIDIA); the package step installs the Mesa drivers.
+[5/8] STEP linux-cross.zig - zig 0.17.1
+         download https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz (~55 MB)
+         verify   sha256 3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a (cross-checked with https://ziglang.org/download/index.json)
+         cache    <FAKE>/prefix/cache
+         extract  to <FAKE>/prefix/tools/zig/0.17.1
+[6/8] STEP linux-cross.target - Rust target x86_64-unknown-linux-gnu
+         run      rustup target add x86_64-unknown-linux-gnu
+[7/8] STEP linux-cross.env - Environment: PISKA_ZIG
+         env      export PISKA_ZIG="<FAKE>/prefix/tools/zig/0.17.1/zig-linux-x86_64-0.17.1/zig"
+         file     <FAKE>/.profile  (a delimited block that sources <FAKE>/prefix/env.sh; backup first)
+[8/8] STEP config.preferences - Editor preferences: Build & Tools paths
+         prefs    tool_cargo = <FAKE>/.cargo/bin/cargo
+         prefs    tool_zig = <FAKE>/prefix/tools/zig/0.17.1/zig-linux-x86_64-0.17.1/zig
+         file     <FAKE>/.config/PiskaEngine/editor.ron  (merged: existing values are kept, a backup .piska-backup-<time> is made first)
+DRY RUN finished: no changes were made.
+exit=0

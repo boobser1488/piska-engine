@@ -2,6 +2,7 @@
 //! выделение, набор имени «на лету», навигация стрелками и настройки окна, которые
 //! переживают перезапуск. Рисует всё это `project*.rs`; здесь — то, что проверяют тесты.
 
+use crate::i18n::{n_, tr_s, trf};
 use std::collections::BTreeSet;
 
 use egui::Rect;
@@ -105,7 +106,7 @@ pub(crate) fn resolve_path(text: &str, folders: &[String], files: &[String]) -> 
     if let Some(found) = files.iter().find(|f| f.eq_ignore_ascii_case(&path)) {
         return Ok(PathTarget::Asset(found.clone()));
     }
-    Err(format!("`{}` is not a folder in this project", text.trim()))
+    Err(trf!("`{}` is not a folder in this project", text.trim()))
 }
 
 // ----------------------------------------------------------------------
@@ -131,8 +132,8 @@ impl Scope {
 
     pub fn label(self) -> &'static str {
         match self {
-            Scope::ThisFolder => "This Folder",
-            Scope::AllAssets => "All Assets",
+            Scope::ThisFolder => tr_s("This Folder"),
+            Scope::AllAssets => tr_s("All Assets"),
         }
     }
 
@@ -461,11 +462,11 @@ impl ProjectPrefs {
 
 /// Сохранённые поиски по умолчанию: «All Scripts», «All Scenes» …
 pub(crate) const DEFAULT_SEARCHES: [(&str, &str); 5] = [
-    ("All Scripts", "t:script"),
-    ("All Scenes", "t:scene"),
-    ("All Models", "t:model"),
-    ("All Materials", "t:material"),
-    ("All Prefabs", "t:prefab"),
+    (n_("All Scripts"), "t:script"),
+    (n_("All Scenes"), "t:scene"),
+    (n_("All Models"), "t:model"),
+    (n_("All Materials"), "t:material"),
+    (n_("All Prefabs"), "t:prefab"),
 ];
 
 #[cfg(test)]

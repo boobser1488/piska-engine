@@ -1,0 +1,7 @@
+(
+    guid: "9c18d2206434820d43eb968cafba45dd",
+    importer: "Texture",
+    settings: {
+        "filter": Enum("Pixel"),
+    },
+)

@@ -1,6 +1,7 @@
 //! Сборка и запуск: команда cargo для проекта, чтение её вывода в фоне, запущенные
 //! редакторы и игры (один и тот же проект дважды не открывается).
 
+use engine_editor::kit::i18n::{tr_s, trf};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -20,14 +21,17 @@ pub enum JobKind {
     Play,
     /// Экспорт через `piska-export`.
     Export { platform: String, release: bool },
+    /// Программа движка без проекта (Piska Modeler).
+    Tool { name: String },
 }
 
 impl JobKind {
     pub fn verb(&self) -> &'static str {
         match self {
-            JobKind::Open => "Opening",
-            JobKind::Play => "Starting",
-            JobKind::Export { .. } => "Exporting",
+            JobKind::Open => tr_s("Opening"),
+            JobKind::Play => tr_s("Starting"),
+            JobKind::Export { .. } => tr_s("Exporting"),
+            JobKind::Tool { .. } => tr_s("Preparing"),
         }
     }
 }
@@ -42,6 +46,8 @@ pub struct CommandSpec {
     pub env: Vec<(String, String)>,
     /// Какую программу запустить после удачной сборки (имя цели cargo).
     pub launch_target: Option<String>,
+    /// Аргументы запуска собранной программы (`--project <каталог>` у общего редактора).
+    pub launch_args: Vec<String>,
 }
 
 impl CommandSpec {
@@ -94,6 +100,7 @@ pub fn command_for(info: &ProjectInfo, kind: &JobKind, engine_root: Option<&Path
                 cwd: info.dir.clone(),
                 env: progress_env(),
                 launch_target: Some(bin),
+                launch_args: Vec::new(),
             })
         }
         JobKind::Play => {
@@ -113,12 +120,14 @@ pub fn command_for(info: &ProjectInfo, kind: &JobKind, engine_root: Option<&Path
                 cwd: info.dir.clone(),
                 env: progress_env(),
                 launch_target: Some(bin),
+                launch_args: Vec::new(),
             })
         }
+        JobKind::Tool { name } => Err(format!("`{name}` is built with jobs::tool_command")),
         JobKind::Export { platform, release } => {
             let root = engine_root.ok_or("the engine checkout was not found, so piska-export cannot run")?;
             if !paths::is_within(&info.dir, &root.join("games")) {
-                return Err(format!(
+                return Err(trf!(
                     "piska-export builds games from `games/` of the engine; `{}` is outside it. \
                      Copy or move the project to games/ to export it",
                     info.dir.display()
@@ -144,8 +153,36 @@ pub fn command_for(info: &ProjectInfo, kind: &JobKind, engine_root: Option<&Path
                 cwd: root.to_path_buf(),
                 env: progress_env(),
                 launch_target: None,
+                launch_args: Vec::new(),
             })
         }
+    }
+}
+
+/// Сборка программы движка (`piska-editor`, `piska-player`, `piska-modeler`) в корне
+/// рабочего пространства: собирается один раз и потом открывает любые проекты.
+pub fn tool_command(engine_root: &Path, package: &str, bin: &str, args: Vec<String>) -> CommandSpec {
+    let cargo = std::env::var("CARGO").ok().filter(|c| !c.is_empty()).unwrap_or_else(|| "cargo".to_string());
+    CommandSpec {
+        program: cargo,
+        args: {
+            let mut build = vec!["build".to_string()];
+            // Piska Modeler живёт в собственном рабочем пространстве `modeler/` (отдельный
+            // репозиторий, подключённый как подмодуль): его собирают по манифесту оттуда.
+            // Каталог сборки общий (`CARGO_TARGET_DIR`), так что exe ложится рядом с остальными.
+            let own_workspace = engine_root.join(package.trim_start_matches("piska-")).join("Cargo.toml");
+            if package == "piska-modeler" && own_workspace.is_file() {
+                build.push("--manifest-path".into());
+                build.push(own_workspace.to_string_lossy().into_owned());
+            }
+            build.extend(["-p".to_string(), package.to_string(), "--bin".to_string(), bin.to_string()]);
+            build.push("--message-format=json".into());
+            build
+        },
+        cwd: engine_root.to_path_buf(),
+        env: progress_env(),
+        launch_target: Some(bin.to_string()),
+        launch_args: args,
     }
 }
 
@@ -185,6 +222,8 @@ pub struct Job {
     open_streams: u8,
     /// Запустить собранную программу после удачной сборки (Prebuild — нет).
     pub launch: bool,
+    /// Собирается программа движка, а не проекта: её путь не запоминается как сборка проекта.
+    pub tool: bool,
     /// С прошлой проверки пришёл новый вывод.
     dirty: bool,
     /// Завершение задания без процесса (тесты): `Some(успех)`.
@@ -208,6 +247,7 @@ impl Job {
             lines: None,
             open_streams: 0,
             launch: true,
+            tool: false,
             dirty: true,
             simulated_exit: None,
         }
@@ -220,7 +260,7 @@ impl Job {
 
     /// Запустить cargo в фоне.
     pub fn spawn(project: PathBuf, title: String, kind: JobKind, command: CommandSpec, expected: Option<u32>) -> Result<Self, String> {
-        let mut process = Command::new(&command.program);
+        let mut process = engine_build::host::command(&command.program);
         process
             .args(&command.args)
             .current_dir(&command.cwd)
@@ -233,7 +273,7 @@ impl Job {
         hide_console(&mut process);
         let mut child = process
             .spawn()
-            .map_err(|e| format!("cannot start `{}`: {e}. Is Rust (cargo) installed and in PATH?", command.program))?;
+            .map_err(|e| trf!("cannot start `{p0}`: {e}. Is Rust (cargo) installed and in PATH?", p0 = command.program, e = e))?;
         let (sender, receiver) = channel();
         if let Some(stdout) = child.stdout.take() {
             pump(stdout, sender.clone(), Line::Stdout);
@@ -403,7 +443,7 @@ fn hide_console(command: &mut Command) {
 pub fn kill_tree(child: &mut Child) {
     #[cfg(windows)]
     {
-        let mut taskkill = Command::new("taskkill");
+        let mut taskkill = engine_build::host::command("taskkill");
         taskkill.args(["/T", "/F", "/PID", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null());
         hide_console(&mut taskkill);
         let _ = taskkill.status();
@@ -440,11 +480,16 @@ pub struct Processes {
 impl Processes {
     /// Запустить собранную программу с рабочим каталогом проекта.
     pub fn launch(&mut self, project: &Path, kind: JobKind, executable: &Path) -> Result<u32, String> {
-        let mut command = Command::new(executable);
-        command.current_dir(project).stdin(Stdio::null());
+        self.launch_with(project, kind, executable, &[])
+    }
+
+    /// То же с аргументами (`piska-editor --project <каталог>`).
+    pub fn launch_with(&mut self, project: &Path, kind: JobKind, executable: &Path, args: &[String]) -> Result<u32, String> {
+        let mut command = engine_build::host::command(executable);
+        command.args(args).current_dir(project).stdin(Stdio::null());
         let child = command
             .spawn()
-            .map_err(|e| format!("cannot start `{}`: {e}", executable.display()))?;
+            .map_err(|e| trf!("cannot start `{p0}`: {e}", p0 = executable.display(), e = e))?;
         Ok(self.track(project, kind, child))
     }
 
@@ -542,6 +587,7 @@ mod tests {
             game_bin: Some("lantern".into()),
             icon: None,
             standalone: false,
+            native: true,
         }
     }
 
@@ -588,6 +634,7 @@ mod tests {
             cwd: PathBuf::new(),
             env: vec![],
             launch_target: Some("g-editor".into()),
+            launch_args: Vec::new(),
         };
         let mut job = Job::detached(PathBuf::from("g"), "G".into(), JobKind::Open, command, Some(4));
         job.feed_stderr("   Compiling g v0.1.0 (C:/g)");

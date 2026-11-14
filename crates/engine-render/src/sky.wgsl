@@ -20,7 +20,8 @@ struct SkyOutput {
 fn vs_sky(@builtin(vertex_index) index: u32) -> SkyOutput {
     var out: SkyOutput;
     let corner = vec2<f32>(f32((index << 1u) & 2u), f32(index & 2u)) * 2.0 - 1.0;
-    out.clip_position = vec4<f32>(corner, 1.0, 1.0);
+    // Обратная глубина: z = 0 — дальняя плоскость (небо позади всего).
+    out.clip_position = vec4<f32>(corner, 0.0, 1.0);
     out.ndc = corner;
     return out;
 }
@@ -32,8 +33,9 @@ fn hash3(p: vec3<f32>) -> f32 {
 @fragment
 fn fs_sky(in: SkyOutput) -> @location(0) vec4<f32> {
     // Луч взгляда через пиксель: разница точек на дальней и ближней плоскостях.
-    let far = globals.inv_view_proj * vec4<f32>(in.ndc, 1.0, 1.0);
-    let near = globals.inv_view_proj * vec4<f32>(in.ndc, 0.0, 1.0);
+    // Обратная глубина: дальняя плоскость — z = 0, ближняя — z = 1.
+    let far = globals.inv_view_proj * vec4<f32>(in.ndc, 0.0, 1.0);
+    let near = globals.inv_view_proj * vec4<f32>(in.ndc, 1.0, 1.0);
     let direction = normalize(far.xyz / far.w - near.xyz / near.w);
 
     var color = sky_color(direction);

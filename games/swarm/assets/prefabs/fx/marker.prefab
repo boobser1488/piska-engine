@@ -1,0 +1,29 @@
+(
+    name: "SpawnMarker",
+    id: 242624669219583,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.5),
+                "sheet_columns": Int(1),
+                "sheet_rows": Int(1),
+                "size": Vec2(1.0, 1.0),
+                "sorting_layer": Int(-5),
+                "texture": Asset("e3e1852cdcfddfa538e7955ea1db931d"),
+                "uv_offset": Vec2(0.25927734, 0.50927734),
+                "uv_size": Vec2(0.10839844, 0.10839844),
+            },
+        ),
+    ],
+)

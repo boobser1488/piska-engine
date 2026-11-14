@@ -1,0 +1,31 @@
+(
+    name: "water_disc",
+    id: 142791086259483,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "MeshRenderer",
+            fields: {
+                "cast_shadows": Bool(false),
+                "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                "grid": Bool(false),
+                "materials": List([
+                    Asset("3aa6fffa59bd5fdba9000fb4c9777045"),
+                ]),
+                "mesh": Asset(""),
+                "metallic": Float(0.0),
+                "model_materials": Bool(false),
+                "roughness": Float(0.6),
+                "shape": Enum("Cylinder"),
+                "texture": Asset(""),
+                "tiling": Float(0.0),
+                "tint": Color(1.0, 1.0, 1.0, 1.0),
+            },
+        ),
+    ],
+)

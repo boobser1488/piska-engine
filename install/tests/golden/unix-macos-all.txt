@@ -1,0 +1,70 @@
+Components: core cpp web android linux-cross engine
+DRY RUN: nothing is installed, downloaded or changed. Detection below only reads.
+[1/20] STEP core.packages - System packages (compiler, pkg-config, ALSA, udev, Vulkan, X11/Wayland libraries)
+         note     Xcode Command Line Tools are required (xcode-select -p); missing: run 'xcode-select --install' and re-run
+         note     Homebrew must be installed (https://brew.sh); this installer does not install it
+         run      brew install git curl unzip xz pkg-config
+[2/20] STEP core.rustup - Rust (rustup, stable)
+         download https://static.rust-lang.org/rustup/dist/x86_64-apple-darwin/rustup-init (~15 MB)
+         verify   sha256 from https://static.rust-lang.org/rustup/dist/x86_64-apple-darwin/rustup-init.sha256
+         cache    <FAKE>/prefix/cache
+         run      rustup-init -y --default-toolchain stable --profile minimal
+[3/20] STEP core.rust-components - Rust components (clippy rustfmt)
+         run      rustup component add clippy rustfmt
+[4/20] STEP core.vulkan - Vulkan runtime (GPU driver)
+         note     libvulkan.so.1 comes from the Vulkan loader + a driver (Mesa or NVIDIA); the package step installs the Mesa drivers.
+[5/20] STEP cpp.packages - CMake + Ninja
+         note     Homebrew must be installed (https://brew.sh); this installer does not install it
+         run      brew install cmake ninja
+[6/20] STEP web.target - Rust target wasm32-unknown-unknown
+         run      rustup target add wasm32-unknown-unknown
+[7/20] STEP android.jdk - JDK 17
+         run      brew install --cask temurin@17
+[8/20] STEP android.cmdline-tools - Android command-line tools (sdkmanager)
+         download https://dl.google.com/android/repository/commandlinetools-mac_x86_64-15859902_latest.zip (~156 MB)
+         verify   sha256 c5a6378ab5cf7e0d5701921405115befff13e9ff7417fb588389338f8bd050f3
+         cache    <FAKE>/prefix/cache
+         extract  to <FAKE>/Library/Android/sdk/cmdline-tools/latest
+[9/20] STEP android.licenses - Android SDK licences
+         licence: the Android SDK (https://developer.android.com/studio/terms) - accepted only with --accept-licenses or your answer
+         run      yes | sdkmanager --sdk_root=<FAKE>/Library/Android/sdk --licenses   (answers 'y' to every licence; only after you accept)
+[10/20] STEP android.packages - Android SDK packages
+         run      sdkmanager --sdk_root=<FAKE>/Library/Android/sdk "platform-tools" "platforms;android-35" "build-tools;36.0.0" "ndk;28.2.13676358"
+[11/20] STEP android.cargo-ndk - cargo-ndk 4.1.2
+         run      cargo install cargo-ndk --version 4.1.2 --locked   (compiles from crates.io, a few minutes; cargo checks crate hashes)
+[12/20] STEP android.target - Rust target aarch64-linux-android
+         run      rustup target add aarch64-linux-android
+[13/20] STEP android.env - Environment: ANDROID_HOME, ANDROID_NDK_HOME (and JAVA_HOME if unset)
+         env      export ANDROID_HOME="<FAKE>/Library/Android/sdk"
+         env      export ANDROID_NDK_HOME="<FAKE>/Library/Android/sdk/ndk/28.2.13676358"
+         env      [ -z "${JAVA_HOME:-}" ] && export JAVA_HOME="<JDK folder>"
+         env      export PISKA_ZIG="<FAKE>/prefix/tools/zig/0.17.1/zig-macos-x86_64-0.17.1/zig"
+         file     <FAKE>/.zprofile  (a delimited block that sources <FAKE>/prefix/env.sh; backup first)
+[14/20] STEP linux-cross.zig - zig 0.17.1
+         download https://ziglang.org/download/0.17.1/zig-x86_64-macos-0.17.1.tar.xz (~57 MB)
+         verify   sha256 9af07b20319fbd0c92ee46ad23e81d6a782b1aaea2cfb8dcbff35f1d2c7ddbb7 (cross-checked with https://ziglang.org/download/index.json)
+         cache    <FAKE>/prefix/cache
+         extract  to <FAKE>/prefix/tools/zig/0.17.1
+[15/20] STEP linux-cross.target - Rust target x86_64-unknown-linux-gnu
+         run      rustup target add x86_64-unknown-linux-gnu
+[16/20] STEP linux-cross.env - Environment: PISKA_ZIG
+         env      export PISKA_ZIG="<FAKE>/prefix/tools/zig/0.17.1/zig-macos-x86_64-0.17.1/zig"
+         file     <FAKE>/.zprofile  (a delimited block that sources <FAKE>/prefix/env.sh; backup first)
+[17/20] STEP engine.source - Engine sources (with the modeler submodule)
+         run      git -C "<REPO>" submodule update --init --recursive   (the modeler is a submodule in modeler/; skipped when it is already there)
+[18/20] STEP engine.build - Build hub, editor, export tool and modeler (release)
+         run      cargo build --release -p piska-hub -p piska-editor -p piska-export   (in <REPO>; 20-40 minutes, about 3 GB)
+         run      cargo build --release --manifest-path modeler/Cargo.toml -p piska-modeler   (in <REPO>)
+[19/20] STEP engine.uninstaller - Uninstall script
+         copy     install.sh + packages.toml to <FAKE>/prefix  (uninstall.sh removes only what the manifest lists)
+[20/20] STEP config.preferences - Editor preferences: Build & Tools paths
+         prefs    tool_cargo = <FAKE>/.cargo/bin/cargo
+         prefs    tool_android_sdk = <FAKE>/Library/Android/sdk
+         prefs    tool_android_ndk = <FAKE>/Library/Android/sdk/ndk/28.2.13676358
+         prefs    tool_java = <JDK folder>
+         prefs    tool_zig = <FAKE>/prefix/tools/zig/0.17.1/zig-macos-x86_64-0.17.1/zig
+         prefs    tool_cmake = <cmake>
+         prefs    tool_cxx = <c++>
+         file     <FAKE>/.config/PiskaEngine/editor.ron  (merged: existing values are kept, a backup .piska-backup-<time> is made first)
+DRY RUN finished: no changes were made.
+exit=0

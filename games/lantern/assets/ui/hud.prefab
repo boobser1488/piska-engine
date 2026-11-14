@@ -1,0 +1,933 @@
+(
+    name: "Hud",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Canvas",
+            fields: {
+                "keyboard_navigation": Bool(false),
+                "match_width_or_height": Float(1.0),
+                "reference_resolution": Vec2(1280.0, 720.0),
+                "scale_factor": Float(1.0),
+                "scale_mode": Enum("ScaleWithScreenSize"),
+                "sort_order": Int(0),
+            },
+        ),
+        (
+            kind: "RectTransform",
+            fields: {
+                "anchor_max": Vec2(1.0, 1.0),
+                "anchor_min": Vec2(0.0, 0.0),
+                "pivot": Vec2(0.5, 0.5),
+                "position": Vec2(0.0, 0.0),
+                "size": Vec2(0.0, 0.0),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Heart0",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.0, 0.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.0, 0.0),
+                        "position": Vec2(24.0, 18.0),
+                        "size": Vec2(44.0, 44.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(1.0, 1.0, 1.0, 1.0),
+                        "corner_radius": Float(0.0),
+                        "raycast_target": Bool(false),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset("eb8030411a22e34da586409dbc3e0bea"),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Heart1",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.0, 0.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.0, 0.0),
+                        "position": Vec2(74.0, 18.0),
+                        "size": Vec2(44.0, 44.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(1.0, 1.0, 1.0, 1.0),
+                        "corner_radius": Float(0.0),
+                        "raycast_target": Bool(false),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset("eb8030411a22e34da586409dbc3e0bea"),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Heart2",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.0, 0.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.0, 0.0),
+                        "position": Vec2(124.0, 18.0),
+                        "size": Vec2(44.0, 44.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(1.0, 1.0, 1.0, 1.0),
+                        "corner_radius": Float(0.0),
+                        "raycast_target": Bool(false),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset("eb8030411a22e34da586409dbc3e0bea"),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "LanternDim",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.0, 0.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.0, 0.0),
+                        "position": Vec2(20.0, 68.0),
+                        "size": Vec2(60.0, 60.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(1.0, 1.0, 1.0, 1.0),
+                        "corner_radius": Float(0.0),
+                        "raycast_target": Bool(false),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset("babe6b76cdeca1cac8a53f08594c408e"),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "LanternLit",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.0, 0.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.0, 0.0),
+                        "position": Vec2(20.0, 68.0),
+                        "size": Vec2(60.0, 60.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(1.0, 1.0, 1.0, 1.0),
+                        "corner_radius": Float(0.0),
+                        "raycast_target": Bool(false),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset("556a87b444277c59270641f7ba6930ff"),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "FireflyText",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.0, 0.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.0, 0.0),
+                        "position": Vec2(88.0, 80.0),
+                        "size": Vec2(130.0, 45.0),
+                    },
+                ),
+                (
+                    kind: "Text",
+                    fields: {
+                        "align": Enum("Left"),
+                        "bold": Bool(true),
+                        "color": Color(0.8549927, 0.8879232, 0.9386859, 1.0),
+                        "font": Asset(""),
+                        "line_spacing": Float(1.0),
+                        "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                        "outline_width": Float(2.0),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                        "shadow_offset": Vec2(0.0, 0.0),
+                        "size": Float(32.0),
+                        "text": Str("0 / 0"),
+                        "vertical_align": Enum("Middle"),
+                        "wrap": Bool(true),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "GoldenIcon",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.0, 0.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.0, 0.0),
+                        "position": Vec2(222.0, 82.0),
+                        "size": Vec2(36.0, 36.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(1.0, 1.0, 1.0, 1.0),
+                        "corner_radius": Float(0.0),
+                        "raycast_target": Bool(false),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset("c5d11f517bf43684c35e08aec58c3412"),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "TimerText",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.5, 0.0),
+                        "anchor_min": Vec2(0.5, 0.0),
+                        "pivot": Vec2(0.5, 0.0),
+                        "position": Vec2(0.0, 16.0),
+                        "size": Vec2(220.0, 42.0),
+                    },
+                ),
+                (
+                    kind: "Text",
+                    fields: {
+                        "align": Enum("Center"),
+                        "bold": Bool(true),
+                        "color": Color(0.8549927, 0.8879232, 0.9386859, 1.0),
+                        "font": Asset(""),
+                        "line_spacing": Float(1.0),
+                        "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                        "outline_width": Float(2.0),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                        "shadow_offset": Vec2(0.0, 0.0),
+                        "size": Float(30.0),
+                        "text": Str("0:00"),
+                        "vertical_align": Enum("Middle"),
+                        "wrap": Bool(true),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "LevelName",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.5, 0.0),
+                        "anchor_min": Vec2(0.5, 0.0),
+                        "pivot": Vec2(0.5, 0.0),
+                        "position": Vec2(0.0, 52.0),
+                        "size": Vec2(420.0, 27.0),
+                    },
+                ),
+                (
+                    kind: "Text",
+                    fields: {
+                        "align": Enum("Center"),
+                        "bold": Bool(false),
+                        "color": Color(0.8, 0.86, 1.0, 0.75),
+                        "font": Asset(""),
+                        "line_spacing": Float(1.0),
+                        "outline_color": Color(0.0, 0.0, 0.0, 0.8),
+                        "outline_width": Float(2.0),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                        "shadow_offset": Vec2(0.0, 0.0),
+                        "size": Float(19.0),
+                        "text": Str(""),
+                        "vertical_align": Enum("Middle"),
+                        "wrap": Bool(true),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "pause_btn",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(1.0, 0.0),
+                        "anchor_min": Vec2(1.0, 0.0),
+                        "pivot": Vec2(1.0, 0.0),
+                        "position": Vec2(-24.0, 18.0),
+                        "size": Vec2(60.0, 52.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(1.0, 1.0, 1.0, 1.0),
+                        "corner_radius": Float(10.0),
+                        "raycast_target": Bool(true),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset(""),
+                    },
+                ),
+                (
+                    kind: "Button",
+                    fields: {
+                        "disabled_color": Color(0.013702081, 0.018500218, 0.03071344, 0.7),
+                        "hover_color": Color(0.033104762, 0.051269468, 0.09758736, 1.0),
+                        "interactable": Bool(true),
+                        "message": Str("pause_btn"),
+                        "normal_color": Color(0.020288562, 0.03071344, 0.05448028, 1.0),
+                        "pressed_color": Color(0.013702081, 0.020288562, 0.035601314, 1.0),
+                    },
+                ),
+            ],
+            children: [
+                (
+                    name: "Label",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(1.0, 1.0),
+                                "anchor_min": Vec2(0.0, 0.0),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(0.0, 0.0),
+                            },
+                        ),
+                        (
+                            kind: "Text",
+                            fields: {
+                                "align": Enum("Center"),
+                                "bold": Bool(true),
+                                "color": Color(0.8549927, 0.8879232, 0.9386859, 1.0),
+                                "font": Asset(""),
+                                "line_spacing": Float(1.0),
+                                "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                                "outline_width": Float(0.0),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                "shadow_offset": Vec2(0.0, 0.0),
+                                "size": Float(21.0),
+                                "text": Str("II"),
+                                "vertical_align": Enum("Middle"),
+                                "wrap": Bool(false),
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        (
+            name: "Banner",
+            active: false,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.5, 1.0),
+                        "anchor_min": Vec2(0.5, 1.0),
+                        "pivot": Vec2(0.5, 1.0),
+                        "position": Vec2(0.0, -190.0),
+                        "size": Vec2(820.0, 64.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(0.02, 0.03, 0.09, 0.82),
+                        "corner_radius": Float(14.0),
+                        "raycast_target": Bool(true),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset(""),
+                    },
+                ),
+            ],
+            children: [
+                (
+                    name: "BannerText",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(1.0, 1.0),
+                                "anchor_min": Vec2(0.0, 0.0),
+                                "pivot": Vec2(0.5, 0.5),
+                                "position": Vec2(0.0, 0.0),
+                                "size": Vec2(-32.0, -8.0),
+                            },
+                        ),
+                        (
+                            kind: "Text",
+                            fields: {
+                                "align": Enum("Center"),
+                                "bold": Bool(false),
+                                "color": Color(0.8549927, 0.8879232, 0.9386859, 1.0),
+                                "font": Asset(""),
+                                "line_spacing": Float(1.0),
+                                "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                                "outline_width": Float(0.0),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                "shadow_offset": Vec2(0.0, 0.0),
+                                "size": Float(23.0),
+                                "text": Str(""),
+                                "vertical_align": Enum("Middle"),
+                                "wrap": Bool(true),
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        (
+            name: "BossBar",
+            active: false,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(0.5, 0.0),
+                        "anchor_min": Vec2(0.5, 0.0),
+                        "pivot": Vec2(0.5, 0.0),
+                        "position": Vec2(0.0, 96.0),
+                        "size": Vec2(560.0, 58.0),
+                    },
+                ),
+                (
+                    kind: "Image",
+                    fields: {
+                        "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                        "border_width": Float(0.0),
+                        "color": Color(0.02, 0.03, 0.09, 0.82),
+                        "corner_radius": Float(12.0),
+                        "raycast_target": Bool(true),
+                        "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                        "shadow_offset": Vec2(0.0, 6.0),
+                        "shadow_size": Float(0.0),
+                        "slice_border": Float(0.0),
+                        "texture": Asset(""),
+                    },
+                ),
+            ],
+            children: [
+                (
+                    name: "Text",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.0),
+                                "anchor_min": Vec2(0.5, 0.0),
+                                "pivot": Vec2(0.5, 0.0),
+                                "position": Vec2(0.0, 6.0),
+                                "size": Vec2(520.0, 28.0),
+                            },
+                        ),
+                        (
+                            kind: "Text",
+                            fields: {
+                                "align": Enum("Center"),
+                                "bold": Bool(true),
+                                "color": Color(0.8549927, 0.8879232, 0.9386859, 1.0),
+                                "font": Asset(""),
+                                "line_spacing": Float(1.0),
+                                "outline_color": Color(0.0, 0.0, 0.0, 0.85),
+                                "outline_width": Float(0.0),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                "shadow_offset": Vec2(0.0, 0.0),
+                                "size": Float(20.0),
+                                "text": Str("Хозяин Тьмы"),
+                                "vertical_align": Enum("Middle"),
+                                "wrap": Bool(true),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "BossHp",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 1.0),
+                                "anchor_min": Vec2(0.5, 1.0),
+                                "pivot": Vec2(0.5, 1.0),
+                                "position": Vec2(0.0, -10.0),
+                                "size": Vec2(520.0, 16.0),
+                            },
+                        ),
+                        (
+                            kind: "ProgressBar",
+                            fields: {
+                                "background_color": Color(0.004391442, 0.006512091, 0.010960094, 1.0),
+                                "corner_radius": Float(6.0),
+                                "direction": Enum("LeftToRight"),
+                                "fill_color": Color(0.80695236, 0.06124607, 0.21223073, 1.0),
+                                "inset": Float(2.0),
+                                "value": Float(1.0),
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        (
+            name: "Card",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(1.0, 1.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.5, 0.5),
+                        "position": Vec2(0.0, 0.0),
+                        "size": Vec2(0.0, 0.0),
+                    },
+                ),
+                (
+                    kind: "CanvasGroup",
+                    fields: {
+                        "alpha": Float(1.0),
+                        "blocks_raycasts": Bool(true),
+                        "interactable": Bool(true),
+                    },
+                ),
+            ],
+            children: [
+                (
+                    name: "CardNumber",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.0),
+                                "anchor_min": Vec2(0.5, 0.0),
+                                "pivot": Vec2(0.5, 0.0),
+                                "position": Vec2(0.0, 150.0),
+                                "size": Vec2(700.0, 37.0),
+                            },
+                        ),
+                        (
+                            kind: "Text",
+                            fields: {
+                                "align": Enum("Center"),
+                                "bold": Bool(false),
+                                "color": Color(1.0, 0.67954254, 0.10224175, 1.0),
+                                "font": Asset(""),
+                                "line_spacing": Float(1.0),
+                                "outline_color": Color(0.0, 0.0, 0.0, 0.9),
+                                "outline_width": Float(3.0),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                "shadow_offset": Vec2(0.0, 0.0),
+                                "size": Float(26.0),
+                                "text": Str(""),
+                                "vertical_align": Enum("Middle"),
+                                "wrap": Bool(true),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "CardTitle",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.0),
+                                "anchor_min": Vec2(0.5, 0.0),
+                                "pivot": Vec2(0.5, 0.0),
+                                "position": Vec2(0.0, 186.0),
+                                "size": Vec2(900.0, 82.0),
+                            },
+                        ),
+                        (
+                            kind: "Text",
+                            fields: {
+                                "align": Enum("Center"),
+                                "bold": Bool(true),
+                                "color": Color(0.8549927, 0.8879232, 0.9386859, 1.0),
+                                "font": Asset(""),
+                                "line_spacing": Float(1.0),
+                                "outline_color": Color(0.0, 0.0, 0.0, 0.9),
+                                "outline_width": Float(4.0),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                "shadow_offset": Vec2(0.0, 0.0),
+                                "size": Float(58.0),
+                                "text": Str(""),
+                                "vertical_align": Enum("Middle"),
+                                "wrap": Bool(true),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "CardSub",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.5, 0.0),
+                                "anchor_min": Vec2(0.5, 0.0),
+                                "pivot": Vec2(0.5, 0.0),
+                                "position": Vec2(0.0, 262.0),
+                                "size": Vec2(900.0, 37.0),
+                            },
+                        ),
+                        (
+                            kind: "Text",
+                            fields: {
+                                "align": Enum("Center"),
+                                "bold": Bool(false),
+                                "color": Color(0.85, 0.9, 1.0, 0.9),
+                                "font": Asset(""),
+                                "line_spacing": Float(1.0),
+                                "outline_color": Color(0.0, 0.0, 0.0, 0.9),
+                                "outline_width": Float(3.0),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.6),
+                                "shadow_offset": Vec2(0.0, 0.0),
+                                "size": Float(26.0),
+                                "text": Str(""),
+                                "vertical_align": Enum("Middle"),
+                                "wrap": Bool(true),
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        (
+            name: "Touch",
+            active: false,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "RectTransform",
+                    fields: {
+                        "anchor_max": Vec2(1.0, 1.0),
+                        "anchor_min": Vec2(0.0, 0.0),
+                        "pivot": Vec2(0.5, 0.5),
+                        "position": Vec2(0.0, 0.0),
+                        "size": Vec2(0.0, 0.0),
+                    },
+                ),
+            ],
+            children: [
+                (
+                    name: "touch_left",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.0, 1.0),
+                                "anchor_min": Vec2(0.0, 1.0),
+                                "pivot": Vec2(0.0, 1.0),
+                                "position": Vec2(28.0, -28.0),
+                                "size": Vec2(120.0, 120.0),
+                            },
+                        ),
+                        (
+                            kind: "Image",
+                            fields: {
+                                "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                                "border_width": Float(0.0),
+                                "color": Color(1.0, 1.0, 1.0, 1.0),
+                                "corner_radius": Float(0.0),
+                                "raycast_target": Bool(false),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                                "shadow_offset": Vec2(0.0, 6.0),
+                                "shadow_size": Float(0.0),
+                                "slice_border": Float(0.0),
+                                "texture": Asset("969b8b782904e16e51458ebc8a8ed033"),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "touch_right",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(0.0, 1.0),
+                                "anchor_min": Vec2(0.0, 1.0),
+                                "pivot": Vec2(0.0, 1.0),
+                                "position": Vec2(164.0, -28.0),
+                                "size": Vec2(120.0, 120.0),
+                            },
+                        ),
+                        (
+                            kind: "Image",
+                            fields: {
+                                "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                                "border_width": Float(0.0),
+                                "color": Color(1.0, 1.0, 1.0, 1.0),
+                                "corner_radius": Float(0.0),
+                                "raycast_target": Bool(false),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                                "shadow_offset": Vec2(0.0, 6.0),
+                                "shadow_size": Float(0.0),
+                                "slice_border": Float(0.0),
+                                "texture": Asset("f9e28b494e91258d51153956191611c2"),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "touch_jump",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(1.0, 1.0),
+                                "anchor_min": Vec2(1.0, 1.0),
+                                "pivot": Vec2(1.0, 1.0),
+                                "position": Vec2(-28.0, -28.0),
+                                "size": Vec2(120.0, 120.0),
+                            },
+                        ),
+                        (
+                            kind: "Image",
+                            fields: {
+                                "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                                "border_width": Float(0.0),
+                                "color": Color(1.0, 1.0, 1.0, 1.0),
+                                "corner_radius": Float(0.0),
+                                "raycast_target": Bool(false),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                                "shadow_offset": Vec2(0.0, 6.0),
+                                "shadow_size": Float(0.0),
+                                "slice_border": Float(0.0),
+                                "texture": Asset("4b5404b0308a392a2522873aa07a276f"),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "touch_dash",
+                    transform: (
+                        position: (0.0, 0.0, 0.0),
+                        rotation: (0.0, 0.0, 0.0),
+                        scale: (1.0, 1.0, 1.0),
+                    ),
+                    components: [
+                        (
+                            kind: "RectTransform",
+                            fields: {
+                                "anchor_max": Vec2(1.0, 1.0),
+                                "anchor_min": Vec2(1.0, 1.0),
+                                "pivot": Vec2(1.0, 1.0),
+                                "position": Vec2(-164.0, -28.0),
+                                "size": Vec2(120.0, 120.0),
+                            },
+                        ),
+                        (
+                            kind: "Image",
+                            fields: {
+                                "border_color": Color(0.025186857, 0.036889445, 0.06480328, 1.0),
+                                "border_width": Float(0.0),
+                                "color": Color(1.0, 1.0, 1.0, 1.0),
+                                "corner_radius": Float(0.0),
+                                "raycast_target": Bool(false),
+                                "shadow_color": Color(0.0, 0.0, 0.0, 0.5),
+                                "shadow_offset": Vec2(0.0, 6.0),
+                                "shadow_size": Float(0.0),
+                                "slice_border": Float(0.0),
+                                "texture": Asset("d75153f5607b0402e32f34709b160379"),
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ],
+)

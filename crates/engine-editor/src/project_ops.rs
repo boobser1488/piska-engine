@@ -2,6 +2,7 @@
 //! кладут [`Cmd`] в очередь; выполняет их [`Editor::project_run`] в конце кадра, и после
 //! любой правки файлов база ассетов пересканируется один раз, а не по разу на файл.
 
+use crate::i18n::{tr_s, trf, trn};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 
@@ -258,7 +259,7 @@ impl Editor {
                         log::info!("renamed `{from}` to `{to}`");
                     }
                     Err(why) => {
-                        self.project_toast(ctx, ToastKind::Error, format!("Cannot rename `{}`: {why}", file_name(&from)));
+                        self.project_toast(ctx, ToastKind::Error, trf!("Cannot rename `{p0}`: {why}", p0 = file_name(&from), why = why));
                     }
                 }
             }
@@ -274,7 +275,7 @@ impl Editor {
                         Err(why) => outcome.failed.push((key.clone(), why)),
                     }
                 }
-                self.project_finish_copy(ctx, &outcome, "Duplicated", keys.len());
+                self.project_finish_copy(ctx, &outcome, tr_s("Duplicated"), keys.len());
             }
             Cmd::Delete(keys) => {
                 if keys.is_empty() {
@@ -289,18 +290,18 @@ impl Editor {
             Cmd::DeletePermanently(keys) => {
                 let outcome = project_fs::delete_permanently(&root, &keys);
                 let gone: Vec<String> = outcome.done.iter().map(|(p, _)| p.clone()).collect();
-                self.project_after_delete(ctx, &gone, &outcome, keys.len(), "Deleted");
+                self.project_after_delete(ctx, &gone, &outcome, keys.len(), tr_s("Deleted"));
             }
             Cmd::Move { paths, to, copy } => self.project_move(ctx, &root, paths, &to, copy),
             Cmd::Create { kind, folder } => self.project_create(ctx, &root, kind, &folder),
             Cmd::CopyPath(key) => {
                 ctx.copy_text(format!("Assets/{key}"));
-                self.project_toast(ctx, ToastKind::Info, format!("Copied the path `Assets/{key}`"));
+                self.project_toast(ctx, ToastKind::Info, trf!("Copied the path `Assets/{key}`", key = key));
             }
             Cmd::CopyGuid(key) => {
                 if let Some(asset) = self.assets.iter().find(|a| a.path == key) {
                     ctx.copy_text(asset.guid.to_string());
-                    self.project_toast(ctx, ToastKind::Info, format!("Copied the GUID of `{}`", file_name(&key)));
+                    self.project_toast(ctx, ToastKind::Info, trf!("Copied the GUID of `{}`", file_name(&key)));
                 }
             }
             Cmd::Reveal(key) => self.apply(Action::RevealAsset(key)),
@@ -400,13 +401,13 @@ impl Editor {
                 self.project.clipboard = None;
             }
             self.project_after_moves(&moves);
-            let text = outcome.summary("Moved", clipboard.paths.len());
+            let text = outcome.summary(tr_s("Moved"), clipboard.paths.len());
             let kind = if outcome.is_clean() { ToastKind::Info } else { ToastKind::Warn };
             self.project_toast(ctx, kind, text);
             let new: Vec<String> = outcome.done.into_iter().map(|(_, to)| to).collect();
             self.project_select_new(new);
         } else {
-            self.project_finish_copy(ctx, &outcome, "Pasted", clipboard.paths.len());
+            self.project_finish_copy(ctx, &outcome, tr_s("Pasted"), clipboard.paths.len());
         }
     }
 
@@ -437,7 +438,7 @@ impl Editor {
             }
         }
         if copy {
-            self.project_finish_copy(ctx, &outcome, "Copied", paths.len());
+            self.project_finish_copy(ctx, &outcome, tr_s("Copied"), paths.len());
             return;
         }
         let moves: Vec<(String, String)> = outcome.done.iter().filter(|(a, b)| a != b).cloned().collect();
@@ -446,7 +447,7 @@ impl Editor {
         }
         self.project_after_moves(&moves);
         let kind = if outcome.is_clean() { ToastKind::Info } else { ToastKind::Warn };
-        self.project_toast(ctx, kind, outcome.summary("Moved", paths.len()));
+        self.project_toast(ctx, kind, outcome.summary(tr_s("Moved"), paths.len()));
         // Выделение следует за перенесённым, пока оно в открытом каталоге; иначе сбрасывается.
         let moved: Vec<String> = self.project.selection.iter().filter_map(|p| remap(p, &moves)).collect();
         self.project.selection.clear();
@@ -477,14 +478,14 @@ impl Editor {
         for key in valid {
             let still = project_fs::safe_join(root, &key).is_ok_and(|p| p.exists());
             if still {
-                let why = result.clone().err().unwrap_or_else(|| "the Recycle Bin did not take it".to_string());
+                let why = result.clone().err().unwrap_or_else(|| tr_s("the Recycle Bin did not take it").to_string());
                 outcome.failed.push((key, why));
             } else {
                 outcome.done.push((key, String::new()));
             }
         }
         let gone: Vec<String> = outcome.done.iter().map(|(p, _)| p.clone()).collect();
-        self.project_after_delete(ctx, &gone, &outcome, keys.len(), "Moved to the Recycle Bin:");
+        self.project_after_delete(ctx, &gone, &outcome, keys.len(), tr_s("Moved to the Recycle Bin:"));
     }
 
     fn project_after_delete(&mut self, ctx: &egui::Context, gone: &[String], outcome: &Outcome, total: usize, verb: &str) {
@@ -505,7 +506,7 @@ impl Editor {
         }
         self.project_refresh();
         let text = if outcome.is_clean() {
-            format!("{verb} {} {}", outcome.done.len(), if outcome.done.len() == 1 { "item" } else { "items" })
+            outcome.done_text(verb)
         } else {
             outcome.summary(verb, total)
         };
@@ -525,7 +526,7 @@ impl Editor {
                         self.project.pending_rename = Some(path);
                     }
                     Err(why) => {
-                        self.project_toast(ctx, ToastKind::Error, format!("Cannot create a folder: {why}"));
+                        self.project_toast(ctx, ToastKind::Error, trf!("Cannot create a folder: {why}", why = why));
                     }
                 }
             }
@@ -539,7 +540,7 @@ impl Editor {
                         self.project.pending_rename = Some(join(folder, &name));
                     }
                     Err(err) => {
-                        self.project_toast(ctx, ToastKind::Error, format!("Cannot create a scene in `{folder}`: {err}"));
+                        self.project_toast(ctx, ToastKind::Error, trf!("Cannot create a scene in `{folder}`: {err}", folder = folder, err = err));
                     }
                 }
             }
@@ -567,7 +568,7 @@ impl Editor {
         }
         // Пересканирование перечитывает `.meta` и сбрасывает предпросмотры и кэши рендера.
         self.project_refresh();
-        self.project_toast(ctx, ToastKind::Info, format!("Reimported {count} {}", if count == 1 { "asset" } else { "assets" }));
+        self.project_toast(ctx, ToastKind::Info, trf!("Reimported {count} {p0}", p0 = if count == 1 { "asset" } else { "assets" }, count = count));
     }
 
     /// «Find References In Scene»: выделить объект открытой сцены, который использует ассет.
@@ -591,14 +592,14 @@ impl Editor {
             Some(first) => {
                 self.selection = Some(first);
                 let text = if hits.len() == 1 {
-                    format!("`{name}` is used by 1 object in the open scene; it is selected")
+                    trf!("`{name}` is used by 1 object in the open scene; it is selected", name = name)
                 } else {
-                    format!("`{name}` is used by {} objects in the open scene; the first one is selected", hits.len())
+                    trn!("`{name}` is used by {n} object in the open scene; the first one is selected", "`{name}` is used by {n} objects in the open scene; the first one is selected", hits.len(), name = name)
                 };
                 self.project_toast(ctx, ToastKind::Info, text);
             }
             None => {
-                self.project_toast(ctx, ToastKind::Info, format!("No object in the open scene uses `{name}`"));
+                self.project_toast(ctx, ToastKind::Info, trf!("No object in the open scene uses `{name}`", name = name));
             }
         }
     }
@@ -608,7 +609,7 @@ impl Editor {
             return;
         }
         if self.project.import.is_some() {
-            self.project_toast(ctx, ToastKind::Warn, "Another import is still running; drop the files again when it finishes");
+            self.project_toast(ctx, ToastKind::Warn, tr_s("Another import is still running; drop the files again when it finishes"));
             return;
         }
         let (tx, rx) = mpsc::channel();
@@ -620,7 +621,7 @@ impl Editor {
             });
             let _ = tx.send(ImportMsg::Done(outcome));
         });
-        let toast = self.project_toast(ctx, ToastKind::Info, format!("Importing into Assets/{dest}…"));
+        let toast = self.project_toast(ctx, ToastKind::Info, trf!("Importing into Assets/{dest}…", dest = dest));
         if let Some(t) = self.project.toasts.iter_mut().find(|t| t.id == toast) {
             t.progress = Some((0, 0));
         }
@@ -651,7 +652,7 @@ impl Editor {
         self.project_refresh();
         let total = outcome.done.len() + outcome.failed.len();
         let kind = if outcome.is_clean() { ToastKind::Info } else { ToastKind::Warn };
-        self.project_toast(ctx, kind, outcome.summary("Imported", total));
+        self.project_toast(ctx, kind, outcome.summary(tr_s("Imported"), total));
         let new: Vec<String> = outcome.done.into_iter().map(|(_, to)| to).collect();
         if self.project.folder != dest {
             self.project.go(&dest);

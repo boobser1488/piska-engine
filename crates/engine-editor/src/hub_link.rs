@@ -5,8 +5,9 @@
 //! `hub.alive` — хаб работает, `hub.request` — просьба (`show` / `open <путь>`),
 //! `recent.txt` — недавние проекты. Формат описан в `docs/api/hub.md`, §8.
 
+use crate::i18n::{tr_s, trf};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::Child;
 
 use crate::state::Editor;
 use crate::EditorError;
@@ -67,16 +68,16 @@ fn launch_hub(workspace: Option<&Path>, open: Option<&Path>) -> Result<Child, St
         .and_then(|exe| exe.parent().map(|dir| dir.join(format!("piska-hub{}", std::env::consts::EXE_SUFFIX))))
         .filter(|hub| hub.is_file());
     let mut command = match (exe, workspace) {
-        (Some(hub), _) => Command::new(hub),
+        (Some(hub), _) => engine_build::host::command(hub),
         (None, Some(workspace)) => {
-            let mut cargo = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+            let mut cargo = engine_build::host::command(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
             cargo.args(["run", "-p", "piska-hub", "--"]).current_dir(workspace);
             cargo
         }
         (None, None) => {
             return Err(
-                "Piska Hub was not found next to the editor and the engine workspace is unknown; \
-                 start it with `cargo run -p piska-hub` in the engine folder"
+                tr_s("Piska Hub was not found next to the editor and the engine workspace is unknown; \
+                 start it with `cargo run -p piska-hub` in the engine folder")
                     .to_string(),
             )
         }
@@ -84,7 +85,7 @@ fn launch_hub(workspace: Option<&Path>, open: Option<&Path>) -> Result<Child, St
     if let Some(open) = open {
         command.arg("--open").arg(open);
     }
-    command.spawn().map_err(|e| format!("cannot start Piska Hub: {e}"))
+    command.spawn().map_err(|e| trf!("cannot start Piska Hub: {e}", e = e))
 }
 
 impl Editor {
@@ -101,7 +102,7 @@ impl Editor {
                 None => "show\n".to_string(),
             };
             std::fs::write(dir.join("hub.request"), request)
-                .map_err(|e| EditorError::Other(format!("cannot reach Piska Hub through `{}`: {e}", dir.display())))?;
+                .map_err(|e| EditorError::Other(trf!("cannot reach Piska Hub through `{p0}`: {e}", p0 = dir.display(), e = e)))?;
         } else {
             let child = launch_hub(self.config.workspace.as_deref(), open.as_deref()).map_err(EditorError::Other)?;
             self.set_successor(child);

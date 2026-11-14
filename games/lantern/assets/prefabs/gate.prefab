@@ -1,0 +1,37 @@
+(
+    name: "Gate",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.0),
+                "sheet_columns": Int(1),
+                "sheet_rows": Int(1),
+                "size": Vec2(1.0, 3.0),
+                "sorting_layer": Int(1),
+                "texture": Asset("43ba844987f628a5fd09eedc50c1bd04"),
+                "uv_offset": Vec2(0.0, 0.0),
+                "uv_size": Vec2(1.0, 1.0),
+            },
+        ),
+        (
+            kind: "Gate",
+            fields: {
+                "height": Int(3),
+                "nag": Float(0.0),
+                "need": Int(5),
+                "open": Bool(false),
+            },
+        ),
+    ],
+)

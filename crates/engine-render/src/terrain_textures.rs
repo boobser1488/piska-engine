@@ -113,21 +113,26 @@ fn material(layer: u32, u: f32, v: f32) -> ([f32; 3], f32) {
             (scale3(c, 0.85 + 0.3 * fine), (0.35 * n + 0.65 * pebble.sqrt()).min(1.0))
         }
         LAYER_ROCK => {
+            // Без синусных «слоёв» образца: при повторе плитки и трипланарной проекции они
+            // давали ровные волнистые борозды по всем склонам. Слоистость — из шума,
+            // трещины тоньше и мягче, мелкий бугристый рельеф камня — тоже шум.
             let n = fbm(u, v, 4, 6, 31);
-            let (f1, f2) = worley(u, v, 6, 32);
-            let crack = smooth(0.0, 0.07, f2 - f1);
-            let strata = ((v * 18.0 + n * 3.0) * TAU).sin() * 0.5 + 0.5;
+            let lumps = fbm(u, v, 16, 3, 34);
+            let (f1, f2) = worley(u, v, 9, 32);
+            let crack = smooth(0.0, 0.035, f2 - f1);
+            let strata = fbm(u, v, 8, 3, 33);
             let base = mix3([0.30, 0.29, 0.27], [0.52, 0.50, 0.46], n);
-            let c = scale3(base, (0.85 + 0.15 * strata) * (0.4 + 0.6 * crack));
-            (c, (0.7 * n + 0.3 * strata) * (0.3 + 0.7 * crack) + 0.2 * f1.min(1.0))
+            let c = scale3(base, (0.88 + 0.12 * strata) * (0.75 + 0.25 * crack) * (0.9 + 0.2 * lumps));
+            (c, (0.55 * n + 0.25 * lumps + 0.2 * strata) * (0.7 + 0.3 * crack))
         }
         LAYER_SAND => {
+            // Рябь — из искажённого шума, а не из синуса: ни полос, ни повторяющихся волн.
             let n = fbm(u, v, 16, 4, 41);
             let warp = fbm(u, v, 4, 3, 42);
-            let ripple = ((v * 16.0 + warp * 3.0) * TAU).sin() * 0.5 + 0.5;
+            let ripple = fbm(u + warp * 0.25, v, 32, 2, 44);
             let grain = fbm(u, v, 256, 1, 43);
             let c = mix3([0.70, 0.62, 0.45], [0.84, 0.77, 0.60], n);
-            (scale3(c, 0.9 + 0.08 * ripple + 0.1 * (grain - 0.5)), 0.6 * ripple + 0.4 * n)
+            (scale3(c, 0.92 + 0.06 * ripple + 0.1 * (grain - 0.5)), 0.4 * ripple + 0.6 * n)
         }
         LAYER_SNOW => {
             let n = fbm(u, v, 8, 5, 51);
@@ -146,8 +151,8 @@ fn normal_strength(layer: u32) -> f32 {
     match layer {
         LAYER_GRASS => 2.0,
         LAYER_DIRT => 3.5,
-        LAYER_ROCK => 5.0,
-        LAYER_SAND => 1.5,
+        LAYER_ROCK => 2.5,
+        LAYER_SAND => 1.0,
         LAYER_SNOW => 1.2,
         _ => 1.5,
     }
@@ -324,4 +329,44 @@ pub(crate) fn downsample(src: &[u8], size: usize, is_normal: bool) -> Vec<u8> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Отношение энергии наклона нормали вдоль v к энергии вдоль u. У шумовой фактуры
+    /// оно около 1; параллельные полосы дают сильный перекос. Прежние синусные «слои»
+    /// скалы давали 2.7, рябь песка — 14: на склонах это было видно ровными «волнами».
+    fn tilt_anisotropy(normal: &[u8]) -> f32 {
+        let (mut along_u, mut along_v) = (0.0f64, 0.0f64);
+        for px in normal.chunks_exact(4) {
+            let (x, y) = (px[0] as f64 / 255.0 - 0.5, px[1] as f64 / 255.0 - 0.5);
+            along_u += x * x;
+            along_v += y * y;
+        }
+        (along_v / along_u.max(1e-12)) as f32
+    }
+
+    fn ratio_ok(r: f32) -> bool {
+        (1.0 / 1.6..=1.6).contains(&r)
+    }
+
+    #[test]
+    fn layer_textures_have_no_parallel_waves() {
+        // Сам детектор: шум с параллельными синусными полосами он ловит.
+        let n = TEX_SIZE as usize;
+        let striped: Vec<f32> = (0..n * n)
+            .map(|i| {
+                let (u, v) = ((i % n) as f32 / n as f32, (i / n) as f32 / n as f32);
+                0.6 * fbm(u, v, 8, 4, 5) + 0.4 * (((v * 16.0) * TAU).sin() * 0.5 + 0.5)
+            })
+            .collect();
+        assert!(!ratio_ok(tilt_anisotropy(&normals_from_height(&striped, n, 2.0))), "the detector sees stripes");
+
+        for (layer, name) in [(LAYER_GRASS, "grass"), (LAYER_DIRT, "dirt"), (LAYER_ROCK, "rock"), (LAYER_SAND, "sand"), (LAYER_SNOW, "snow")] {
+            let r = tilt_anisotropy(&builtin_layers()[layer as usize].normal);
+            assert!(ratio_ok(r), "{name}: normal tilt along v / along u = {r:.2} — parallel waves in the texture");
+        }
+    }
 }

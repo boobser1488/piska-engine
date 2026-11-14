@@ -2,7 +2,8 @@
 //! слоёв — треугольник флажков, как в Unity: строки — слои сверху вниз, столбцы — те же
 //! слои справа налево, клетка (строка, столбец) — сталкиваются ли эти два слоя.
 
-use egui::{pos2, vec2, Align2, Rect, Sense, Stroke};
+use crate::i18n::{tr_s, trf};
+use egui::{pos2, vec2, Align2, Rect, Sense};
 use engine_core::settings::{LayerMatrix, Physics2dSettings, Physics3dSettings, TagsAndLayers};
 
 use super::SettingsUi;
@@ -27,10 +28,10 @@ pub(super) fn physics2d(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     let draft = editor.project_draft_mut();
     let names = draft.tags_and_layers.clone();
     let p = &mut draft.physics2d;
-    s.group("World");
-    s.vector("Gravity", "Acceleration of every 2D body, metres per second squared.", &mut p.gravity, d.gravity, 0.05);
+    s.group(tr_s("World"));
+    s.vector(tr_s("Gravity"), tr_s("Acceleration of every 2D body, metres per second squared."), &mut p.gravity, d.gravity, 0.05);
     solver(s, &mut p.solver_iterations, &mut p.sleep_linear_threshold, &mut p.sleep_angular_threshold, (d.solver_iterations, d.sleep_linear_threshold, d.sleep_angular_threshold));
-    s.group("Collisions");
+    s.group(tr_s("Collisions"));
     matrix(s, 2, &mut p.layer_matrix, &names);
 }
 
@@ -39,18 +40,18 @@ pub(super) fn physics3d(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     let draft = editor.project_draft_mut();
     let names = draft.tags_and_layers.clone();
     let p = &mut draft.physics3d;
-    s.group("World");
-    s.vector("Gravity", "Acceleration of every 3D body, metres per second squared.", &mut p.gravity, d.gravity, 0.05);
+    s.group(tr_s("World"));
+    s.vector(tr_s("Gravity"), tr_s("Acceleration of every 3D body, metres per second squared."), &mut p.gravity, d.gravity, 0.05);
     solver(s, &mut p.solver_iterations, &mut p.sleep_linear_threshold, &mut p.sleep_angular_threshold, (d.solver_iterations, d.sleep_linear_threshold, d.sleep_angular_threshold));
-    s.group("Collisions");
+    s.group(tr_s("Collisions"));
     matrix(s, 3, &mut p.layer_matrix, &names);
 }
 
 fn solver(s: &mut SettingsUi<'_>, iterations: &mut u32, linear: &mut f32, angular: &mut f32, d: (u32, f32, f32)) {
-    s.group("Solver");
+    s.group(tr_s("Solver"));
     s.number(
-        "Solver iterations",
-        "Contact solver passes per step: more keeps stacks of bodies stiffer and costs more time.",
+        tr_s("Solver iterations"),
+        tr_s("Contact solver passes per step: more keeps stacks of bodies stiffer and costs more time."),
         iterations,
         d.0,
         1..=64,
@@ -58,8 +59,8 @@ fn solver(s: &mut SettingsUi<'_>, iterations: &mut u32, linear: &mut f32, angula
         "",
     );
     s.number(
-        "Sleep threshold (linear)",
-        "Speed below which a body may fall asleep and stop costing time (Rapier's normalized threshold). 0: never.",
+        tr_s("Sleep threshold (linear)"),
+        tr_s("Speed below which a body may fall asleep and stop costing time (Rapier's normalized threshold). 0: never."),
         linear,
         d.1,
         0.0..=10.0,
@@ -67,13 +68,13 @@ fn solver(s: &mut SettingsUi<'_>, iterations: &mut u32, linear: &mut f32, angula
         "",
     );
     s.number(
-        "Sleep threshold (angular)",
-        "Turning speed below which a body may fall asleep, in radians per second. 0: never.",
+        tr_s("Sleep threshold (angular)"),
+        tr_s("Turning speed below which a body may fall asleep, in radians per second. 0: never."),
         angular,
         d.2,
         0.0..=10.0,
         0.01,
-        " rad/s",
+        tr_s(" rad/s"),
     );
 }
 
@@ -84,15 +85,15 @@ fn matrix(s: &mut SettingsUi<'_>, dimension: u8, matrix: &mut LayerMatrix, names
         .map(|i| (i, names.layer_name(i)))
         .collect();
     let row = s.block(
-        "Layer collision matrix",
-        "Ticked: bodies on these two layers collide. Name more layers on the Tags and Layers page to see them here.",
+        tr_s("Layer collision matrix"),
+        tr_s("Ticked: bodies on these two layers collide. Name more layers on the Tags and Layers page to see them here."),
         !matrix.is_default(),
         |ui| {
             ui.horizontal(|ui| {
-                if theme::ghost_button(ui, "Enable All").clicked() {
+                if theme::ghost_button(ui, tr_s("Enable All")).clicked() {
                     *matrix = LayerMatrix::default();
                 }
-                if theme::ghost_button(ui, "Disable All").clicked() {
+                if theme::ghost_button(ui, tr_s("Disable All")).clicked() {
                     for (a, _) in &layers {
                         for (b, _) in &layers {
                             matrix.set(*a, *b, false);
@@ -162,12 +163,12 @@ fn paint_matrix(ui: &mut egui::Ui, dimension: u8, matrix: &mut LayerMatrix, laye
             let box_rect = cell.shrink(2.5);
             let fill = if on { theme::accent_soft() } else { theme::BG_INSET };
             let stroke = if click.hovered() { theme::LINE_HOVER } else { theme::LINE_STRONG };
-            painter.rect(box_rect, theme::R_S, fill, Stroke::new(1.0_f32, stroke));
+            crate::controls::paint_frame(&painter, box_rect, theme::R_S, fill, stroke);
             if on {
                 icons::paint(&painter, box_rect.shrink(1.5), Icon::Check, theme::TEXT_STRONG);
             }
             let other = layers[column_layer(c)].1.clone();
-            if click.on_hover_text(format!("{name} × {other}")).clicked() {
+            if click.on_hover_text(trf!("{name} × {other}", name = name, other = other)).clicked() {
                 matrix.set(*layer_a, layer_b, !on);
             }
         }

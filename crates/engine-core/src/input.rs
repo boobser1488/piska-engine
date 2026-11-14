@@ -349,6 +349,13 @@ pub struct Input {
     fixed_pad_pressed: HashSet<(GamepadId, PadInput)>,
     fixed_pad_released: HashSet<(GamepadId, PadInput)>,
     axis_press_threshold: f32,
+    /// Геймпады «не у игры» (в редакторе фокус не на окне Game): кнопки отпущены,
+    /// стики в нуле, новые события не доходят.
+    pads_suspended: bool,
+    /// Игра просит захватить курсор (`set_cursor_captured(true)`).
+    cursor_capture_requested: bool,
+    /// Хозяин (окно, вкладка браузера, вид Game редактора) курсор действительно захватил.
+    cursor_captured: bool,
 }
 
 impl Default for Input {
@@ -384,6 +391,9 @@ impl Default for Input {
             fixed_pad_pressed: HashSet::new(),
             fixed_pad_released: HashSet::new(),
             axis_press_threshold: 0.5,
+            pads_suspended: false,
+            cursor_capture_requested: false,
+            cursor_captured: false,
         };
         input.set_axis_bindings(
             "Horizontal",
@@ -864,10 +874,46 @@ impl Input {
         }
     }
 
-    /// Новая позиция курсора; смещение за кадр копится в `mouse_delta`.
+    /// Новая позиция курсора; смещение за кадр копится в `mouse_delta`. Пока курсор
+    /// захвачен ([`Input::is_cursor_captured`]), смещение сюда не идёт: его приносят сырые
+    /// события мыши через [`Input::add_mouse_delta`] (иначе движение посчиталось бы дважды).
     pub fn set_mouse_position(&mut self, position: Vec2) {
-        self.mouse_delta += position - self.mouse_position;
+        if !self.cursor_captured {
+            self.mouse_delta += position - self.mouse_position;
+        }
         self.mouse_position = position;
+    }
+
+    // ----- захват курсора (взгляд мышью в играх от первого лица) -----
+
+    /// Попросить захватить курсор: он прячется и не упирается в край окна, а
+    /// [`Input::mouse_delta`] приносит сырое относительное движение мыши. `false` —
+    /// отпустить. Это **просьба**: применяет её хозяин игры (окно — в конце кадра, в
+    /// браузере — Pointer Lock, редактор — только пока вид Game в фокусе и игра идёт).
+    /// Сбывшийся захват видно по [`Input::is_cursor_captured`]. Потеря фокуса,
+    /// сворачивание, пауза или остановка в редакторе ([`Input::release_all`]) снимают и
+    /// захват, и просьбу: игра узнаёт об этом по `is_cursor_captured() == false` и
+    /// просит снова, когда игрок вернётся (например, по клику «Продолжить»).
+    pub fn set_cursor_captured(&mut self, captured: bool) {
+        self.cursor_capture_requested = captured;
+    }
+
+    /// Игра просит захватить курсор (последний вызов [`Input::set_cursor_captured`]).
+    pub fn cursor_capture_requested(&self) -> bool {
+        self.cursor_capture_requested
+    }
+
+    /// Курсор сейчас захвачен хозяином игры.
+    pub fn is_cursor_captured(&self) -> bool {
+        self.cursor_captured
+    }
+
+    /// Для хозяина игры (бэкенд окна, редактор, тесты): захват применён (`true`) или
+    /// снят (`false`). Хозяин сравнивает [`Input::cursor_capture_requested`] с этим
+    /// состоянием, применяет разницу и сообщает итог сюда. Отказ (платформа не умеет,
+    /// вид Game не в фокусе) — просто не ставить `true`.
+    pub fn set_cursor_capture_state(&mut self, captured: bool) {
+        self.cursor_captured = captured;
     }
 
     /// Добавить смещение мыши без перемещения курсора (захваченный курсор, сырые события).
@@ -946,12 +992,42 @@ impl Input {
 
     pub fn set_gamepad_button(&mut self, pad: GamepadId, button: GamepadButton, down: bool) {
         self.ensure_pad(pad);
+        if self.pads_suspended {
+            return;
+        }
         self.pad_set(pad, PadInput::Button(button), down);
+    }
+
+    /// Отдать геймпады игре или забрать (`true` — забрать). Редактор забирает их, пока
+    /// фокус клавиатуры не на окне Game: всё нажатое отпускается (с событием «отпущено»),
+    /// стики встают в ноль, а события до возврата не доходят — ничего не «залипает».
+    pub fn set_gamepads_suspended(&mut self, suspended: bool) {
+        if self.pads_suspended == suspended {
+            return;
+        }
+        if suspended {
+            let held: Vec<_> = self.pad_held.iter().copied().collect();
+            for (pad, input) in held {
+                self.pad_set(pad, input, false);
+            }
+            for state in self.pads.values_mut() {
+                state.axes.clear();
+            }
+        }
+        self.pads_suspended = suspended;
+    }
+
+    /// Геймпады забраны у игры ([`Input::set_gamepads_suspended`]).
+    pub fn gamepads_suspended(&self) -> bool {
+        self.pads_suspended
     }
 
     /// Значение оси геймпада (стики −1..1, триггеры 0..1; вверх и вправо — плюс).
     pub fn set_gamepad_axis(&mut self, pad: GamepadId, axis: GamepadAxis, value: f32) {
         self.ensure_pad(pad);
+        if self.pads_suspended {
+            return;
+        }
         let value = if value.is_finite() { value.clamp(-1.0, 1.0) } else { 0.0 };
         if let Some(state) = self.pads.get_mut(&pad) {
             state.axes.insert(axis, value);
@@ -992,6 +1068,8 @@ impl Input {
     /// Геймпады остаются подключёнными и сохраняют положение стиков: бэкенд присылает
     /// только изменения.
     pub fn release_all(&mut self) {
+        // Курсор отпускается вместе с кнопками; хозяин игры вернёт его системе.
+        self.cursor_capture_requested = false;
         self.held.clear();
         self.pressed.clear();
         self.released.clear();

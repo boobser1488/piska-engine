@@ -14,6 +14,8 @@ pub enum Request {
     Show,
     /// Открыть проект в редакторе.
     Open(PathBuf),
+    /// Открыть страницу импорта с этим каталогом или файлом проекта (двойной щелчок по файлу).
+    Import(PathBuf),
 }
 
 /// Разобрать текст `hub.request`.
@@ -21,6 +23,10 @@ pub fn parse_request(text: &str) -> Option<Request> {
     let line = text.lines().map(str::trim).find(|line| !line.is_empty())?;
     if line == "show" {
         return Some(Request::Show);
+    }
+    if let Some(path) = line.strip_prefix("import ") {
+        let path = path.trim();
+        return (!path.is_empty()).then(|| Request::Import(PathBuf::from(path)));
     }
     let path = line.strip_prefix("open ")?.trim();
     (!path.is_empty()).then(|| Request::Open(PathBuf::from(path)))
@@ -70,6 +76,7 @@ pub fn send_request(dir: &Path, request: &Request) -> std::io::Result<()> {
     let text = match request {
         Request::Show => "show\n".to_string(),
         Request::Open(path) => format!("open {}\n", path.display()),
+        Request::Import(path) => format!("import {}\n", path.display()),
     };
     std::fs::write(dir.join(paths::REQUEST_FILE), text)
 }
@@ -85,6 +92,8 @@ mod tests {
         send_request(&dir, &Request::Open(PathBuf::from("C:/games/my game"))).unwrap();
         assert_eq!(take_request(&dir), Some(Request::Open(PathBuf::from("C:/games/my game"))));
         assert_eq!(take_request(&dir), None, "a request is taken once");
+        send_request(&dir, &Request::Import(PathBuf::from("C:/x/my game.pks"))).unwrap();
+        assert_eq!(take_request(&dir), Some(Request::Import(PathBuf::from("C:/x/my game.pks"))));
         assert_eq!(parse_request("\nshow\n"), Some(Request::Show));
         assert_eq!(parse_request("open "), None);
         assert_eq!(parse_request("dance"), None);

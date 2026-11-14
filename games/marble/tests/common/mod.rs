@@ -2,8 +2,7 @@
 #![allow(dead_code)]
 
 use engine::prelude::*;
-use marble::kit::{WpKind, Waypoint};
-use marble::{Action, Boot, GameState, Screen, ViewState};
+use marble::{Action, Boot, GameState, Screen, ViewState, Waypoint, WpKind};
 
 /// Шаг тестов: как 60 кадров в секунду.
 pub const DT: f32 = 1.0 / 60.0;
@@ -35,18 +34,41 @@ pub fn act(app: &mut App, action: Action) {
     app.run_headless(1, DT);
 }
 
-/// Открыть все цеха, запустить `index` и дождаться конца отсчёта.
+/// Прокрутить кадры, пока игра не окажется на нужном экране (сцены меняются в конце кадра).
+pub fn run_until(app: &mut App, screen: Screen, max_frames: u32) {
+    for _ in 0..max_frames {
+        if state(app).screen == screen && !state(app).loading {
+            return;
+        }
+        app.run_headless(1, DT);
+    }
+    panic!("the game never reached {screen:?}, it is on {:?}", state(app).screen);
+}
+
+/// Открыть все цеха, запустить `index` из меню и дождаться конца отсчёта.
 pub fn start_course(app: &mut App, index: usize) {
-    state_mut(app).progress.unlocked = marble::courses::COUNT;
+    state_mut(app).progress.unlocked = marble::COUNT;
+    if state(app).screen != Screen::Menu && state(app).screen != Screen::Select {
+        to_menu(app);
+    }
     if state(app).screen != Screen::Select {
-        // Из меню, паузы и результатов путь в выбор цеха разный; тесты начинают с меню.
         act(app, Action::SelectScreen);
     }
     act(app, Action::Course(index));
-    assert_eq!(state(app).screen, Screen::Countdown, "the course starts with a countdown");
+    run_until(app, Screen::Countdown, 20);
+    assert_eq!(state(app).course, index, "the scene of course {} is loaded", index + 1);
     // Отсчёт 2.4 с.
     app.run_headless(150, DT);
     assert_eq!(state(app).screen, Screen::Playing, "the countdown ended");
+}
+
+/// Из заезда в главное меню (через паузу).
+pub fn to_menu(app: &mut App) {
+    if state(app).screen == Screen::Playing || state(app).screen == Screen::Countdown {
+        act(app, Action::Pause);
+    }
+    act(app, Action::ToMenu);
+    run_until(app, Screen::Menu, 20);
 }
 
 pub fn ball_id(app: &App) -> GameObjectId {
@@ -101,10 +123,7 @@ impl Bot {
     /// Выставить ввод на ближайший кадр.
     pub fn drive(&mut self, app: &mut App) {
         let pad = GamepadId(0);
-        let route: Vec<Waypoint> = match &state(app).built {
-            Some(built) => built.route.clone(),
-            None => return,
-        };
+        let route: Vec<Waypoint> = state(app).route.clone();
         if route.is_empty() || state(app).screen != Screen::Playing {
             app.world.input.set_gamepad_axis(pad, GamepadAxis::LeftStickX, 0.0);
             app.world.input.set_gamepad_axis(pad, GamepadAxis::LeftStickY, 0.0);
@@ -122,7 +141,7 @@ impl Bot {
         let flat = |v: Vec3| Vec3::new(v.x, 0.0, v.z);
         let mut jump = false;
         let mut hold = false;
-        let mut target = route[self.next.min(route.len() - 1)].pos;
+        let mut target = route[self.next.min(route.len() - 1)].position();
         let mut kind = route[self.next.min(route.len() - 1)].kind;
 
         // Стоим на платформе: центрируемся на ней, пока рядом не окажется следующая точка.
@@ -142,6 +161,7 @@ impl Bot {
         }
 
         if let WpKind::WaitMover(at) = kind {
+            let at = Vec3::from_array(at);
             let arrived = app
                 .world
                 .scene
@@ -194,7 +214,7 @@ impl Bot {
         let mut best = 0;
         let mut best_d = f32::MAX;
         for (i, w) in route.iter().enumerate() {
-            let d = Vec3::new(w.pos.x - pos.x, 0.0, w.pos.z - pos.z).length();
+            let d = Vec3::new(w.pos[0] - pos.x, 0.0, w.pos[2] - pos.z).length();
             if d < best_d {
                 best_d = d;
                 best = i;
@@ -215,4 +235,35 @@ pub fn play_with_bot(app: &mut App, max_frames: u32) -> u32 {
         }
     }
     max_frames
+}
+
+/// Экземпляр префаба `prefabs/<rel>.prefab` в точке мира.
+pub fn spawn_prefab(app: &mut App, rel: &str, pos: Vec3) -> GameObjectId {
+    app.world
+        .instantiate_at(&format!("prefabs/{rel}.prefab"), pos, Quat::IDENTITY, None)
+        .unwrap_or_else(|e| panic!("prefab {rel}: {e}"))
+}
+
+/// Блок-плита из префаба с размером `size` (пол для опытов).
+pub fn spawn_block(app: &mut App, center: Vec3, size: Vec3) -> GameObjectId {
+    let id = spawn_prefab(app, "track/plate_block", center);
+    app.world.scene.get_mut(id).unwrap().transform.scale = size;
+    id
+}
+
+/// Пустой мир для опытов: меню без витрины (группы объектов цеха убраны).
+pub fn lab() -> App {
+    let mut app = game();
+    for name in ["Track", "Mechanisms", "Pickups", "Lamps", "Decor"] {
+        if let Some(group) = app.world.scene.find_by_name(name) {
+            app.world.scene.destroy(group);
+        }
+    }
+    app.run_headless(2, DT);
+    app
+}
+
+/// Шар-пробник: префаб шара (замороженный, без управления), тег «Ball» на месте.
+pub fn probe_ball(app: &mut App, pos: Vec3) -> GameObjectId {
+    spawn_prefab(app, "ball", pos)
 }

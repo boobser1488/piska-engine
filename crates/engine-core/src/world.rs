@@ -8,6 +8,7 @@ use crate::component::{Component, Ctx, Hooks, Message};
 use crate::error::SceneError;
 use crate::input::Input;
 use crate::object::GameObjectId;
+use crate::objref;
 use crate::reflect::{TypeRegistry, Value};
 use crate::scene::Scene;
 use crate::math::{Quat, Vec3};
@@ -462,14 +463,9 @@ impl World {
     // ------------------------------------------------------------------
 
     /// Unity: `Instantiate(prefab)`. `reference` — путь или GUID, как его понимает `self.prefabs`.
+    /// Имя экземпляра — имя корня префаба (его можно сменить, как любое переопределение).
     pub fn instantiate(&mut self, reference: &str) -> Result<GameObjectId, SceneError> {
-        let name = Path::new(reference)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(reference)
-            .to_string();
         let node = NodeData {
-            name,
             prefab: Some(reference.to_string()),
             ..NodeData::default()
         };
@@ -490,14 +486,8 @@ impl World {
                 return Err(SceneError::DeadObject(parent));
             }
         }
-        let name = Path::new(reference)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(reference)
-            .to_string();
         let prefab = self.prefabs.load(reference)?;
         let node = NodeData {
-            name,
             prefab: Some(reference.to_string()),
             transform: TransformData {
                 scale: prefab.root.transform.scale,
@@ -520,17 +510,81 @@ impl World {
         parent: Option<GameObjectId>,
     ) -> Result<GameObjectId, SceneError> {
         let resolved = serialize::resolve_node(node, self.prefabs.as_ref(), 0)?;
-        serialize::spawn_resolved(&mut self.scene, &self.registry, &resolved, parent)
+        let mut nodes = [resolved];
+        self.prepare_copies(&mut nodes, "spawn");
+        serialize::spawn_resolved(&mut self.scene, &self.registry, &nodes[0], parent)
+    }
+
+    /// Узлы, которые добавляются к *текущей* сцене (вставка, копия, аддитивная загрузка):
+    /// если их номера уже заняты, группа перенумеровывается одним ключом (внутренние
+    /// ссылки — на копии, внешние — на оригиналы); ссылки в никуда становятся `None`.
+    fn prepare_copies(&self, nodes: &mut [NodeData], origin: &str) {
+        let scene = &self.scene;
+        let mut ids = std::collections::HashSet::new();
+        for node in nodes.iter() {
+            objref::collect_node_ids(node, &mut ids);
+        }
+        if ids.iter().any(|uid| scene.find_by_uid(*uid).is_some()) {
+            let key = objref::fresh_key(nodes, |uid| scene.find_by_uid(uid).is_some());
+            objref::rekey_nodes(nodes, key);
+        }
+        objref::clear_dangling_refs(nodes, |uid| scene.find_by_uid(uid).is_some(), origin);
+    }
+
+    /// Вставить копии узлов (снятых [`serialize::exact_node`]) в текущую сцену под `parent`.
+    /// Ссылки между вставленными объектами указывают на вставленные копии.
+    pub fn spawn_copies(
+        &mut self,
+        nodes: &[NodeData],
+        parent: Option<GameObjectId>,
+    ) -> Result<Vec<GameObjectId>, SceneError> {
+        let mut nodes = nodes.to_vec();
+        self.prepare_copies(&mut nodes, "paste");
+        let mut out = Vec::with_capacity(nodes.len());
+        for node in &nodes {
+            out.push(serialize::spawn_resolved(&mut self.scene, &self.registry, node, parent)?);
+        }
+        Ok(out)
+    }
+
+    /// Копии нескольких объектов разом (каждая — рядом со своим оригиналом). Ссылки между
+    /// объектами группы у копий указывают на копии, ссылки наружу — на те же объекты.
+    pub fn duplicate_many(&mut self, ids: &[GameObjectId]) -> Result<Vec<GameObjectId>, SceneError> {
+        let mut parents = Vec::with_capacity(ids.len());
+        let mut nodes = Vec::with_capacity(ids.len());
+        for id in ids {
+            parents.push(self.scene.get(*id).ok_or(SceneError::DeadObject(*id))?.parent());
+            nodes.push(serialize::exact_node(&self.scene, *id));
+        }
+        self.prepare_copies(&mut nodes, "duplicate");
+        let mut out = Vec::with_capacity(ids.len());
+        for (node, parent) in nodes.iter().zip(parents) {
+            out.push(serialize::spawn_resolved(&mut self.scene, &self.registry, node, parent)?);
+        }
+        Ok(out)
     }
 
     /// Заменить текущую сцену сценой из RON-текста. При ошибке текущая сцена не трогается.
     pub fn load_scene_str(&mut self, text: &str, origin: &str) -> Result<(), SceneError> {
         let data = SceneData::from_ron(text, origin)?;
-        let resolved = data
+        let mut resolved = data
             .objects
             .iter()
             .map(|node| serialize::resolve_node(node, self.prefabs.as_ref(), 0))
             .collect::<Result<Vec<_>, _>>()?;
+        // Ссылки на объекты, которых в файле нет, — `None` (переживают только ссылки на
+        // «не уничтожаемые при загрузке» объекты).
+        let mut persistent = std::collections::HashSet::new();
+        for root in self.scene.roots() {
+            if self.scene.get(*root).is_some_and(|o| o.persistent) {
+                for id in self.scene.subtree(*root) {
+                    if let Some(obj) = self.scene.get(id) {
+                        persistent.insert(obj.uid());
+                    }
+                }
+            }
+        }
+        objref::clear_dangling_refs(&mut resolved, |uid| persistent.contains(&uid), origin);
 
         // Есть «не уничтожаемые при загрузке» объекты — меняем сцену на месте, чтобы их
         // id остались действительными. Иначе — прежний путь: новая сцена-преемница.
@@ -555,11 +609,13 @@ impl World {
         origin: &str,
     ) -> Result<Vec<GameObjectId>, SceneError> {
         let data = SceneData::from_ron(text, origin)?;
-        let resolved = data
+        let mut resolved = data
             .objects
             .iter()
             .map(|node| serialize::resolve_node(node, self.prefabs.as_ref(), 0))
             .collect::<Result<Vec<_>, _>>()?;
+        // Та же сцена второй раз — новые номера, ссылки внутри неё — на её же объекты.
+        self.prepare_copies(&mut resolved, origin);
         self.install_scene(None, &resolved, true)
     }
 
@@ -771,14 +827,9 @@ impl World {
     }
 
     /// Unity: `Instantiate(obj)` — копия объекта с потомками рядом с оригиналом.
+    /// Ссылки внутри копируемой иерархии у копии указывают на копии.
     pub fn duplicate(&mut self, id: GameObjectId) -> Result<GameObjectId, SceneError> {
-        let parent = self
-            .scene
-            .get(id)
-            .ok_or(SceneError::DeadObject(id))?
-            .parent();
-        let node = serialize::exact_node(&self.scene, id);
-        serialize::spawn_resolved(&mut self.scene, &self.registry, &node, parent)
+        Ok(self.duplicate_many(&[id])?[0])
     }
 
     pub fn load_scene(&mut self, path: impl AsRef<Path>) -> Result<(), SceneError> {

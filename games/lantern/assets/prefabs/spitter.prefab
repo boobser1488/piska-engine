@@ -1,0 +1,54 @@
+(
+    name: "Spitter",
+    tag: "Enemy",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.0),
+                "sheet_columns": Int(4),
+                "sheet_rows": Int(1),
+                "size": Vec2(1.2, 1.2),
+                "sorting_layer": Int(2),
+                "texture": Asset("10f058ba44923ed62709b599047e1621"),
+                "uv_offset": Vec2(0.0, 0.0),
+                "uv_size": Vec2(1.0, 1.0),
+            },
+        ),
+        (
+            kind: "SpriteAnimator",
+            fields: {
+                "clip": Str("idle"),
+                "clips": List([
+                    Str("idle: 0-1 @3"),
+                    Str("windup: 2 @1"),
+                    Str("shoot: 3 @1"),
+                ]),
+                "finished": Bool(false),
+                "frame": Int(0),
+                "playing": Bool(true),
+                "speed": Float(1.0),
+                "time": Float(0.0),
+            },
+        ),
+        (
+            kind: "Spitter",
+            fields: {
+                "period": Float(2.6),
+                "range": Float(13.0),
+                "timer": Float(1.5),
+                "windup": Float(0.0),
+            },
+        ),
+    ],
+)

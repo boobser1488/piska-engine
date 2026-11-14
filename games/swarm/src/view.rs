@@ -1,34 +1,48 @@
 //! Слой отображения: превращает состояние [`Sim`] в спрайты, частицы, числа урона,
 //! тряску камеры и звук.
 //!
-//! У каждого слота симуляции (враг, пуля, обломок) есть «парный» объект сцены со
-//! `SpriteRenderer`: объекты создаются лениво и **переиспользуются** (включаются /
-//! выключаются), а не создаются и не удаляются на каждый выстрел. Все спрайты берут
-//! картинки из одного атласа, поэтому рендер склеивает их в немногие вызовы отрисовки.
+//! У каждого слота симуляции (враг, пуля, обломок) есть «парный» объект сцены: объекты
+//! **создаются из префабов** (`assets/prefabs/*`) и переиспользуются (включаются /
+//! выключаются), а не создаются и не удаляются на каждый выстрел. Дрон и реактор — объекты
+//! сцены `arena.scene`. Вид каждого врага берётся из его префаба (`SpriteRenderer` +
+//! `EnemyKind`), все спрайты — из одного атласа, поэтому рендер склеивает их в немногие
+//! вызовы отрисовки.
 
 use engine::prelude::*;
 
 use crate::atlas::{self, Rect};
-use crate::boss::{TELE_BLINK, TELE_LINE};
 use crate::data::*;
+use crate::defs::defs;
 use crate::profile::Options;
 use crate::rng::Rng;
+use crate::scripts::bosses::{Boss, TELE_BLINK, TELE_LINE};
+use crate::scripts::drone::Drone;
+use crate::scripts::enemy_kinds::EnemyKind;
+use crate::scripts::reactor::ReactorCore;
+use crate::scripts::weapons::Weapons;
 use crate::sim::{Event, PickupKind, Sim};
 use crate::sound;
 
-// Слои сортировки.
-const L_TELE: i32 = -5;
-const L_PICKUP: i32 = 1;
-const L_ENEMY: i32 = 2;
-const L_BOSS: i32 = 3;
-const L_EBULLET: i32 = 4;
-const L_PLAYER: i32 = 5;
-const L_PBULLET: i32 = 6;
-const L_FX: i32 = 7;
-const L_PARTICLE: i32 = 8;
-const L_DIGIT: i32 = 9;
+// Префабы, из которых строятся пулы.
+const P_PBULLET: &str = "prefabs/projectiles/player_bullet.prefab";
+const P_MISSILE: &str = "prefabs/projectiles/missile.prefab";
+const P_EBULLET: &str = "prefabs/projectiles/enemy_bullet.prefab";
+const P_SCRAP: &str = "prefabs/pickups/scrap.prefab";
+const P_REPAIR: &str = "prefabs/pickups/repair.prefab";
+const P_SHIELD: &str = "prefabs/fx/shield.prefab";
+const P_MARKER: &str = "prefabs/fx/marker.prefab";
+const P_RING: &str = "prefabs/fx/ring.prefab";
+const P_FLASH: &str = "prefabs/fx/flash.prefab";
+const P_DIGIT: &str = "prefabs/fx/digit.prefab";
+const P_BOSS_RING: &str = "prefabs/fx/boss_ring.prefab";
+const P_BOSS_LINE: &str = "prefabs/fx/boss_line.prefab";
+const P_BOSS_MARK: &str = "prefabs/fx/boss_mark.prefab";
+const P_SPARK: &str = "prefabs/fx/spark.prefab";
+const P_BOOM: &str = "prefabs/fx/boom.prefab";
+const P_SCRAP_FX: &str = "prefabs/fx/scrap_sparkle.prefab";
 
-const FX_POOL: usize = 72;
+const FX_RING_POOL: usize = 48;
+const FX_FLASH_POOL: usize = 24;
 const DIGIT_POOL: usize = 160;
 const MARK_POOL: usize = 128;
 const EMITTERS: usize = 14;
@@ -69,8 +83,17 @@ enum Emit {
     Scrap = 2,
 }
 
+/// Вид врага или босса, прочитанный из его префаба.
+#[derive(Clone)]
+struct KindVisual {
+    sprite: SpriteRenderer,
+    wobble: f32,
+    spawn_pop: f32,
+    intro: String,
+    tele_color: Color,
+}
+
 pub struct View {
-    tex: AssetHandle<Texture>,
     pub cam: GameObjectId,
     player: GameObjectId,
     core: GameObjectId,
@@ -87,11 +110,21 @@ pub struct View {
     marks: Vec<Slot>,
     shields: Vec<Slot>,
     fx: Vec<Fx>,
-    fx_next: usize,
+    fx_next_ring: usize,
+    fx_next_flash: usize,
     digits: Vec<Digit>,
     digit_next: usize,
     emit: [Vec<GameObjectId>; 3],
     emit_next: [usize; 3],
+    visuals: Vec<KindVisual>,
+    missile_sprite: SpriteRenderer,
+    bullet_sprite: SpriteRenderer,
+    scrap_sprite: SpriteRenderer,
+    repair_sprite: SpriteRenderer,
+    ebullet_size: f32,
+    drone: Drone,
+    weapons: Weapons,
+    core_cfg: ReactorCore,
     rng: Rng,
     /// Счётчики звуков за кадр (чтобы сотня попаданий не превращалась в кашу).
     snd: [u8; 6],
@@ -125,15 +158,37 @@ fn set_rect(sr: &mut SpriteRenderer, r: Rect, size: f32) {
     sr.size = Vec2::new(r.w * k, r.h * k);
 }
 
-#[allow(clippy::too_many_arguments)]
-fn new_sprite(scene: &mut Scene, name: &str, tex: AssetHandle<Texture>, r: Rect, size: f32, layer: i32, order: i32, active: bool) -> GameObjectId {
-    let mut sr = SpriteRenderer::textured(tex).with_order(layer, order);
-    set_rect(&mut sr, r, size);
-    let mut b = scene.build(name).with(sr);
-    if !active {
-        b = b.inactive();
-    }
-    b.id()
+/// Перенять у спрайта-образца картинку, размер и слой (цвет остаётся прежним).
+fn apply_sprite(dst: &mut SpriteRenderer, src: &SpriteRenderer) {
+    dst.uv_offset = src.uv_offset;
+    dst.uv_size = src.uv_size;
+    dst.size = src.size;
+    dst.sorting_layer = src.sorting_layer;
+    dst.order = src.order;
+    dst.pivot = src.pivot;
+    dst.flip_x = src.flip_x;
+    dst.flip_y = src.flip_y;
+}
+
+/// Создать объект из префаба и сразу выключить (пул).
+fn spawn_pooled(world: &mut World, path: &str) -> GameObjectId {
+    let id = match world.instantiate(path) {
+        Ok(id) => id,
+        Err(e) => {
+            log::error!("cannot instantiate `{path}`: {e}. Re-bake assets: cargo run -p swarm --example bake_assets");
+            world.scene.spawn("Missing prefab")
+        }
+    };
+    world.scene.set_active(id, false);
+    id
+}
+
+/// Создать объект из префаба, снять с него нужное и убрать.
+fn read_prefab<T>(world: &mut World, path: &str, read: impl FnOnce(&Scene, GameObjectId) -> T) -> T {
+    let id = spawn_pooled(world, path);
+    let out = read(&world.scene, id);
+    world.scene.destroy(id);
+    out
 }
 
 fn set_xform(scene: &mut Scene, id: GameObjectId, pos: Vec2, angle: f32, scale: Vec2) {
@@ -158,35 +213,68 @@ fn set_on(scene: &mut Scene, slot: &mut Slot, on: bool) {
 }
 
 fn kind_color(k: Kind, boost: f32) -> Color {
-    let c = k.info().color;
+    let c = k.info().rgb();
     Color::rgb(c[0] * boost, c[1] * boost, c[2] * boost)
 }
 
-fn layer_of(kind: Kind) -> i32 {
-    match kind {
-        Kind::Mine => L_ENEMY - 1,
-        k if k.is_boss() => L_BOSS,
-        _ => L_ENEMY,
-    }
+fn named(scene: &Scene, name: &str) -> GameObjectId {
+    scene.find_by_name(name).unwrap_or_else(|| {
+        log::error!("object `{name}` is missing from the scene: re-bake assets (cargo run -p swarm --example bake_assets)");
+        GameObjectId::from_bits(0)
+    })
 }
 
 impl View {
-    pub fn new(scene: &mut Scene, tex: AssetHandle<Texture>, seed: u64) -> View {
-        let cam = scene.find_by_tag("MainCamera").unwrap_or_else(|| scene.spawn("Main Camera"));
-        let core = new_sprite(scene, "Core", tex, atlas::CORE, 2.7, 1, 0, true);
-        let core_ring = new_sprite(scene, "CoreRing", tex, atlas::CORE_RING, 3.05, 1, 1, true);
-        let player = new_sprite(scene, "Player", tex, atlas::PLAYER, 1.45, L_PLAYER, 0, true);
-        if let Some(o) = scene.get_mut(player) {
-            o.tag = "Player".to_string();
-        }
-        let field = new_sprite(scene, "SlowField", tex, atlas::FIELD, 6.0, L_TELE + 1, 0, false);
-        let muzzle = new_sprite(scene, "Muzzle", tex, atlas::GLOW, 1.0, L_PBULLET + 1, 0, false);
-        let boss_ring = new_sprite(scene, "BossRing", tex, atlas::RING, 6.0, L_FX, 0, false);
-        let boss_line = new_sprite(scene, "BossLine", tex, atlas::BAR, 1.0, L_TELE + 2, 0, false);
-        let boss_mark = new_sprite(scene, "BossMark", tex, atlas::TELEGRAPH, 3.0, L_TELE + 3, 0, false);
+    /// Объекты, которые вид взял из полей-ссылок префабов: кольцо реактора, вспышка у
+    /// ствола, поле замедления (для тестов).
+    pub fn linked_parts(&self) -> [GameObjectId; 3] {
+        [self.core_ring, self.muzzle, self.field]
+    }
 
+    pub fn new(world: &mut World, seed: u64) -> View {
+        let cam = world.scene.find_by_tag("MainCamera").unwrap_or_else(|| world.scene.spawn("Main Camera"));
+        let player = named(&world.scene, "Drone");
+        let core = named(&world.scene, "ReactorCore");
+        let drone = world.scene.get_component::<Drone>(player).cloned().unwrap_or_default();
+        let weapons = world.scene.get_component::<Weapons>(player).cloned().unwrap_or_default();
+        let core_cfg = world.scene.get_component::<ReactorCore>(core).cloned().unwrap_or_default();
+        // Дети префабов — по полям-ссылкам (их можно переименовать в редакторе).
+        let core_ring = world.scene.resolve(core_cfg.ring).unwrap_or(core);
+        let muzzle = world.scene.resolve(drone.muzzle).unwrap_or(player);
+        let field = world.scene.resolve(drone.slow_field).unwrap_or(player);
+        for id in [muzzle, field] {
+            world.scene.set_active(id, false);
+        }
+
+        // Вид каждого вида врагов — из его префаба.
+        let visuals: Vec<KindVisual> = Kind::ALL
+            .iter()
+            .map(|k| {
+                let path = k.info().prefab.clone();
+                read_prefab(world, &path, |scene, id| {
+                    let kind = scene.get_component::<EnemyKind>(id).cloned().unwrap_or_default();
+                    let boss = scene.get_component::<Boss>(id).cloned().unwrap_or_default();
+                    KindVisual {
+                        sprite: scene.get_component::<SpriteRenderer>(id).cloned().unwrap_or_default(),
+                        wobble: kind.wobble,
+                        spawn_pop: kind.spawn_pop.max(0.01),
+                        intro: boss.intro,
+                        tele_color: boss.telegraph_color,
+                    }
+                })
+            })
+            .collect();
+        let sprite_of = |scene: &Scene, id: GameObjectId| scene.get_component::<SpriteRenderer>(id).cloned().unwrap_or_default();
+        let missile_sprite = read_prefab(world, P_MISSILE, sprite_of);
+        let bullet_sprite = read_prefab(world, P_PBULLET, sprite_of);
+        let scrap_sprite = read_prefab(world, P_SCRAP, sprite_of);
+        let repair_sprite = read_prefab(world, P_REPAIR, sprite_of);
+        let ebullet_size = read_prefab(world, P_EBULLET, sprite_of).size.max_element().max(0.01);
+
+        let boss_ring = spawn_pooled(world, P_BOSS_RING);
+        let boss_line = spawn_pooled(world, P_BOSS_LINE);
+        let boss_mark = spawn_pooled(world, P_BOSS_MARK);
         let mut v = View {
-            tex,
             cam,
             player,
             core,
@@ -203,11 +291,21 @@ impl View {
             marks: Vec::new(),
             shields: Vec::new(),
             fx: Vec::new(),
-            fx_next: 0,
+            fx_next_ring: 0,
+            fx_next_flash: 0,
             digits: Vec::new(),
             digit_next: 0,
             emit: [Vec::new(), Vec::new(), Vec::new()],
             emit_next: [0; 3],
+            visuals,
+            missile_sprite,
+            bullet_sprite,
+            scrap_sprite,
+            repair_sprite,
+            ebullet_size,
+            drone,
+            weapons,
+            core_cfg,
             rng: Rng::new(seed ^ 0x51CE),
             snd: [0; 6],
             numbers_this_frame: 0,
@@ -217,73 +315,68 @@ impl View {
             last_boss_tele: 0.0,
             player_pos: Vec2::ZERO,
         };
-        for _ in 0..FX_POOL {
-            let id = new_sprite(scene, "Fx", tex, atlas::RING, 1.0, L_FX, 0, false);
+        for i in 0..(FX_RING_POOL + FX_FLASH_POOL) {
+            let id = spawn_pooled(world, if i < FX_RING_POOL { P_RING } else { P_FLASH });
             v.fx.push(Fx { id, active: false, age: 0.0, life: 1.0, s0: 1.0, s1: 1.0, color: Color::WHITE, spin: 0.0 });
         }
         for _ in 0..DIGIT_POOL {
-            let id = new_sprite(scene, "Digit", tex, atlas::DIGIT0, 0.5, L_DIGIT, 0, false);
+            let id = spawn_pooled(world, P_DIGIT);
             v.digits.push(Digit { id, active: false, age: 0.0, life: 1.0, pos: Vec2::ZERO, vel: Vec2::ZERO, color: Color::WHITE });
         }
         for i in 0..EMITTERS {
-            let (kind, ps) = match i % 7 {
-                0..=3 => (Emit::Spark, spark_system()),
-                4 | 5 => (Emit::Boom, boom_system()),
-                _ => (Emit::Scrap, scrap_system()),
+            let (kind, path) = match i % 7 {
+                0..=3 => (Emit::Spark, P_SPARK),
+                4 | 5 => (Emit::Boom, P_BOOM),
+                _ => (Emit::Scrap, P_SCRAP_FX),
             };
-            let id = scene.build("Emitter").with(ps).id();
+            let id = world.instantiate(path).unwrap_or_else(|e| {
+                log::error!("cannot instantiate `{path}`: {e}");
+                world.scene.spawn("Missing prefab")
+            });
             v.emit[kind as usize].push(id);
         }
-        v.grow_enemies(scene, 96);
+        v.grow_enemies(world, 96);
         v
     }
 
-    fn make_slot(&self, scene: &mut Scene, name: &str, r: Rect, size: f32, layer: i32) -> Slot {
-        let id = new_sprite(scene, name, self.tex, r, size, layer, 0, false);
-        Slot { id, active: false, kind: 255, serial: 0 }
+    fn make_slot(world: &mut World, path: &str) -> Slot {
+        Slot { id: spawn_pooled(world, path), active: false, kind: 255, serial: 0 }
     }
 
-    fn grow_enemies(&mut self, scene: &mut Scene, n: usize) {
+    fn grow_enemies(&mut self, world: &mut World, n: usize) {
+        // Слот врага — любой префаб врага: его вид подменяется по виду из симуляции.
+        let path = Kind::Chaser.info().prefab.clone();
         while self.enemies.len() < n {
-            let s = self.make_slot(scene, "Enemy", atlas::CHASER, 1.0, L_ENEMY);
-            self.enemies.push(s);
+            self.enemies.push(Self::make_slot(world, &path));
         }
     }
 
-    fn grow_pbul(&mut self, scene: &mut Scene, n: usize) {
+    fn grow_pbul(&mut self, world: &mut World, n: usize) {
         while self.pbul.len() < n {
-            let s = self.make_slot(scene, "Bullet", atlas::PBULLET, 0.9, L_PBULLET);
-            if let Some(o) = scene.get_mut(s.id) {
-                o.add(TrailRenderer { max_points: 24, ..TrailRenderer::glowing(Color::rgb(0.25, 1.5, 2.2), 0.2, 0.17) }.with_layer(L_PBULLET - 1, 0));
-            }
-            self.pbul.push(s);
+            self.pbul.push(Self::make_slot(world, P_PBULLET));
         }
     }
 
-    fn grow_simple(&mut self, scene: &mut Scene, which: u8, n: usize) {
+    fn grow_simple(&mut self, world: &mut World, which: u8, n: usize) {
         match which {
             0 => {
                 while self.ebul.len() < n {
-                    let s = self.make_slot(scene, "EBullet", atlas::EBULLET, 0.8, L_EBULLET);
-                    self.ebul.push(s);
+                    self.ebul.push(Self::make_slot(world, P_EBULLET));
                 }
             }
             1 => {
                 while self.picks.len() < n {
-                    let s = self.make_slot(scene, "Scrap", atlas::SCRAP, 0.5, L_PICKUP);
-                    self.picks.push(s);
+                    self.picks.push(Self::make_slot(world, P_SCRAP));
                 }
             }
             2 => {
                 while self.marks.len() < n {
-                    let s = self.make_slot(scene, "Mark", atlas::TELEGRAPH, 1.5, L_TELE);
-                    self.marks.push(s);
+                    self.marks.push(Self::make_slot(world, P_MARKER));
                 }
             }
             _ => {
                 while self.shields.len() < n {
-                    let s = self.make_slot(scene, "Shield", atlas::SHIELD, 0.8, L_PLAYER);
-                    self.shields.push(s);
+                    self.shields.push(Self::make_slot(world, P_SHIELD));
                 }
             }
         }
@@ -327,15 +420,29 @@ impl View {
         }
     }
 
+    /// Строка вступления босса (поле `Boss.intro` префаба).
+    pub fn boss_intro(&self, kind: Kind) -> String {
+        self.visuals[Kind::ALL.iter().position(|k| *k == kind).unwrap_or(0)].intro.clone()
+    }
+
+    fn visual(&self, kind: Kind) -> &KindVisual {
+        &self.visuals[Kind::ALL.iter().position(|k| *k == kind).unwrap_or(0)]
+    }
+
     // -----------------------------------------------------------------------
     // Эффекты
     // -----------------------------------------------------------------------
 
-    #[allow(clippy::too_many_arguments)]
-    fn spawn_fx(&mut self, scene: &mut Scene, pos: Vec2, rect: Rect, s0: f32, s1: f32, life: f32, color: Color, spin: f32) {
-        let i = self.fx_next;
-        self.fx_next = (self.fx_next + 1) % self.fx.len();
-        let (off, sz) = uv_of(rect);
+    fn spawn_fx(&mut self, scene: &mut Scene, pos: Vec2, ring: bool, s0: f32, s1: f32, life: f32, color: Color) {
+        let i = if ring {
+            let i = self.fx_next_ring;
+            self.fx_next_ring = (i + 1) % FX_RING_POOL;
+            i
+        } else {
+            let i = self.fx_next_flash;
+            self.fx_next_flash = (i + 1) % FX_FLASH_POOL;
+            FX_RING_POOL + i
+        };
         let f = &mut self.fx[i];
         f.active = true;
         f.age = 0.0;
@@ -343,28 +450,24 @@ impl View {
         f.s0 = s0;
         f.s1 = s1;
         f.color = color;
-        f.spin = spin;
+        f.spin = 0.0;
         let id = f.id;
         scene.set_active(id, true);
         if let Some(o) = scene.get_mut(id) {
             o.transform.position = Vec3::new(pos.x, pos.y, 0.0);
             o.transform.rotation = Quat::from_rotation_z(0.0);
             if let Some(sr) = o.get_mut::<SpriteRenderer>() {
-                sr.uv_offset = off;
-                sr.uv_size = sz;
-                let k = 1.0 / rect.w.max(rect.h);
-                sr.size = Vec2::new(rect.w * k, rect.h * k);
                 sr.color = color;
             }
         }
     }
 
     fn ring(&mut self, scene: &mut Scene, pos: Vec2, from: f32, to: f32, life: f32, color: Color) {
-        self.spawn_fx(scene, pos, atlas::RING, from, to, life, color, 0.0);
+        self.spawn_fx(scene, pos, true, from, to, life, color);
     }
 
     fn flash(&mut self, scene: &mut Scene, pos: Vec2, size: f32, life: f32, color: Color) {
-        self.spawn_fx(scene, pos, atlas::GLOW, size * 0.5, size, life, color, 0.0);
+        self.spawn_fx(scene, pos, false, size * 0.5, size, life, color);
     }
 
     fn burst(&mut self, scene: &mut Scene, kind: Emit, pos: Vec2, n: u32, color: Color) {
@@ -444,7 +547,9 @@ impl View {
         if self.pick_streak_t <= 0.0 {
             self.pick_streak = 0.0;
         }
-        // Громкий вызов звука с ограничением числа одинаковых за кадр.
+        // Громкий вызов звука с ограничением числа одинаковых за кадр. Лимиты малы
+        // нарочно: десятки одинаковых звуков за секунду сливаются в шум и перегружают
+        // выход (замер: бой с прежними лимитами давал −5 LUFS и клиппирование).
         let play = |audio: &mut Option<&mut Audio>, snd: &mut [u8; 6], slot: usize, limit: u8, clip: &str, vol: f32, pitch: f32| {
             if snd[slot] >= limit {
                 return;
@@ -464,7 +569,7 @@ impl View {
                 }
                 Event::EnemyShot { pos } => {
                     let p = self.rng.range(0.9, 1.1);
-                    play(&mut audio, &mut self.snd, 1, 2, "enemy_shot", 0.3, p);
+                    play(&mut audio, &mut self.snd, 1, 1, "enemy_shot", 0.3, p);
                     self.flash(scene, *pos, 0.9, 0.1, Color::rgb(3.0, 0.5, 1.0));
                 }
                 Event::EnemyHit { pos, dmg, crit, kind } => {
@@ -474,9 +579,9 @@ impl View {
                     self.burst(scene, Emit::Spark, *pos, if *crit { 9 } else { 4 }, kind_color(*kind, 1.4));
                     let p = self.rng.range(0.9, 1.25);
                     if *crit {
-                        play(&mut audio, &mut self.snd, 2, 2, "crit", 0.4, p);
+                        play(&mut audio, &mut self.snd, 2, 1, "crit", 0.4, p);
                     } else {
-                        play(&mut audio, &mut self.snd, 2, 3, "hit", 0.32, p);
+                        play(&mut audio, &mut self.snd, 2, 1, "hit", 0.32, p);
                     }
                 }
                 Event::EnemyDied { pos, kind } => {
@@ -487,7 +592,7 @@ impl View {
                     self.ring(scene, *pos, info.radius, info.radius * 4.0, 0.3, kind_color(*kind, 1.0).with_alpha(0.8));
                     if !boss {
                         let p = self.rng.range(0.85, 1.2) / (0.6 + info.radius);
-                        play(&mut audio, &mut self.snd, 3, 4, "die", 0.5, p.clamp(0.5, 1.4));
+                        play(&mut audio, &mut self.snd, 3, 2, "die", 0.5, p.clamp(0.5, 1.4));
                         if *kind == Kind::Tank {
                             self.shake(scene, 0.25, opts);
                         }
@@ -500,7 +605,7 @@ impl View {
                     self.burst(scene, Emit::Boom, *pos, (12.0 + radius * 12.0) as u32, c);
                     let p = self.rng.range(0.9, 1.1);
                     if *radius > 1.0 {
-                        play(&mut audio, &mut self.snd, 4, 2, "boom", 0.6, p);
+                        play(&mut audio, &mut self.snd, 4, 1, "boom", 0.6, p);
                     }
                     self.shake(scene, (radius * 0.12).min(0.45), opts);
                 }
@@ -655,18 +760,39 @@ impl View {
     // Синхронизация сцены с состоянием симуляции
     // -----------------------------------------------------------------------
 
-    pub fn sync(&mut self, scene: &mut Scene, sim: &Sim, dt: f32, t: f32) {
+    pub fn sync(&mut self, world: &mut World, sim: &Sim, dt: f32, t: f32) {
+        // Рост пулов (новые объекты — из префабов).
+        if sim.enemies.len() > self.enemies.len() {
+            self.grow_enemies(world, sim.enemies.len() + 32);
+        }
+        if sim.pbullets.len() > self.pbul.len() {
+            self.grow_pbul(world, sim.pbullets.len() + 16);
+        }
+        if sim.ebullets.len() > self.ebul.len() {
+            self.grow_simple(world, 0, sim.ebullets.len() + 16);
+        }
+        if sim.pickups.len() > self.picks.len() {
+            self.grow_simple(world, 1, sim.pickups.len() + 16);
+        }
+        if sim.telegraphs.len() > self.marks.len() {
+            self.grow_simple(world, 2, (sim.telegraphs.len() + 16).min(MARK_POOL));
+        }
+        let shield_count = sim.stats.shield_count as usize;
+        if shield_count > self.shields.len() {
+            self.grow_simple(world, 3, shield_count);
+        }
+        let scene = &mut world.scene;
         // --- реактор ---
         let hp_frac = sim.core.hp / sim.core.max_hp.max(1.0);
-        let pulse = 1.0 + 0.025 * (t * 2.2).sin() + if sim.core.flash > 0.0 { 0.06 } else { 0.0 };
+        let pulse = 1.0 + self.core_cfg.pulse_amount * (t * self.core_cfg.pulse_speed).sin() + if sim.core.flash > 0.0 { self.core_cfg.hit_pulse } else { 0.0 };
         set_xform(scene, self.core, Vec2::ZERO, 0.0, Vec2::splat(pulse));
         let low = (1.0 - hp_frac * 1.6).clamp(0.0, 1.0);
         let mut c = Color::rgb(1.0, 1.0 - 0.55 * low, 1.0 - 0.7 * low);
         if sim.core.flash > 0.0 {
-            c = Color::rgb(2.6, 1.6, 1.4);
+            c = self.core_cfg.hit_color;
         }
         set_color(scene, self.core, c);
-        set_xform(scene, self.core_ring, Vec2::ZERO, t * 0.45, Vec2::ONE);
+        set_xform(scene, self.core_ring, Vec2::ZERO, t * self.core_cfg.ring_spin, Vec2::ONE);
 
         // --- дрон ---
         let p = &sim.player;
@@ -675,17 +801,17 @@ impl View {
         scene.set_active(self.player, show_player);
         if show_player {
             let angle = p.aim.y.atan2(p.aim.x);
-            let stretch = if p.dash_t > 0.0 { Vec2::new(1.45, 0.75) } else { Vec2::ONE };
+            let stretch = if p.dash_t > 0.0 { self.drone.dash_stretch } else { Vec2::ONE };
             set_xform(scene, self.player, p.pos, angle, stretch);
             let mut col = Color::WHITE;
-            if p.invuln > 0.0 && p.dash_t <= 0.0 && (t * 34.0).sin() > 0.0 {
+            if p.invuln > 0.0 && p.dash_t <= 0.0 && (t * self.drone.blink_hz).sin() > 0.0 {
                 col = Color::rgb(1.0, 1.0, 1.0).with_alpha(0.35);
             }
             if p.flash > 0.0 {
-                col = Color::rgb(3.0, 1.0, 1.0);
+                col = self.drone.hurt_color;
             }
             if p.dash_t > 0.0 {
-                col = Color::rgb(1.6, 2.4, 3.0);
+                col = self.drone.dash_color;
             }
             set_color(scene, self.player, col);
         }
@@ -694,7 +820,7 @@ impl View {
         scene.set_active(self.muzzle, muzzle_on);
         if muzzle_on {
             set_xform(scene, self.muzzle, p.pos + p.aim * 0.75, 0.0, Vec2::ONE);
-            set_color(scene, self.muzzle, Color::rgb(0.6, 2.2, 3.0));
+            set_color(scene, self.muzzle, self.drone.muzzle_color);
         }
         // Замедляющее поле.
         let field_on = sim.stats.slow_radius > 0.0 && show_player;
@@ -703,16 +829,12 @@ impl View {
             let s = sim.stats.slow_radius * 2.0 / 6.0 * 1.0;
             set_xform(scene, self.field, p.pos, t * 0.5, Vec2::splat(s * 1.0));
             if let Some(sr) = scene.get_component_mut::<SpriteRenderer>(self.field) {
-                sr.size = Vec2::splat(6.0);
                 sr.color = Color::rgb(0.5, 1.2, 2.0).with_alpha(0.55);
             }
         }
 
         // --- щиты ---
         let shield_pos = sim.shield_positions();
-        if shield_pos.len() > self.shields.len() {
-            self.grow_simple(scene, 3, shield_pos.len());
-        }
         for (i, s) in self.shields.iter_mut().enumerate() {
             if let (Some(pos), true) = (shield_pos.get(i), show_player) {
                 set_on(scene, s, true);
@@ -723,9 +845,6 @@ impl View {
         }
 
         // --- враги ---
-        if sim.enemies.len() > self.enemies.len() {
-            self.grow_enemies(scene, sim.enemies.len() + 32);
-        }
         for i in 0..sim.enemies.len() {
             let e = &sim.enemies[i];
             let mut slot = self.enemies[i];
@@ -740,9 +859,9 @@ impl View {
             let kind_id = e.kind as u8;
             if slot.kind != kind_id {
                 slot.kind = kind_id;
+                let sprite = self.visual(e.kind).sprite.clone();
                 if let Some(sr) = scene.get_component_mut::<SpriteRenderer>(slot.id) {
-                    set_rect(sr, info.sprite, info.size);
-                    sr.sorting_layer = layer_of(e.kind);
+                    apply_sprite(sr, &sprite);
                 }
             }
             if fresh && e.age < 0.2 {
@@ -774,24 +893,25 @@ impl View {
                 col = Color::rgb(3.2, 3.2, 3.2);
             }
             set_color(scene, slot.id, col);
+            let (wobble, pop) = {
+                let v = self.visual(e.kind);
+                (v.wobble, v.spawn_pop)
+            };
             let mut s = 1.0;
-            if e.age < 0.3 {
-                s = 0.3 + 0.7 * (e.age / 0.3);
+            if e.age < pop {
+                s = 0.3 + 0.7 * (e.age / pop);
             }
             if e.tele > 0.0 {
                 s *= 1.0 + 0.05 * (e.age * 26.0).sin();
             }
             if !e.kind.is_boss() {
-                s *= 1.0 + 0.04 * (e.age * 9.0 + e.uid as f32).sin();
+                s *= 1.0 + wobble * (e.age * 9.0 + e.uid as f32).sin();
             }
             set_xform(scene, slot.id, e.pos, e.heading, Vec2::splat(s));
             self.enemies[i] = slot;
         }
 
         // --- пули игрока ---
-        if sim.pbullets.len() > self.pbul.len() {
-            self.grow_pbul(scene, sim.pbullets.len() + 16);
-        }
         for i in 0..sim.pbullets.len() {
             let b = &sim.pbullets[i];
             let mut slot = self.pbul[i];
@@ -808,22 +928,18 @@ impl View {
                 slot.kind = flag;
                 if let Some(o) = scene.get_mut(slot.id) {
                     if let Some(sr) = o.get_mut::<SpriteRenderer>() {
-                        if b.missile {
-                            set_rect(sr, atlas::MISSILE, 1.1);
-                        } else {
-                            set_rect(sr, atlas::PBULLET, if b.crit { 1.25 } else { 0.95 });
-                        }
+                        apply_sprite(sr, if b.missile { &self.missile_sprite } else { &self.bullet_sprite });
                         sr.color = if b.crit { Color::rgb(3.0, 2.2, 0.8) } else { Color::WHITE };
                     }
                     if let Some(tr) = o.get_mut::<TrailRenderer>() {
                         tr.clear();
                         tr.emitting = true;
                         let c = if b.missile {
-                            Color::rgb(2.6, 1.2, 0.4)
+                            self.weapons.missile_trail
                         } else if b.crit {
-                            Color::rgb(2.8, 2.0, 0.5)
+                            self.weapons.crit_trail
                         } else {
-                            Color::rgb(0.25, 1.5, 2.2)
+                            self.weapons.bullet_trail
                         };
                         tr.start_color = c;
                         tr.end_color = c.with_alpha(0.0);
@@ -833,14 +949,12 @@ impl View {
                 }
             }
             let angle = b.vel.y.atan2(b.vel.x);
-            set_xform(scene, slot.id, b.pos, angle, Vec2::ONE);
+            let sc = if b.crit && !b.missile { self.weapons.crit_scale } else { 1.0 };
+            set_xform(scene, slot.id, b.pos, angle, Vec2::splat(sc));
             self.pbul[i] = slot;
         }
 
         // --- пули врагов ---
-        if sim.ebullets.len() > self.ebul.len() {
-            self.grow_simple(scene, 0, sim.ebullets.len() + 16);
-        }
         for i in 0..sim.ebullets.len() {
             let b = &sim.ebullets[i];
             let mut slot = self.ebul[i];
@@ -853,19 +967,13 @@ impl View {
             set_on(scene, &mut slot, true);
             if fresh {
                 slot.serial = b.serial;
-                if let Some(sr) = scene.get_component_mut::<SpriteRenderer>(slot.id) {
-                    set_rect(sr, atlas::EBULLET, b.size * 1.5);
-                }
             }
-            let pulse = 1.0 + 0.12 * (t * 18.0 + i as f32).sin();
+            let pulse = (1.0 + 0.12 * (t * 18.0 + i as f32).sin()) * b.size * 1.5 / self.ebullet_size;
             set_xform(scene, slot.id, b.pos, 0.0, Vec2::splat(pulse));
             self.ebul[i] = slot;
         }
 
         // --- обломки ---
-        if sim.pickups.len() > self.picks.len() {
-            self.grow_simple(scene, 1, sim.pickups.len() + 16);
-        }
         for i in 0..sim.pickups.len() {
             let k = &sim.pickups[i];
             let mut slot = self.picks[i];
@@ -879,23 +987,18 @@ impl View {
             if slot.serial != k.serial {
                 slot.serial = k.serial;
                 if let Some(sr) = scene.get_component_mut::<SpriteRenderer>(slot.id) {
-                    match k.kind {
-                        PickupKind::Scrap => set_rect(sr, atlas::SCRAP, if k.value > 1.5 { 0.7 } else { 0.5 }),
-                        PickupKind::Repair => set_rect(sr, atlas::REPAIR, 0.85),
-                    }
+                    apply_sprite(sr, if k.kind == PickupKind::Scrap { &self.scrap_sprite } else { &self.repair_sprite });
                 }
             }
             let _ = kind;
             let bob = 1.0 + 0.12 * (t * 7.0 + i as f32 * 1.7).sin();
             let spin = if k.kind == PickupKind::Scrap { t * 3.0 + i as f32 } else { 0.0 };
-            set_xform(scene, slot.id, k.pos, spin, Vec2::splat(bob));
+            let big = if k.kind == PickupKind::Scrap && k.value > 1.5 { 1.4 } else { 1.0 };
+            set_xform(scene, slot.id, k.pos, spin, Vec2::splat(bob * big));
             self.picks[i] = slot;
         }
 
         // --- появление врагов (метки на краю арены) ---
-        if sim.telegraphs.len() > self.marks.len() {
-            self.grow_simple(scene, 2, (sim.telegraphs.len() + 16).min(MARK_POOL));
-        }
         for i in 0..self.marks.len() {
             let mut slot = self.marks[i];
             if let Some(tg) = sim.telegraphs.get(i) {
@@ -907,9 +1010,6 @@ impl View {
                 set_xform(scene, slot.id, tg.pos, frac * 5.0, Vec2::splat(s));
                 let c = kind_color(tg.kind, 1.0 + 0.8 * frac);
                 set_color(scene, slot.id, c.with_alpha(0.35 + 0.65 * frac));
-                if let Some(sr) = scene.get_component_mut::<SpriteRenderer>(slot.id) {
-                    set_rect(sr, atlas::TELEGRAPH, 1.0);
-                }
             } else {
                 set_on(scene, &mut slot, false);
             }
@@ -938,7 +1038,7 @@ impl View {
         let (mut ring_on, mut line_on, mut mark_on) = (false, false, false);
         if let Some(b) = boss {
             let frac = (b.tele / 1.0).clamp(0.0, 1.0);
-            let c = kind_color(b.kind, 1.2);
+            let c = self.visual(b.kind).tele_color;
             match b.tele_kind {
                 TELE_LINE => {
                     line_on = true;
@@ -947,9 +1047,6 @@ impl View {
                     set_xform(scene, self.boss_line, b.pos + dir * len * 0.5, dir.y.atan2(dir.x), Vec2::new(len, 1.0 + 1.4 * (1.0 - frac)));
                     let a = 0.35 + 0.3 * (t * 30.0).sin().abs();
                     set_color(scene, self.boss_line, Color::rgb(3.0, 0.5, 0.35).with_alpha(a));
-                    if let Some(sr) = scene.get_component_mut::<SpriteRenderer>(self.boss_line) {
-                        set_rect(sr, atlas::BAR, 1.0);
-                    }
                 }
                 TELE_BLINK => {
                     mark_on = true;
@@ -1027,69 +1124,5 @@ impl View {
     /// Сколько спрайтов игры сейчас включено (для замеров и тестов).
     pub fn active_sprites(&self) -> usize {
         [&self.enemies, &self.pbul, &self.ebul, &self.picks, &self.marks, &self.shields].iter().map(|p| p.iter().filter(|s| s.active).count()).sum()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Системы частиц
-// ---------------------------------------------------------------------------
-
-fn base_system() -> ParticleSystem {
-    ParticleSystem {
-        playing: false,
-        looping: true,
-        emission_rate: 0.0,
-        duration: 1.0,
-        shape: EmitterShape::Point,
-        cone_angle: 180.0,
-        flat: true,
-        blend: ParticleBlend::Additive,
-        particle_shape: ParticleShape::Soft,
-        sorting_layer: L_PARTICLE,
-        ..ParticleSystem::default()
-    }
-}
-
-fn spark_system() -> ParticleSystem {
-    ParticleSystem {
-        max_particles: 220,
-        lifetime: Vec2::new(0.22, 0.55),
-        start_speed: Vec2::new(3.0, 9.0),
-        start_size: Vec2::new(0.07, 0.17),
-        start_color: Color::rgb(2.5, 2.0, 1.0),
-        start_color_max: Color::rgb(1.4, 1.0, 0.5),
-        drag: 3.0,
-        velocity_stretch: 0.05,
-        color_over_lifetime: vec![Color::WHITE, Color::WHITE.with_alpha(0.0)],
-        size_over_lifetime: vec![1.0, 0.25],
-        ..base_system()
-    }
-}
-
-fn boom_system() -> ParticleSystem {
-    ParticleSystem {
-        max_particles: 320,
-        lifetime: Vec2::new(0.3, 0.8),
-        start_speed: Vec2::new(0.8, 6.0),
-        start_size: Vec2::new(0.35, 0.9),
-        start_color: Color::rgb(3.0, 1.6, 0.8),
-        start_color_max: Color::rgb(1.6, 0.8, 0.4),
-        drag: 3.2,
-        color_over_lifetime: vec![Color::rgb(1.0, 1.0, 1.0).with_alpha(0.9), Color::rgb(0.7, 0.5, 0.4).with_alpha(0.5), Color::WHITE.with_alpha(0.0)],
-        size_over_lifetime: vec![0.5, 1.0, 0.2],
-        ..base_system()
-    }
-}
-
-fn scrap_system() -> ParticleSystem {
-    ParticleSystem {
-        max_particles: 120,
-        lifetime: Vec2::new(0.3, 0.6),
-        start_speed: Vec2::new(0.5, 2.2),
-        start_size: Vec2::new(0.08, 0.15),
-        start_color: Color::rgb(0.6, 2.6, 1.6),
-        start_color_max: Color::rgb(0.3, 1.4, 1.0),
-        drag: 2.0,
-        ..base_system()
     }
 }

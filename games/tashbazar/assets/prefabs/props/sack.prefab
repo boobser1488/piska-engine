@@ -1,0 +1,42 @@
+(
+    name: "sack",
+    id: 270748781501982,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    children: [
+        (
+            name: "Sack",
+            id: 220400562873311,
+            transform: (
+                position: (0.0, 0.0368, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("f7ee8b743d50f74179fc5fadbc71a99b"),
+                        ]),
+                        "mesh": Asset("63af0898915106d9dc1c6c91e6ae4e30"),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(0.5775805, 0.42326775, 0.23074007, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

@@ -1,0 +1,165 @@
+(
+    name: "awning",
+    id: 174601807818228,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    children: [
+        (
+            name: "Batten",
+            id: 255748794605398,
+            transform: (
+                position: (0.0, 2.65, 0.04),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (3.0, 0.08, 0.08),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("ccf620ee9ec1576a1849ef73e0cfdfaf"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Cloth",
+            id: 256118021724595,
+            transform: (
+                position: (0.0, 2.5100002, 0.71999997),
+                rotation: (16.001, 0.0, 0.0),
+                scale: (3.1, 0.03, 1.4148146),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("0aec45f9288c5fd14eefcddb2765e8e1"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Pole",
+            id: 258390318496768,
+            transform: (
+                position: (-1.45, 1.15, 1.4),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.07, 2.3, 0.07),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("ccf620ee9ec1576a1849ef73e0cfdfaf"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.5),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Cylinder"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Pole",
+            id: 35734141898604,
+            transform: (
+                position: (1.45, 1.15, 1.4),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.07, 2.3, 0.07),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("ccf620ee9ec1576a1849ef73e0cfdfaf"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                (
+                    kind: "Collider",
+                    fields: {
+                        "collides_with": Int(4294967295),
+                        "density": Float(1.0),
+                        "friction": Float(0.5),
+                        "is_trigger": Bool(false),
+                        "mesh": Asset(""),
+                        "offset": Vec3(0.0, 0.0, 0.0),
+                        "radius": Float(0.5),
+                        "restitution": Float(0.0),
+                        "shape": Enum("Cylinder"),
+                        "size": Vec3(1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

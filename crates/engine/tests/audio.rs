@@ -106,7 +106,8 @@ fn component_fields_reach_the_voice_live() {
     app.run_headless(2, DT);
     peaks(&mut app, 0.05); // даём громкости перейти плавно
     let (_, quiet) = peaks(&mut app, 0.1);
-    assert!(loud > 0.45, "{loud}");
+    // Синус 0.5 на выходе микшера: запас мастер-шины −6 дБ даёт пик ≈ 0.25.
+    assert!(loud > 0.22, "{loud}");
     assert!((quiet - loud * 0.25).abs() < 0.02, "{quiet} vs {loud}");
 
     // Шина тоже меняется на лету.
@@ -140,7 +141,7 @@ fn spatial_source_pans_toward_its_side_and_fades_with_distance() {
     app.run_headless(2, DT);
     peaks(&mut app, 0.05);
     let (l, r) = peaks(&mut app, 0.1);
-    assert!(l > 0.45 && l > r, "inside min distance: full volume, panned left ({l}, {r})");
+    assert!(l > 0.22 && l > r, "inside min distance: full volume, panned left ({l}, {r})");
 }
 
 #[test]

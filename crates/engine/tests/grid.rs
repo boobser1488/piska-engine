@@ -213,6 +213,61 @@ fn the_grid_is_visible_on_empty_ground_and_from_below() {
     assert!(below_strength < above_strength, "the underside is not dimmer ({below_strength} vs {above_strength})");
 }
 
+/// Одиночные «искры»: освещённый пиксель, вокруг которого (8 соседей) нет других.
+fn isolated_dots(image: &RgbaImage) -> usize {
+    let lit = |x: u32, y: u32| differs(px(image, x, y), px(image, 0, 0)) && {
+        let p = px(image, x, y);
+        let c = px(image, 0, 0);
+        (0..3).any(|i| p[i].abs_diff(c[i]) > 6)
+    };
+    let mut dots = 0;
+    for y in 1..H - 1 {
+        for x in 1..W - 1 {
+            if !lit(x, y) {
+                continue;
+            }
+            let neighbours = (-1i32..=1)
+                .flat_map(|dy| (-1i32..=1).map(move |dx| (dx, dy)))
+                .filter(|&(dx, dy)| (dx, dy) != (0, 0) && lit((x as i32 + dx) as u32, (y as i32 + dy) as u32))
+                .count();
+            if neighbours == 0 {
+                dots += 1;
+            }
+        }
+    }
+    dots
+}
+
+/// Под острым углом сетка остаётся линиями и не рассыпается в ряды точек там, где она
+/// переходит на более крупный шаг: толщина линии считается от размера пикселя на
+/// плоскости, а не производной от координаты клетки (та рвётся на границе уровней).
+#[test]
+fn the_grid_has_no_rows_of_dots_where_the_cell_size_changes() {
+    let _gpu = gpu_lock();
+    let mut renderer = Renderer::headless().expect("gpu");
+    let mut app = engine::app();
+    app.tick(1.0 / 60.0);
+    let mut worst = (0usize, String::new());
+    for (i, (eye, look)) in [
+        (Vec3::new(-640.0, 14.0, 410.0), Vec3::new(300.0, -14.0, -220.0)),
+        (Vec3::new(905.0, 6.0, -1220.0), Vec3::new(-180.0, -6.0, 260.0)),
+        (Vec3::new(-26.0, 30.0, -82.0), Vec3::new(400.0, -30.0, 90.0)),
+        (Vec3::new(2400.0, 45.0, 2400.0), Vec3::new(-500.0, -45.0, -350.0)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let image = render(&mut renderer, &app, &view(eye, eye + look, Some(SceneGrid::ground())));
+        save(&image, &format!("speckles_{i}.png"));
+        let dots = isolated_dots(&image);
+        if dots > worst.0 {
+            worst = (dots, format!("view {i} from {eye:?}"));
+        }
+    }
+    // До исправления — 6–11 точек на вид; после остаются 1–2 пикселя на концах гаснущих линий.
+    assert!(worst.0 <= 3, "{} isolated grid pixels in {}", worst.0, worst.1);
+}
+
 #[test]
 fn the_grid_stays_behind_sprites_in_the_2d_view() {
     let mut app = engine::app();

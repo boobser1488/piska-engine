@@ -2,9 +2,9 @@
 //!
 //! `ENGINE_FRAMES=N` закрывает окно после N кадров (проверки без человека).
 
-// В release-сборке на Windows — без окна консоли.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Подсистема «окно» (без консоли и в отладочной сборке) — build.rs: engine_build::windows_app().
 
+use engine_editor::kit::i18n::{tr_s};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -40,18 +40,25 @@ struct Runner {
     visible: bool,
     /// Следующий кадр (если раньше ничего не случится).
     next_frame: Instant,
+    /// Окно уже показано: оно создаётся невидимым и показывается после первого кадра в
+    /// цветах темы (с заставкой) — ни белого, ни серого кадра системы.
+    shown: bool,
 }
 
 impl Runner {
     fn create_gfx(&self, event_loop: &ActiveEventLoop) -> Result<Gfx, String> {
-        let mut attributes = Window::default_attributes()
-            .with_title("Piska Hub")
+        let attributes = Window::default_attributes()
+            .with_title(tr_s("Piska Hub"))
+            .with_visible(false)
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             .with_min_inner_size(LogicalSize::new(960.0, 600.0));
-        if let Some(icon) = self.window_icon() {
-            attributes = attributes.with_window_icon(Some(icon));
-        }
+        // Значок движка, зашитый в программу: и в заголовке, и на панели задач / в Alt-Tab.
+        // (Раньше он читался с диска из папки движка и ставился только в заголовок: без
+        // найденной папки значка не было вовсе, а панель задач показывала пустой.)
+        let attributes = engine_render::with_window_icon(attributes, None);
         let window = Arc::new(event_loop.create_window(attributes).map_err(|e| e.to_string())?);
+        // Системные окна «Папка» / «Открыть» встают над хабом и блокируют его.
+        engine_editor::kit::window::set_file_dialog_owner(&window);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
         let surface = instance.create_surface(window.clone()).map_err(|e| e.to_string())?;
         let gpu = pollster::block_on(engine_render::Gpu::request(&instance, Some(&surface))).map_err(|e| e.to_string())?;
@@ -94,14 +101,6 @@ impl Runner {
         })
     }
 
-    /// Значок окна — значок движка, если он есть в `assets/branding`.
-    fn window_icon(&self) -> Option<winit::window::Icon> {
-        let file = self.hub.engine_root()?.join("assets").join("branding").join("icon-64.png");
-        let image = image::open(file).ok()?.to_rgba8();
-        let (w, h) = image.dimensions();
-        winit::window::Icon::from_rgba(image.into_raw(), w, h).ok()
-    }
-
     fn frame(&mut self, event_loop: &ActiveEventLoop) {
         let Some(gfx) = self.gfx.as_mut() else {
             return;
@@ -122,12 +121,17 @@ impl Runner {
                 gfx.painter.paint(&ctx, full, &view, [gfx.config.width, gfx.config.height]);
                 gfx.window.pre_present_notify();
                 frame.present();
+                // Первый кадр уже в цветах темы (с заставкой) — окно можно показать.
+                if !self.shown && self.hub.themed() {
+                    self.shown = true;
+                    gfx.window.set_visible(self.visible);
+                }
             }
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                 gfx.surface.configure(&gfx.painter.device, &gfx.config);
             }
             Err(wgpu::SurfaceError::OutOfMemory) => {
-                self.error = Some("out of GPU memory".to_string());
+                self.error = Some(tr_s("out of GPU memory").to_string());
                 event_loop.exit();
             }
             Err(other) => log::warn!("skipping a frame: {other}"),
@@ -185,6 +189,12 @@ impl ApplicationHandler for Runner {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Невидимое окно не получает RedrawRequested: первые кадры рисуются отсюда.
+        if self.gfx.is_some() && !self.shown {
+            self.frame(event_loop);
+            event_loop.set_control_flow(ControlFlow::Poll);
+            return;
+        }
         // Сборка, запущенные программы, просьбы редактора — и когда окно спрятано.
         // Перерисовка — только если что-то поменялось.
         let changed = self.hub.update();
@@ -196,7 +206,7 @@ impl ApplicationHandler for Runner {
         let Some(gfx) = &self.gfx else {
             return;
         };
-        if request.visible != self.visible {
+        if request.visible != self.visible && self.shown {
             self.visible = request.visible;
             gfx.window.set_visible(request.visible);
             if request.visible {
@@ -236,6 +246,8 @@ impl log::Log for StderrLog {
 }
 
 fn main() {
+    // Своей консоли нет: подключиться к терминалу или писать журнал в файл.
+    engine_build::host::gui_startup("piska-hub", engine_editor::kit::i18n::brand::CONFIG_DIR_NAME);
     let level = match std::env::var("RUST_LOG").unwrap_or_default().as_str() {
         "debug" | "trace" => log::LevelFilter::Debug,
         "warn" => log::LevelFilter::Warn,
@@ -253,12 +265,30 @@ fn main() {
         match arg.as_str() {
             "--open" => options.open = args.next().map(PathBuf::from),
             "--help" | "-h" => {
-                println!("piska-hub [--open <project folder>]\n\nThe Piska Engine start screen: projects, new project, samples.");
+                let ext = engine_editor::kit::i18n::brand::PROJECT_EXTENSION;
+                println!(
+                    "piska-hub [--open <project folder>] [<project folder or .{ext} file>...]\n\nThe {} start screen: projects, new project, import, samples.\nA folder or a .{ext} file opens the Import Project page.",
+                    engine_editor::kit::i18n::brand::ENGINE_NAME
+                );
                 return;
             }
+            other if !other.starts_with('-') => options.import.push(PathBuf::from(other)),
             other => {
                 eprintln!("piska-hub: unknown argument `{other}` (try --help)");
                 std::process::exit(2);
+            }
+        }
+    }
+    // Двойной щелчок по файлу проекта при уже запущенном хабе: просьба уходит ему, второе окно не открывается.
+    if let Some(dir) = piska_hub::paths::config_dir() {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        if !options.import.is_empty() && options.open.is_none() && piska_hub::link::other_hub_alive(&dir, now) {
+            let sent = options
+                .import
+                .iter()
+                .all(|path| piska_hub::link::send_request(&dir, &piska_hub::link::Request::Import(path.clone())).is_ok());
+            if sent {
+                return;
             }
         }
     }
@@ -278,7 +308,11 @@ fn main() {
         max_frames,
         visible: true,
         next_frame: Instant::now(),
+        shown: false,
     };
+    runner.hub.enable_splash();
+    // Системные окна выбора папки и файла — только у настоящего окна (не в тестах).
+    engine_build::file_dialog::enable_native();
     if let Err(err) = event_loop.run_app(&mut runner) {
         eprintln!("piska-hub: {err}");
         std::process::exit(1);

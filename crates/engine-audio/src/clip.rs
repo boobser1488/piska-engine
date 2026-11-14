@@ -223,4 +223,115 @@ impl AudioClip {
     pub fn shared(self) -> Arc<AudioClip> {
         Arc::new(self)
     }
+
+    /// Интегральная громкость, LUFS (BS.1770). Тишина — `-inf`.
+    pub fn loudness(&self) -> f32 {
+        crate::dsp::integrated_loudness(&self.samples, self.channels as usize, self.sample_rate)
+    }
+
+    /// Привести клип к уровню политики громкости: `clip.normalized_to(Level::Music)`
+    /// или к громкости в LUFS: `clip.normalized_to(-14.0)`. Пик — не выше −1 дБFS.
+    pub fn normalized_to(mut self, level: impl Into<Level>) -> Self {
+        apply_level(&mut self.samples, self.channels as usize, self.sample_rate, level.into());
+        self
+    }
+}
+
+/// Уровень по политике громкости движка (см. «Политика громкости» в `docs/api/audio.md`).
+///
+/// Уровни задаются для клипа; на выходе микшер добавляет запас −6 дБ
+/// ([`Mixer::DEFAULT_HEADROOM_DB`](crate::Mixer::DEFAULT_HEADROOM_DB)), поэтому при
+/// громкостях шин 1.0 игрок слышит: музыку около −20 LUFS, пики эффектов около −8 дБFS,
+/// пики интерфейса около −14 дБFS.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Level {
+    /// Фоновая музыка: [`Level::MUSIC_LUFS`].
+    Music,
+    /// Игровые эффекты: пик [`Level::SFX_PEAK`].
+    Sfx,
+    /// Звуки интерфейса — тише эффектов: пик [`Level::UI_PEAK`].
+    Ui,
+    /// Своя громкость, LUFS.
+    Lufs(f32),
+    /// Свой пик (линейный, 0..1).
+    Peak(f32),
+}
+
+impl Level {
+    /// Громкость музыки в клипе, LUFS.
+    pub const MUSIC_LUFS: f32 = -14.0;
+    /// Пик игрового эффекта в клипе (−2 дБFS).
+    pub const SFX_PEAK: f32 = 0.8;
+    /// Пик звука интерфейса в клипе (−8 дБFS).
+    pub const UI_PEAK: f32 = 0.4;
+    /// Выше этого пика нормализация по громкости не поднимает (−1 дБFS).
+    pub const PEAK_CEILING: f32 = 0.891;
+
+    /// Сколько дБ пиков может срезать лимитер при нормализации по громкости. Больше —
+    /// звук слишком «пиковый» (одинокий удар): он останется тише цели, но не «сплющится».
+    pub const MAX_LIMITING_DB: f32 = 9.0;
+}
+
+/// Привести сэмплы (чередующиеся каналы) к уровню. По громкости: усиление до цели;
+/// если пик при этом вышел бы за [`Level::PEAK_CEILING`], пики мягко прижимает лимитер с
+/// заглядыванием (по кругу — петли остаются бесшовными), но не больше чем на
+/// [`Level::MAX_LIMITING_DB`].
+pub(crate) fn apply_level(samples: &mut [f32], channels: usize, rate: u32, level: Level) {
+    let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    if peak <= 1e-9 {
+        return;
+    }
+    let by_peak = |samples: &mut [f32], target: f32| {
+        let gain = target.clamp(0.0, 1.0) / peak;
+        for s in samples.iter_mut() {
+            *s *= gain;
+        }
+    };
+    let target = match level {
+        Level::Sfx => return by_peak(samples, Level::SFX_PEAK),
+        Level::Ui => return by_peak(samples, Level::UI_PEAK),
+        Level::Peak(p) => return by_peak(samples, p),
+        Level::Music => Level::MUSIC_LUFS,
+        Level::Lufs(target) => target,
+    };
+    // Лимитер срезает пики и вместе с ними часть громкости (особенно у плотных ударных),
+    // поэтому несколько итераций: усилить до цели → прижать пики → перемерить.
+    // Общее усиление сверх «пикового» потолка — не больше MAX_LIMITING_DB.
+    let max_gain = Level::PEAK_CEILING / peak * 10f32.powf(Level::MAX_LIMITING_DB / 20.0);
+    let mut total = 1.0f32;
+    for _ in 0..4 {
+        let loudness = crate::dsp::integrated_loudness(samples, channels, rate);
+        if !loudness.is_finite() {
+            return;
+        }
+        let current = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        let on_target = (loudness - target).abs() < 0.2;
+        if on_target && current <= Level::PEAK_CEILING {
+            return;
+        }
+        let gain = if on_target { 1.0 } else { 10f32.powf((target - loudness) / 20.0).min(max_gain / total) };
+        if (gain - 1.0).abs() < 1e-3 && current <= Level::PEAK_CEILING {
+            return;
+        }
+        total *= gain;
+        let mut current_peak = 0.0f32;
+        for s in samples.iter_mut() {
+            *s *= gain;
+            current_peak = current_peak.max(s.abs());
+        }
+        if current_peak > Level::PEAK_CEILING {
+            crate::dsp::limit_loop(samples, channels, Level::PEAK_CEILING, rate);
+        }
+    }
+    // Итерации кончились: пик всё равно не выше потолка.
+    if samples.iter().any(|s| s.abs() > Level::PEAK_CEILING) {
+        crate::dsp::limit_loop(samples, channels, Level::PEAK_CEILING, rate);
+    }
+}
+
+/// Число — громкость в LUFS: `normalized_to(-16.0)`.
+impl From<f32> for Level {
+    fn from(lufs: f32) -> Self {
+        Level::Lufs(lufs)
+    }
 }

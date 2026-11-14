@@ -33,7 +33,7 @@
             name: "Environment",
             components: [
                 (kind: "Environment", fields: {
-                    "fog_density": Float(0.006),
+                    "fog_density": Float(0.0015),
                     "bloom": Float(0.07),
                 }),
             ],

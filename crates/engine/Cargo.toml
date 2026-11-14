@@ -54,6 +54,9 @@ engine-editor = { workspace = true, optional = true }
 engine-core.workspace = true
 engine-assets.workspace = true
 engine-render.workspace = true
+# Программы с окном: без консоли, журнал в файл, дочерние процессы без консоли (host.rs).
+engine-build.workspace = true
+engine-i18n.workspace = true
 engine-physics = { workspace = true, optional = true }
 engine-audio = { workspace = true, optional = true }
 engine-ui = { workspace = true, optional = true }

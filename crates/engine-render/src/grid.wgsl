@@ -10,6 +10,17 @@ struct Grid {
     color: vec4<f32>,      // rgb — цвет линий; w — сила осей
     axis_u: vec4<f32>,     // rgb — цвет линии u = 0
     axis_v: vec4<f32>,     // rgb — цвет линии v = 0, w — 1 для ортографического вида
+    // Луч через пиксель с NDC (x, y), посчитанный на CPU из хорошо обусловленных строк
+    // матрицы вида (см. grid_pass.rs): начало = base + origin_x·x + origin_y·y,
+    // направление = dir_0 + dir_x·x + dir_y·y. Всё, что меняется от пикселя к пикселю, —
+    // маленькие числа относительно `base` (камеры), поэтому вдали от начала координат
+    // точка на плоскости не шумит и линии не рассыпаются в точки.
+    base: vec4<f32>,       // xyz — камера (орто: центр ближней плоскости); w — ближняя граница t
+    origin_x: vec4<f32>,
+    origin_y: vec4<f32>,
+    dir_0: vec4<f32>,      // w — дальняя граница t
+    dir_x: vec4<f32>,
+    dir_y: vec4<f32>,
 };
 
 @group(1) @binding(0) var<uniform> grid: Grid;
@@ -30,9 +41,14 @@ fn vs_grid(@builtin(vertex_index) index: u32) -> GridVertex {
 
 // Насколько пиксель «попадает» в линии клетки `cell` (0…1), с учётом плотности линий:
 // слишком частые по экрану линии гаснут, иначе вдали получается муар.
-fn grid_lines(uv: vec2<f32>, cell: f32) -> f32 {
+//
+// `footprint` — размер пикселя на плоскости (`fwidth(uv)`), посчитанный один раз снаружи.
+// Брать здесь `fwidth(uv / cell)` нельзя: на границе уровней детализации `cell` у соседних
+// пикселей отличается в 10 раз, производная получается мусорной, и вдоль каждой такой
+// границы сетка рассыпается в ряд случайных точек.
+fn grid_lines(uv: vec2<f32>, cell: f32, footprint: vec2<f32>) -> f32 {
     let c = uv / cell;
-    let d = max(fwidth(c), vec2<f32>(1e-6));
+    let d = max(footprint / cell, vec2<f32>(1e-6));
     let distance_px = abs(fract(c - 0.5) - 0.5) / d;
     let line = 1.0 - clamp(distance_px - 0.35, vec2<f32>(0.0), vec2<f32>(1.0));
     let density = 1.0 - smoothstep(vec2<f32>(0.18), vec2<f32>(0.45), d);
@@ -46,29 +62,29 @@ struct GridOutput {
 
 @fragment
 fn fs_grid(in: GridVertex) -> GridOutput {
-    // Луч через пиксель: точки на ближней и дальней плоскостях.
-    let far = globals.inv_view_proj * vec4<f32>(in.ndc, 1.0, 1.0);
-    let near = globals.inv_view_proj * vec4<f32>(in.ndc, 0.0, 1.0);
-    let p0 = near.xyz / near.w;
-    let p1 = far.xyz / far.w;
-    let ray = p1 - p0;
+    // Луч через пиксель — относительно камеры (см. `Grid`).
+    let origin = grid.origin_x.xyz * in.ndc.x + grid.origin_y.xyz * in.ndc.y;
+    let ray = grid.dir_0.xyz + grid.dir_x.xyz * in.ndc.x + grid.dir_y.xyz * in.ndc.y;
     let wall = grid.params.x > 0.5;
-    let normal_0 = select(p0.y, p0.z, wall);
+    let height = grid.params.y - select(grid.base.y, grid.base.z, wall);
+    let normal_0 = select(origin.y, origin.z, wall);
     let normal_ray = select(ray.y, ray.z, wall);
-    let t = (grid.params.y - normal_0) / select(normal_ray, 1e-6, abs(normal_ray) < 1e-6);
-    let position = p0 + ray * t;
+    let t = (height - normal_0) / select(normal_ray, 1e-12, abs(normal_ray) < 1e-12);
+    let relative = origin + ray * t;
+    let position = grid.base.xyz + relative;
     let uv = select(position.xz, position.xy, wall);
 
-    // Производные считаем до любых выходов (нужен равномерный поток управления).
-    let footprint = fwidth(uv);
+    // Производные считаем до любых выходов (нужен равномерный поток управления) и от
+    // координат относительно камеры: у абсолютных вдали от нуля не хватает разрядов.
+    let footprint = fwidth(select(relative.xz, relative.xy, wall));
     let level_size = max(max(footprint.x, footprint.y), 1e-6);
     let lod = log10_(level_size * 48.0);
     let level = floor(lod);
     let blend = lod - level;
     let cell = pow(10.0, level);
-    let fine = grid_lines(uv, cell) * (1.0 - blend);
-    let medium = grid_lines(uv, cell * 10.0);
-    let coarse = grid_lines(uv, cell * 100.0) * blend;
+    let fine = grid_lines(uv, cell, footprint) * (1.0 - blend);
+    let medium = grid_lines(uv, cell * 10.0, footprint);
+    let coarse = grid_lines(uv, cell * 100.0, footprint) * blend;
     var lines = clamp(fine + medium + coarse, 0.0, 2.0) * 0.5;
     lines = clamp(lines * 1.15, 0.0, 1.0);
 
@@ -78,7 +94,7 @@ fn fs_grid(in: GridVertex) -> GridOutput {
     let on_v = 1.0 - clamp(abs(uv.y) / axis_width.y - 0.6, 0.0, 1.0); // линия v = 0
 
     let ortho = grid.axis_v.w > 0.5; // параллельные лучи (2D-вид): расстояния до камеры не нужны
-    let distance_to_camera = length(position - globals.camera_position.xyz);
+    let distance_to_camera = length(relative);
     var fade = 1.0;
     if (!ortho) {
         fade = 1.0 - smoothstep(grid.params.z * 0.35, grid.params.z, distance_to_camera);
@@ -103,7 +119,7 @@ fn fs_grid(in: GridVertex) -> GridOutput {
     let biased = position + toward_camera * bias;
     let clip = globals.view_proj * vec4<f32>(biased, 1.0);
 
-    let visible = t > 0.0 && t < 1.0 && total > 0.002;
+    let visible = t > grid.base.w && t < grid.dir_0.w && total > 0.002;
     if (!visible) {
         discard;
     }

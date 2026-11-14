@@ -1,0 +1,30 @@
+(
+    name: "Game",
+    id: 38890783145087,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "GameManager",
+            fields: {
+                "course": Object(0),
+                "gym_scene": Str("gym"),
+                "hud": Object(0),
+                "main_menu": Object(0),
+                "menu_camera": Object(0),
+                "menu_scene": Str(""),
+                "mode": Enum("FreeRun"),
+                "options_menu": Object(0),
+                "pause_menu": Object(0),
+                "player": Object(0),
+                "results": Object(0),
+                "screen": Enum("Menu"),
+                "start_playing": Bool(false),
+                "team": Enum("Attackers"),
+            },
+        ),
+    ],
+)

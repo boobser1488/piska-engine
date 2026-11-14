@@ -7,6 +7,7 @@
 //! Обработка клавиш ([`Editor::dispatch_shortcuts`]), подписи в меню и подсказки
 //! кнопок берут сочетание только отсюда, поэтому показывают *текущее* назначение.
 
+use crate::i18n::n_;
 use std::collections::BTreeMap;
 
 use egui::{Key, Modifiers};
@@ -156,7 +157,8 @@ pub(crate) enum When {
     NotTyping,
     /// Ещё и окно Project под курсором не забрало клавиши файлового менеджера.
     Scene,
-    /// Ещё и только в режиме Edit: одиночные буквы в Play принадлежат игре.
+    /// Ещё и только пока ввод не у игры: в Play с фокусом на окне Game одиночные буквы
+    /// принадлежат игре.
     EditMode,
     /// Обрабатывает док (окно под курсором) — см. [`Editor::consume_command`].
     Dock,
@@ -184,51 +186,63 @@ const N: Key = Key::N; // «N» встречается в трёх сочета�
 /// Все команды редактора с горячими клавишами, в порядке страницы Shortcuts.
 pub const COMMANDS: &[CommandDef] = &[
     // --- File ---
-    cmd("new-scene", "New Scene", "File", Some(KeyBinding::ctrl(N)), When::Always),
-    cmd("save", "Save", "File", Some(KeyBinding::ctrl(Key::S)), When::Always),
-    cmd("save-as", "Save As…", "File", Some(KeyBinding::ctrl_shift(Key::S)), When::Always),
-    cmd("preferences", "Preferences…", "File", Some(KeyBinding::ctrl(Key::Comma)), When::Always),
-    cmd("project-settings", "Project Settings…", "File", None, When::Always),
-    cmd("quit", "Quit", "File", Some(KeyBinding::ctrl(Key::Q)), When::Always),
+    cmd("new-scene", n_("New Scene"), n_("File"), Some(KeyBinding::ctrl(N)), When::Always),
+    cmd("open-scene", n_("Open Scene"), n_("File"), Some(KeyBinding::ctrl(Key::O)), When::Always),
+    cmd("save", n_("Save"), n_("File"), Some(KeyBinding::ctrl(Key::S)), When::Always),
+    cmd("save-as", n_("Save As…"), n_("File"), Some(KeyBinding::ctrl_shift(Key::S)), When::Always),
+    cmd("preferences", n_("Preferences…"), n_("File"), Some(KeyBinding::ctrl(Key::Comma)), When::Always),
+    cmd("project-settings", n_("Project Settings…"), n_("File"), None, When::Always),
+    cmd("quit", n_("Quit"), n_("File"), Some(KeyBinding::ctrl(Key::Q)), When::Always),
     // --- Edit ---
-    cmd("undo", "Undo", "Edit", Some(KeyBinding::ctrl(Key::Z)), When::NotTyping),
-    cmd("redo", "Redo", "Edit", Some(KeyBinding::ctrl(Key::Y)), When::NotTyping),
-    cmd("redo-alt", "Redo (second shortcut)", "Edit", Some(KeyBinding::ctrl_shift(Key::Z)), When::NotTyping),
-    cmd("duplicate", "Duplicate", "Edit", Some(KeyBinding::ctrl(Key::D)), When::Scene),
-    cmd("rename", "Rename", "Edit", Some(KeyBinding::key(Key::F2)), When::EditMode),
-    cmd("delete", "Delete", "Edit", Some(KeyBinding::key(Key::Delete)), When::EditMode),
-    cmd("frame-selected", "Frame Selected", "Edit", Some(KeyBinding::key(Key::F)), When::EditMode),
-    cmd("select-none", "Select None", "Edit", Some(KeyBinding::key(Key::Escape)), When::EditMode),
+    cmd("undo", n_("Undo"), n_("Edit"), Some(KeyBinding::ctrl(Key::Z)), When::NotTyping),
+    cmd("redo", n_("Redo"), n_("Edit"), Some(KeyBinding::ctrl(Key::Y)), When::NotTyping),
+    cmd("redo-alt", n_("Redo (second shortcut)"), n_("Edit"), Some(KeyBinding::ctrl_shift(Key::Z)), When::NotTyping),
+    cmd("duplicate", n_("Duplicate"), n_("Edit"), Some(KeyBinding::ctrl(Key::D)), When::Scene),
+    cmd("rename", n_("Rename"), n_("Edit"), Some(KeyBinding::key(Key::F2)), When::EditMode),
+    cmd("delete", n_("Delete"), n_("Edit"), Some(KeyBinding::key(Key::Delete)), When::EditMode),
+    cmd("frame-selected", n_("Frame Selected"), n_("Edit"), Some(KeyBinding::key(Key::F)), When::EditMode),
+    cmd("select-none", n_("Select None"), n_("Edit"), Some(KeyBinding::key(Key::Escape)), When::EditMode),
+    cmd("select-all", n_("Select All"), n_("Edit"), Some(KeyBinding::ctrl(Key::A)), When::Scene),
+    cmd("copy", n_("Copy"), n_("Edit"), Some(KeyBinding::ctrl(Key::C)), When::Scene),
+    cmd("cut", n_("Cut"), n_("Edit"), Some(KeyBinding::ctrl(Key::X)), When::Scene),
+    cmd("paste", n_("Paste"), n_("Edit"), Some(KeyBinding::ctrl(Key::V)), When::Scene),
+    cmd("paste-child", n_("Paste as Child"), n_("Edit"), Some(KeyBinding::ctrl_shift(Key::V)), When::Scene),
+    cmd("group", n_("Group Selection"), n_("Edit"), Some(KeyBinding::ctrl(Key::G)), When::Scene),
+    cmd("hide", n_("Deactivate Selection"), n_("Edit"), Some(KeyBinding::key(Key::H)), When::EditMode),
+    cmd("unhide", n_("Activate Selection"), n_("Edit"), Some(KeyBinding::with(Key::H, false, true, false)), When::EditMode),
     // --- GameObject ---
-    cmd("create-empty", "Create Empty", "GameObject", Some(KeyBinding::ctrl_shift(N)), When::Always),
-    cmd("create-empty-child", "Create Empty Child", "GameObject", Some(KeyBinding::with(N, false, true, true)), When::Always),
+    cmd("create-empty", n_("Create Empty"), "GameObject", Some(KeyBinding::ctrl_shift(N)), When::Always),
+    cmd("create-empty-child", n_("Create Empty Child"), "GameObject", Some(KeyBinding::with(N, false, true, true)), When::Always),
     // --- Play ---
-    cmd("play", "Play / Stop", "Play", Some(KeyBinding::ctrl(Key::P)), When::Always),
-    cmd("pause", "Pause / Resume", "Play", Some(KeyBinding::ctrl_shift(Key::P)), When::Always),
-    cmd("step", "Step", "Play", Some(KeyBinding::with(Key::P, true, false, true)), When::Always),
+    cmd("play", n_("Play / Stop"), n_("Play"), Some(KeyBinding::ctrl(Key::P)), When::Always),
+    cmd("pause", n_("Pause / Resume"), n_("Play"), Some(KeyBinding::ctrl_shift(Key::P)), When::Always),
+    cmd("step", n_("Step"), n_("Play"), Some(KeyBinding::with(Key::P, true, false, true)), When::Always),
     // --- Tools ---
-    cmd("tool-move", "Move Tool", "Tools", Some(KeyBinding::key(Key::W)), When::EditMode),
-    cmd("tool-rotate", "Rotate Tool", "Tools", Some(KeyBinding::key(Key::E)), When::EditMode),
-    cmd("tool-scale", "Scale Tool", "Tools", Some(KeyBinding::key(Key::R)), When::EditMode),
-    cmd("toggle-snap", "Snap to Grid", "Tools", None, When::EditMode),
-    cmd("toggle-local", "Local / World Axes", "Tools", None, When::EditMode),
+    cmd("tool-move", n_("Move Tool"), n_("Tools"), Some(KeyBinding::key(Key::W)), When::EditMode),
+    cmd("tool-rotate", n_("Rotate Tool"), n_("Tools"), Some(KeyBinding::key(Key::E)), When::EditMode),
+    cmd("tool-scale", n_("Scale Tool"), n_("Tools"), Some(KeyBinding::key(Key::R)), When::EditMode),
+    cmd("toggle-snap", n_("Snap to Grid"), n_("Tools"), None, When::EditMode),
+    cmd("toggle-local", n_("Local / World Axes"), n_("Tools"), None, When::EditMode),
+    cmd("toggle-pivot", n_("Pivot / Center"), n_("Tools"), Some(KeyBinding::key(Key::Z)), When::EditMode),
     // --- View ---
-    cmd("view-3d", "2D / 3D View", "View", None, When::Scene),
-    cmd("view-grid", "Show Grid", "View", None, When::Scene),
-    cmd("view-gizmos", "Show Gizmos", "View", None, When::Scene),
+    cmd("view-3d", n_("2D / 3D View"), n_("View"), Some(KeyBinding::key(Key::Num2)), When::EditMode),
+    cmd("view-grid", n_("Show Grid"), n_("View"), None, When::Scene),
+    cmd("view-gizmos", n_("Show Gizmos"), n_("View"), None, When::Scene),
     // --- Assets ---
-    cmd("refresh", "Refresh Assets", "Assets", Some(KeyBinding::ctrl(Key::R)), When::Always),
-    cmd("build-code", "Build Code", "Assets", Some(KeyBinding::ctrl(Key::B)), When::Always),
+    cmd("refresh", n_("Refresh Assets"), n_("Assets"), Some(KeyBinding::ctrl(Key::R)), When::Always),
+    cmd("build-code", n_("Build Code"), n_("Assets"), Some(KeyBinding::ctrl(Key::B)), When::Always),
     // --- Window ---
-    cmd("window-scene", "Scene", "Window", Some(KeyBinding::ctrl(Key::Num1)), When::Always),
-    cmd("window-game", "Game", "Window", Some(KeyBinding::ctrl(Key::Num2)), When::Always),
-    cmd("window-code", "Code", "Window", Some(KeyBinding::ctrl(Key::Num3)), When::Always),
-    cmd("window-hierarchy", "Hierarchy", "Window", Some(KeyBinding::ctrl(Key::Num4)), When::Always),
-    cmd("window-project", "Project", "Window", Some(KeyBinding::ctrl(Key::Num5)), When::Always),
-    cmd("window-console", "Console", "Window", Some(KeyBinding::ctrl(Key::Num6)), When::Always),
-    cmd("window-profiler", "Profiler", "Window", Some(KeyBinding::ctrl(Key::Num7)), When::Always),
-    cmd("window-inspector", "Inspector", "Window", Some(KeyBinding::ctrl(Key::Num8)), When::Always),
-    cmd("maximize-panel", "Maximize / Restore Window", "Window", Some(KeyBinding::with(Key::Space, false, true, false)), When::Dock),
+    cmd("window-scene", n_("Scene"), n_("Window"), Some(KeyBinding::ctrl(Key::Num1)), When::Always),
+    cmd("window-game", n_("Game"), n_("Window"), Some(KeyBinding::ctrl(Key::Num2)), When::Always),
+    cmd("window-code", n_("Code"), n_("Window"), Some(KeyBinding::ctrl(Key::Num3)), When::Always),
+    cmd("window-hierarchy", n_("Hierarchy"), n_("Window"), Some(KeyBinding::ctrl(Key::Num4)), When::Always),
+    cmd("window-project", n_("Project"), n_("Window"), Some(KeyBinding::ctrl(Key::Num5)), When::Always),
+    cmd("window-console", n_("Console"), n_("Window"), Some(KeyBinding::ctrl(Key::Num6)), When::Always),
+    cmd("window-profiler", n_("Profiler"), n_("Window"), Some(KeyBinding::ctrl(Key::Num7)), When::Always),
+    cmd("window-inspector", n_("Inspector"), n_("Window"), Some(KeyBinding::ctrl(Key::Num8)), When::Always),
+    cmd("maximize-panel", n_("Maximize / Restore Window"), n_("Window"), Some(KeyBinding::with(Key::Space, false, true, false)), When::Dock),
+    // --- Help ---
+    cmd("shortcuts-help", n_("Keyboard Shortcuts"), n_("Help"), Some(KeyBinding::key(Key::F1)), When::Always),
 ];
 
 /// Команда по имени.
@@ -313,7 +327,7 @@ impl Keymap {
         let mut text = String::new();
         for (id, binding) in &self.overrides {
             let value = binding.map_or_else(|| "none".to_string(), |b| b.storage());
-            text.push_str(&format!("    shortcut.{id}: {value},\n"));
+            text.push_str(&format!("    shortcut.{id}: {value},\n", id = id, value = value));
         }
         text
     }
@@ -394,7 +408,8 @@ impl Editor {
         let selection = self.selection;
         let editing = self.mode == Mode::Edit;
         match id {
-            "new-scene" => self.actions.push(Action::NewScene),
+            "new-scene" => self.show_new_scene_dialog(true),
+            "open-scene" => self.show_scene_picker(true),
             // Во вкладке Code Ctrl+S сохраняет файл, а не сцену.
             "save" => self.actions.push(if self.view_tab == ViewTab::Code { Action::SaveCode } else { Action::Save }),
             "save-as" => self.open_save_as(),
@@ -403,13 +418,23 @@ impl Editor {
             "quit" => self.actions.push(Action::Quit),
             "undo" => self.actions.push(Action::Undo),
             "redo" | "redo-alt" => self.actions.push(Action::Redo),
-            "duplicate" => self.actions.extend(selection.map(Action::Duplicate)),
+            "duplicate" => self.actions.push(Action::DuplicateSelection),
             "rename" => {
                 if let Some((id, name)) = selection.and_then(|id| self.app.world.scene.get(id).map(|o| (id, o.name.clone()))) {
                     self.hierarchy.begin_rename(id, &name);
                 }
             }
-            "delete" => self.actions.extend(selection.map(Action::Delete)),
+            "delete" => self.actions.push(Action::DeleteSelection),
+            "select-all" => self.actions.push(Action::SelectAll),
+            "copy" => self.actions.push(Action::CopySelection),
+            "cut" => self.actions.push(Action::CutSelection),
+            "paste" => self.actions.push(Action::Paste { as_child: false }),
+            "paste-child" => self.actions.push(Action::Paste { as_child: true }),
+            "group" => self.actions.push(Action::GroupSelection),
+            "hide" => self.actions.push(Action::SetSelectionActive(false)),
+            "unhide" => self.actions.push(Action::SetSelectionActive(true)),
+            "toggle-pivot" => self.pivot_center = !self.pivot_center,
+            "shortcuts-help" => self.shortcuts_help_open = !self.shortcuts_help_open,
             "frame-selected" => self.actions.push(Action::FrameSelected),
             "select-none" => {
                 if selection.is_some() {
@@ -451,8 +476,19 @@ impl Editor {
         match when {
             When::Always => true,
             When::NotTyping => !typing,
-            When::Scene => !typing && !self.project.keys_owned(ctx),
-            When::EditMode => !typing && !self.project.keys_owned(ctx) && self.mode == Mode::Edit,
+            // Во вкладке Code Ctrl+G / Ctrl+C… — её собственные (перейти к строке, текст).
+            When::Scene => {
+                !typing && !self.project.keys_owned(ctx) && self.focused_panel() != Some(crate::dock::Panel::Code)
+            }
+            // Пока правой кнопкой летают по виду Scene, W / A / S / D / Q / E — полёт, а не
+            // инструменты.
+            When::EditMode => {
+                !typing
+                    && !self.project.keys_owned(ctx)
+                    && !self.game_has_input_focus()
+                    && !self.viewport.flying
+                    && !self.hierarchy_typing(ctx.input(|i| i.time))
+            }
             When::Dock => false,
         }
     }
@@ -464,15 +500,27 @@ impl Editor {
             self.capture_listened_key(ctx);
             return;
         }
-        if self.dialog.is_some() || self.dock.save_dialog.is_some() || self.project.modal_open() || self.settings_modal_open() {
+        if self.dialog.is_some()
+            || self.dock.save_dialog.is_some()
+            || self.project.modal_open()
+            || self.settings_modal_open()
+            || self.scene_picker.open
+            || self.scene_picker.new_scene
+        {
             return;
         }
         let typing = ctx.wants_keyboard_input();
         let presses: Vec<egui::Event> = ctx.input(|i| {
             i.events.iter().filter(|e| matches!(e, egui::Event::Key { pressed: true, .. })).cloned().collect()
         });
+        // Открыто всплывающее окно (Build, Undo History…) — Esc закрывает его, а не снимает
+        // выделение (окно ловит Esc само, когда рисуется).
+        let window_open = crate::window_kit::tool_window_was_open(ctx);
         for event in presses {
             let egui::Event::Key { key, modifiers, .. } = &event else { continue };
+            if window_open && *key == egui::Key::Escape && modifiers.is_none() {
+                continue;
+            }
             let Some(id) = self.match_command(ctx, *key, *modifiers, typing) else { continue };
             ctx.input_mut(|i| {
                 if let Some(at) = i.events.iter().position(|e| *e == event) {

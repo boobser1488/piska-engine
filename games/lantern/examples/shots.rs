@@ -9,7 +9,7 @@
 //! (центр и половину высоты кадра) — так снимается обзор всего уровня.
 
 use engine::prelude::*;
-use lantern::{LevelManager, Progress, RunResult};
+use lantern::{LevelManager, Progress, Rules, RunResult};
 
 const DT: f32 = 1.0 / 60.0;
 
@@ -43,10 +43,10 @@ fn main() -> Result<(), EngineError> {
 
     // Немного прогресса, чтобы меню и результаты выглядели «живыми».
     if let Some(p) = app.world.resources.get_mut::<Progress>() {
-        p.record(0, &RunResult { time: 112.0, fireflies: 41, total: 45, golden: true, deaths: 0 }, 150.0);
-        p.record(1, &RunResult { time: 190.0, fireflies: 22, total: 37, golden: false, deaths: 1 }, 190.0);
-        p.record(2, &RunResult { time: 280.0, fireflies: 34, total: 40, golden: false, deaths: 2 }, 240.0);
-        p.record(3, &RunResult { time: 300.0, fireflies: 30, total: 40, golden: true, deaths: 1 }, 280.0);
+        p.record(0, &RunResult { time: 112.0, fireflies: 41, total: 45, golden: true, deaths: 0 }, 150.0, &Rules::default());
+        p.record(1, &RunResult { time: 190.0, fireflies: 22, total: 37, golden: false, deaths: 1 }, 190.0, &Rules::default());
+        p.record(2, &RunResult { time: 280.0, fireflies: 34, total: 40, golden: false, deaths: 2 }, 240.0, &Rules::default());
+        p.record(3, &RunResult { time: 300.0, fireflies: 30, total: 40, golden: true, deaths: 1 }, 280.0, &Rules::default());
         if screen.starts_with("level") {
             // последние уровни — со всеми способностями
         }
@@ -122,7 +122,7 @@ fn main() -> Result<(), EngineError> {
                         m.golden = true;
                         m.time = 120.0;
                     }
-                    let exit = app.world.scene.find_with::<lantern::objects::Exit>()[0];
+                    let exit = app.world.scene.find_with::<lantern::scripts::exit::Exit>()[0];
                     let at = app.world.scene.world_position(exit);
                     let pl = app.world.scene.find_by_tag("Player").unwrap();
                     app.world.scene.get_mut(pl).unwrap().transform.position = at;

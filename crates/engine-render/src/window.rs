@@ -33,10 +33,11 @@ pub struct WindowConfig {
     /// задаёт страница (CSS).
     pub width: u32,
     pub height: u32,
-    /// Синхронизация с частотой монитора. По умолчанию выключена: кадры идут так
-    /// быстро, как успевает машина, и задержка ввода минимальна (возможны разрывы
-    /// картинки). Включите, чтобы не грузить видеокарту впустую. Браузер всегда
-    /// рисует с частотой монитора.
+    /// Синхронизация с частотой монитора. По умолчанию включена: кадры показываются в
+    /// такт монитору, и движение идёт ровно. Без неё кадров больше и задержка ввода
+    /// чуть меньше, но картинка рвётся, а камера движется мелкими рывками даже при
+    /// высоком FPS (кадр попадает на экран в случайный момент между обновлениями
+    /// монитора). Браузер всегда рисует с частотой монитора.
     pub vsync: bool,
     /// Закрыть окно после стольких кадров (для смоук-тестов).
     pub max_frames: Option<u64>,
@@ -60,7 +61,7 @@ impl Default for WindowConfig {
             title: "Piska Engine".to_string(),
             width: 1280,
             height: 720,
-            vsync: false,
+            vsync: true,
             max_frames: None,
             icon: None,
             resizable: true,
@@ -185,6 +186,12 @@ struct Runner {
     fps_window_frames: u32,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))] // итог FPS печатается только на десктопе
     started: Instant,
+    /// Окно показано (после первого нарисованного кадра — без белого прямоугольника).
+    shown: bool,
+    /// Выравнивание времени кадра под период монитора (см. `frame_time`).
+    frame_time: crate::frame_time::FrameTimeFilter,
+    /// Период монитора, с; перечитывается раз в пару секунд (окно могли перенести).
+    refresh_period: Option<f32>,
 }
 
 /// Ограничить размер поверхности тем, что умеет устройство (WebGL2 — часто 4096 или 8192).
@@ -199,8 +206,11 @@ impl Runner {
         let attributes = crate::appicon::with_window_icon(attributes, self.config.icon.as_deref());
         // В браузере размер холста задаёт CSS страницы: явный размер winit записал бы
         // в style холста и сломал бы «на всё окно».
+        // На десктопе окно невидимо до первого кадра: система не показывает белый
+        // прямоугольник, пока готовится видеокарта и грузится сцена.
         #[cfg(not(target_arch = "wasm32"))]
         let attributes = attributes
+            .with_visible(false)
             .with_inner_size(winit::dpi::LogicalSize::new(self.config.width, self.config.height))
             .with_resizable(self.config.resizable)
             .with_fullscreen(match self.config.fullscreen {
@@ -353,8 +363,20 @@ impl Runner {
         // Ограничиваем dt: после паузы/перетаскивания окна игра не «прыгает».
         let dt = (now - self.last_frame).as_secs_f32().min(0.25);
         self.last_frame = now;
+        // С вертикальной синхронизацией кадры на экране идут ровно через период монитора,
+        // а измеренное время гуляет: мир двигаем на выровненное (иначе мелкие рывки).
+        if self.frames % 120 == 0 {
+            self.refresh_period = self
+                .window
+                .as_ref()
+                .and_then(|w| w.current_monitor())
+                .and_then(|m| crate::frame_time::refresh_period(m.refresh_rate_millihertz()));
+        }
+        let synced = self.config.vsync && self.config.fps_cap == 0;
+        let dt = self.frame_time.filter(dt, self.refresh_period.filter(|_| synced));
 
         self.app.tick(dt);
+        sync_cursor_capture(&mut self.app.world.input, self.window.as_deref());
 
         let mut stats = RenderStats::default();
         match surface.get_current_texture() {
@@ -370,6 +392,12 @@ impl Runner {
                     gfx.config.height,
                 );
                 frame.present();
+                if !self.shown {
+                    if let Some(window) = &self.window {
+                        window.set_visible(true);
+                    }
+                    self.shown = true;
+                }
             }
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                 surface.configure(gfx.renderer.device(), &gfx.config);
@@ -406,6 +434,44 @@ impl Runner {
         }
     }
 }
+
+// --- Захват курсора (`Input::set_cursor_captured`) ----------------------------------
+// Игра просит захват, окно применяет его в конце кадра: прячет курсор и запирает его
+// (`Locked`, где нельзя — `Confined`; в браузере — Pointer Lock). Пока курсор захвачен,
+// взгляд мышью идёт по сырому движению (`device_event`). Потеря фокуса и сворачивание
+// зовут `Input::release_all`, она снимает просьбу — здесь курсор возвращается системе.
+fn sync_cursor_capture(input: &mut Input, window: Option<&Window>) {
+    use winit::window::CursorGrabMode;
+    let want = input.cursor_capture_requested();
+    if want == input.is_cursor_captured() {
+        return;
+    }
+    let Some(window) = window else {
+        return;
+    };
+    if want {
+        let grabbed = window
+            .set_cursor_grab(CursorGrabMode::Locked)
+            .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined));
+        match grabbed {
+            Ok(()) => {
+                window.set_cursor_visible(false);
+                input.set_cursor_capture_state(true);
+            }
+            Err(error) => {
+                // Платформа не умеет (Android): просьба снимается, чтобы не повторять её
+                // каждый кадр; игра видит `is_cursor_captured() == false`.
+                log::warn!("cursor capture is not available here: {error}");
+                input.set_cursor_captured(false);
+            }
+        }
+    } else {
+        let _ = window.set_cursor_grab(CursorGrabMode::None);
+        window.set_cursor_visible(true);
+        input.set_cursor_capture_state(false);
+    }
+}
+// --- конец: захват курсора ----------------------------------------------------------
 
 impl ApplicationHandler<UserEvent> for Runner {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -533,7 +599,28 @@ impl ApplicationHandler<UserEvent> for Runner {
         }
     }
 
+    // Захват курсора: сырое движение мыши (не упирается в край окна, без ускорения ОС).
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        if let winit::event::DeviceEvent::MouseMotion { delta } = event {
+            let input = &mut self.app.world.input;
+            if input.is_cursor_captured() {
+                input.add_mouse_delta(Vec2::new(delta.0 as f32, delta.1 as f32));
+            }
+        }
+    }
+
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        // Невидимое окно не получает RedrawRequested: первый кадр рисуется отсюда.
+        #[cfg(not(target_arch = "wasm32"))]
+        if !self.shown && self.gfx.is_some() {
+            self.frame(_event_loop);
+            return;
+        }
         let Some(window) = &self.window else {
             return;
         };
@@ -621,6 +708,9 @@ pub fn run(app: App, config: WindowConfig) -> Result<(), RenderError> {
         fps_window_start: now,
         fps_window_frames: 0,
         started: now,
+        shown: false,
+        frame_time: crate::frame_time::FrameTimeFilter::new(),
+        refresh_period: None,
     };
 
     #[cfg(target_arch = "wasm32")]

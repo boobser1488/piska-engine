@@ -4,6 +4,7 @@
 //! и, если выбран объект, вешает на него `ScenarioRunner`. Сборка не нужна: сценарий
 //! перезапускается сам, когда файл сохранён.
 
+use crate::i18n::{trf};
 use engine_core::error::SceneError;
 use engine_core::object::GameObjectId;
 use engine_core::reflect::Value;
@@ -42,16 +43,16 @@ impl Editor {
         let name = name.trim().trim_end_matches(".scenario").trim();
         let valid = !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-');
         if !valid {
-            return Err(EditorError::Other(format!(
+            return Err(EditorError::Other(trf!(
                 "`{name}` cannot be a scenario name: use letters, digits, `_` or `-`, for example `intro` or `wave_1`"
-            )));
+            , name = name)));
         }
         let folder = folder.trim().trim_matches('/');
         let folder = if folder.is_empty() { SCENARIO_DIR } else { folder };
-        let relative = format!("{folder}/{name}.scenario");
+        let relative = format!("{folder}/{name}.scenario", folder = folder, name = name);
         let path = root.join(&relative);
         if path.exists() {
-            return Err(EditorError::Other(format!("`{relative}` already exists; pick another name")));
+            return Err(EditorError::Other(trf!("`{relative}` already exists; pick another name", relative = relative)));
         }
         let io = |source: std::io::Error| SceneError::Io { path: path.display().to_string(), source };
         if let Some(dir) = path.parent() {
@@ -81,7 +82,7 @@ impl Editor {
             .resources
             .get::<engine_assets::AssetDatabase>()
             .and_then(|db| db.guid_of(relative))
-            .ok_or_else(|| EditorError::Other(format!("`{relative}` is not in the asset database")))?;
+            .ok_or_else(|| EditorError::Other(trf!("`{relative}` is not in the asset database", relative = relative)))?;
         let mut runner = self.app.world.registry.create("ScenarioRunner")?;
         runner
             .set_field("script", &Value::Asset(guid.to_string()))

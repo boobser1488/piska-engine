@@ -32,6 +32,9 @@ pub enum Value {
     /// Ссылка на ассет по GUID: `Asset("3f2a…")`. Пустая строка — «не назначено».
     Asset(String),
     List(Vec<Value>),
+    /// Ссылка на объект сцены по его стабильному номеру: `Object(81230412339)`.
+    /// `Object(0)` — «не назначено». См. [`ObjectRef`](crate::objref::ObjectRef).
+    Object(u64),
 }
 
 impl Value {
@@ -49,6 +52,7 @@ impl Value {
             Value::Enum(_) => "Enum",
             Value::Asset(_) => "Asset",
             Value::List(_) => "List",
+            Value::Object(_) => "Object",
         }
     }
 }
@@ -59,6 +63,8 @@ pub struct FieldMeta {
     /// Варианты перечисления (для выпадающего списка). Пусто — поле не перечисление.
     pub variants: &'static [&'static str],
     /// Какой ассет ждёт поле: имя импортёра (`"Texture"`, `"Prefab"`…). Пусто — не ассет.
+    /// У поля-ссылки на объект (`Value::Object`) — имя компонента, который должен быть у
+    /// объекта (`ComponentRef<T>`); пусто — подойдёт любой объект.
     pub asset_kind: &'static str,
 }
 

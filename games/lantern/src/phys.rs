@@ -206,14 +206,42 @@ pub struct Contact {
     pub impact: f32,
 }
 
-/// Один шаг движения: сначала по X, потом по Y. `drop` — игрок жмёт «вниз» и проваливается
-/// сквозь «облачка». Скорость за шаг должна быть меньше клетки (при 24 м/с и шаге 1/120 с — 0.2).
+/// Самый большой путь за один подшаг, клеток: тело не может перескочить через тайл.
+const MAX_STEP: f32 = 0.25;
+
+/// Шаг движения: сначала по X, потом по Y. `drop` — игрок жмёт «вниз» и проваливается
+/// сквозь «облачка». Если за `dt` тело пролетело бы больше `MAX_STEP` клеток, шаг делится
+/// на подшаги; контакты складываются. Тело никогда не остаётся внутри твёрдых тайлов.
 pub fn step(grid: &Grid, plats: &[Plat], body: &mut Body, dt: f32, drop: bool) -> Contact {
+    let travel = body.vel.x.abs().max(body.vel.y.abs()) * dt;
+    let n = if travel.is_finite() { (travel / MAX_STEP).ceil().clamp(1.0, 64.0) as usize } else { 1 };
+    let h = dt / n as f32;
+    let mut total = Contact::default();
+    for _ in 0..n {
+        let c = step_once(grid, plats, body, h, drop);
+        if c.wall != 0 {
+            total.wall = c.wall;
+        }
+        total.floor |= c.floor;
+        total.ceiling |= c.ceiling;
+        total.impact = total.impact.max(c.impact);
+        if c.platform.is_some() {
+            total.platform = c.platform;
+        }
+    }
+    total
+}
+
+fn step_once(grid: &Grid, plats: &[Plat], body: &mut Body, dt: f32, drop: bool) -> Contact {
     let mut contact = Contact::default();
     let Vec2 { x: hx, y: hy } = body.half;
 
     // ---- X ----
-    body.pos.x += body.vel.x * dt;
+    // Направление и «откуда пришли» фиксируем до разрешения столкновений: обнулённая скорость
+    // не должна менять смысл проверки для следующих клеток.
+    let vx = body.vel.x;
+    let prev_x = body.pos.x;
+    body.pos.x += vx * dt;
     let (y0, y1) = (((body.pos.y - hy + EPS).floor()) as i32, ((body.pos.y + hy - EPS).floor()) as i32);
     let (x0, x1) = ((body.pos.x - hx).floor() as i32, (body.pos.x + hx).floor() as i32);
     for cy in y0..=y1 {
@@ -221,45 +249,68 @@ pub fn step(grid: &Grid, plats: &[Plat], body: &mut Body, dt: f32, drop: bool) -
             if !grid.is_solid(cx, cy) {
                 continue;
             }
-            if body.vel.x > 0.0 || (body.vel.x == 0.0 && body.pos.x < cx as f32 + 0.5) {
-                body.pos.x = cx as f32 - hx - EPS;
+            let (left, right) = (cx as f32, cx as f32 + 1.0);
+            if vx > 0.0 {
+                // только стены впереди: клетки, в которых тело уже стояло, не толкают назад
+                if left >= prev_x + hx - 2.0 * EPS {
+                    body.pos.x = body.pos.x.min(left - hx - EPS);
+                    contact.wall = 1;
+                    body.vel.x = 0.0;
+                }
+            } else if vx < 0.0 {
+                if right <= prev_x - hx + 2.0 * EPS {
+                    body.pos.x = body.pos.x.max(right + hx + EPS);
+                    contact.wall = -1;
+                    body.vel.x = 0.0;
+                }
+            } else if body.pos.x < cx as f32 + 0.5 {
+                body.pos.x = body.pos.x.min(left - hx - EPS);
                 contact.wall = 1;
             } else {
-                body.pos.x = cx as f32 + 1.0 + hx + EPS;
+                body.pos.x = body.pos.x.max(right + hx + EPS);
                 contact.wall = -1;
             }
-            body.vel.x = 0.0;
         }
     }
 
     // ---- Y ----
-    let prev_bottom = body.pos.y - hy;
-    body.pos.y += body.vel.y * dt;
+    let vy = body.vel.y;
+    let prev_y = body.pos.y;
+    let prev_bottom = prev_y - hy;
+    let prev_top = prev_y + hy;
+    body.pos.y += vy * dt;
     let (x0, x1) = (((body.pos.x - hx + EPS).floor()) as i32, ((body.pos.x + hx - EPS).floor()) as i32);
     let (y0, y1) = ((body.pos.y - hy).floor() as i32, (body.pos.y + hy).floor() as i32);
     for cy in y0..=y1 {
         for cx in x0..=x1 {
             let flags = grid.flags(cx, cy);
             if flags & SOLID != 0 {
-                if body.vel.y <= 0.0 {
-                    contact.impact = contact.impact.max(-body.vel.y);
-                    body.pos.y = cy as f32 + 1.0 + hy;
-                    contact.floor = true;
-                } else {
-                    body.pos.y = cy as f32 - hy - EPS;
+                let (bottom_edge, top_edge) = (cy as f32, cy as f32 + 1.0);
+                if vy <= 0.0 {
+                    // пол: только клетки под ногами, а не те, что уже были вокруг тела
+                    if top_edge <= prev_bottom + 2.0 * EPS {
+                        contact.impact = contact.impact.max(-vy);
+                        body.pos.y = body.pos.y.max(top_edge + hy);
+                        contact.floor = true;
+                        body.vel.y = 0.0;
+                    }
+                } else if bottom_edge >= prev_top - 2.0 * EPS {
+                    // потолок: клетка над головой. Не зависим от `vel.y`, который уже мог
+                    // обнулить соседний тайл потолка (раньше тут «пол» выталкивал на крышу).
+                    body.pos.y = body.pos.y.min(bottom_edge - hy - EPS);
                     contact.ceiling = true;
+                    body.vel.y = 0.0;
                 }
-                body.vel.y = 0.0;
-            } else if flags & ONEWAY != 0 && body.vel.y <= 0.0 && !drop && prev_bottom >= cy as f32 + 1.0 - 0.03 {
+            } else if flags & ONEWAY != 0 && vy <= 0.0 && !drop && prev_bottom >= cy as f32 + 1.0 - 0.03 {
                 // верхняя часть «облачка» — тонкая, но опорой считаем всю грань клетки
-                contact.impact = contact.impact.max(-body.vel.y);
-                body.pos.y = cy as f32 + 1.0 + hy;
+                contact.impact = contact.impact.max(-vy);
+                body.pos.y = body.pos.y.max(cy as f32 + 1.0 + hy);
                 body.vel.y = 0.0;
                 contact.floor = true;
             }
         }
     }
-    if body.vel.y <= 0.0 && !drop {
+    if vy <= 0.0 && !drop {
         let bottom = body.pos.y - hy;
         let mut best: Option<&Plat> = None;
         for p in plats {
@@ -269,14 +320,52 @@ pub fn step(grid: &Grid, plats: &[Plat], body: &mut Body, dt: f32, drop: bool) -
             }
         }
         if let Some(p) = best {
-            contact.impact = contact.impact.max(-body.vel.y);
+            contact.impact = contact.impact.max(-vy);
             body.pos.y = p.max.y + hy;
             body.vel.y = 0.0;
             contact.floor = true;
             contact.platform = Some(p.id);
         }
     }
+    unstick(grid, body);
     contact
+}
+
+/// Страховка: если тело всё же оказалось внутри твёрдых тайлов (платформа задвинула в стену,
+/// телепорт), вытолкнуть его по самой короткой оси ровно на глубину проникновения.
+fn unstick(grid: &Grid, body: &mut Body) {
+    let Vec2 { x: hx, y: hy } = body.half;
+    for _ in 0..4 {
+        let (x0, x1) = (((body.pos.x - hx + EPS).floor()) as i32, ((body.pos.x + hx - EPS).floor()) as i32);
+        let (y0, y1) = (((body.pos.y - hy + EPS).floor()) as i32, ((body.pos.y + hy - EPS).floor()) as i32);
+        let mut best: Option<(f32, Vec2)> = None;
+        for cy in y0..=y1 {
+            for cx in x0..=x1 {
+                if !grid.is_solid(cx, cy) {
+                    continue;
+                }
+                let (l, r, b, t) = (cx as f32, cx as f32 + 1.0, cy as f32, cy as f32 + 1.0);
+                let opts = [
+                    (body.pos.x + hx - l, Vec2::new(-1.0, 0.0), !grid.is_solid(cx - 1, cy)),
+                    (r - (body.pos.x - hx), Vec2::new(1.0, 0.0), !grid.is_solid(cx + 1, cy)),
+                    (body.pos.y + hy - b, Vec2::new(0.0, -1.0), !grid.is_solid(cx, cy - 1)),
+                    (t - (body.pos.y - hy), Vec2::new(0.0, 1.0), !grid.is_solid(cx, cy + 1)),
+                ];
+                for (depth, dir, open) in opts {
+                    if open && best.is_none_or(|(d, _)| depth < d) {
+                        best = Some((depth, dir));
+                    }
+                }
+            }
+        }
+        let Some((depth, dir)) = best else { return };
+        body.pos += dir * (depth + EPS);
+        if dir.x != 0.0 {
+            body.vel.x = 0.0;
+        } else {
+            body.vel.y = 0.0;
+        }
+    }
 }
 
 /// Пересекаются ли два прямоугольника (центр + половинки).

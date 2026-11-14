@@ -80,3 +80,74 @@ fn an_empty_project_passes_its_smoke_test() {
     assert!(output.contains("test result: ok. 1 passed"), "{output}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Новый проект Empty 3D открывается общим редактором без компиляции: время от записи
+/// файлов до первого нарисованного кадра (без окна: `ENGINE_SCREENSHOT`). Нужен собранный
+/// `piska-editor` (`cargo build -p piska-editor`).
+#[test]
+#[ignore = "needs a built piska-editor and the GPU; run with --ignored"]
+fn a_new_project_opens_in_the_generic_editor_without_compiling() {
+    let engine = paths::find_engine_root().unwrap();
+    let editor = piska_hub::builds::tool_exe("piska-editor", None, Some(&engine)).expect("piska-editor is built");
+    let dir = scratch("generic");
+    let started = std::time::Instant::now();
+    let project = create(&dir, "gen_generic", Template::Empty3D, false);
+    let written = started.elapsed();
+    let shot = dir.join("first-frame.png");
+    let output = Command::new(&editor)
+        .arg("--project")
+        .arg(&project)
+        .env("ENGINE_SCREENSHOT", &shot)
+        .env("ENGINE_FRAMES", "3")
+        .env("ENGINE_AUDIO", "off")
+        .output()
+        .expect("piska-editor runs");
+    let total = started.elapsed();
+    let log = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{log}");
+    assert!(shot.is_file());
+    assert!(!log.contains("is missing"), "a new project has no missing scripts:\n{log}");
+    eprintln!(
+        "files written in {:.0} ms; first editor frame after {:.2} s in total",
+        written.as_secs_f64() * 1000.0,
+        total.as_secs_f64()
+    );
+    if let Some(keep) = std::env::var_os("PISKA_HUB_SHOTS") {
+        let _ = std::fs::copy(&shot, std::path::Path::new(&keep).join("21_generic_editor_new_project.png"));
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Демо нового проекта работает без компиляции: общий проигрыватель запускает сценарий
+/// Scenario, и куб поворачивается (кадр 1 и кадр 60 отличаются). Без окна.
+#[test]
+#[ignore = "needs a built piska-player and the GPU; run with --ignored"]
+fn the_scenario_demo_runs_in_the_generic_player() {
+    let engine = paths::find_engine_root().unwrap();
+    let player = piska_hub::builds::tool_exe("piska-player", None, Some(&engine)).expect("piska-player is built");
+    let dir = scratch("player");
+    let project = create(&dir, "gen_player", Template::Empty3D, false);
+    let frame = |frames: &str, name: &str| {
+        let shot = dir.join(name);
+        let output = Command::new(&player)
+            .arg("--project")
+            .arg(&project)
+            .env("ENGINE_SCREENSHOT", &shot)
+            .env("ENGINE_FRAMES", frames)
+            .env("ENGINE_AUDIO", "off")
+            .output()
+            .expect("piska-player runs");
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let log = String::from_utf8_lossy(&output.stderr);
+        for line in log.lines().filter(|l| l.contains("scenario") || l.contains("warn") || l.contains("error")) {
+            eprintln!("player: {line}");
+        }
+        image::open(&shot).unwrap().to_rgba8()
+    };
+    let first = frame("1", "first.png");
+    let later = frame("60", "later.png");
+    let changed = first.pixels().zip(later.pixels()).filter(|(a, b)| a != b).count();
+    eprintln!("{changed} pixels changed between frame 1 and frame 60");
+    assert!(changed > 500, "the Scenario script turns the cube");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

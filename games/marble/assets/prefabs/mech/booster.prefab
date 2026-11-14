@@ -1,0 +1,156 @@
+(
+    name: "Booster",
+    id: 175267474335525,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Collider",
+            fields: {
+                "collides_with": Int(4294967295),
+                "density": Float(1.0),
+                "friction": Float(0.5),
+                "is_trigger": Bool(true),
+                "mesh": Asset(""),
+                "offset": Vec3(0.0, 0.8, 0.0),
+                "radius": Float(0.5),
+                "restitution": Float(0.0),
+                "shape": Enum("Box"),
+                "size": Vec3(5.0, 1.6, 4.0),
+            },
+        ),
+        (
+            kind: "Booster",
+            fields: {
+                "cooldown": Float(0.0),
+                "pop": Float(1.2),
+                "speed": Float(13.0),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Pad",
+            id: 166485420771090,
+            transform: (
+                position: (0.0, 0.03, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (5.0, 0.06, 4.0),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("9c37ec0f4fa131b8c5fb067814a82027"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Arrows",
+            id: 173296085466353,
+            transform: (
+                position: (0.0, 0.08, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.35, 0.02, 2.2),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.0074990317, 0.010329823, 0.015996292, 1.0),
+                        "emissive": Color(0.6, 0.45, 0.05, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+            children: [
+                (
+                    name: "Wing L",
+                    id: 203259771573192,
+                    transform: (
+                        position: (-1.0, 0.0, -0.32),
+                        rotation: (0.0, -40.107, 0.0),
+                        scale: (1.5, 1.0, 0.3),
+                    ),
+                    components: [
+                        (
+                            kind: "MeshRenderer",
+                            fields: {
+                                "cast_shadows": Bool(true),
+                                "color": Color(0.0074990317, 0.010329823, 0.015996292, 1.0),
+                                "emissive": Color(0.6, 0.45, 0.05, 1.0),
+                                "grid": Bool(false),
+                                "materials": List([]),
+                                "mesh": Asset(""),
+                                "metallic": Float(0.0),
+                                "model_materials": Bool(false),
+                                "roughness": Float(0.6),
+                                "shape": Enum("Cube"),
+                                "texture": Asset(""),
+                                "tiling": Float(0.0),
+                                "tint": Color(1.0, 1.0, 1.0, 1.0),
+                            },
+                        ),
+                    ],
+                ),
+                (
+                    name: "Wing R",
+                    id: 126420635614534,
+                    transform: (
+                        position: (1.0, 0.0, -0.32),
+                        rotation: (0.0, 40.107, 0.0),
+                        scale: (1.5, 1.0, 0.3),
+                    ),
+                    components: [
+                        (
+                            kind: "MeshRenderer",
+                            fields: {
+                                "cast_shadows": Bool(true),
+                                "color": Color(0.0074990317, 0.010329823, 0.015996292, 1.0),
+                                "emissive": Color(0.6, 0.45, 0.05, 1.0),
+                                "grid": Bool(false),
+                                "materials": List([]),
+                                "mesh": Asset(""),
+                                "metallic": Float(0.0),
+                                "model_materials": Bool(false),
+                                "roughness": Float(0.6),
+                                "shape": Enum("Cube"),
+                                "texture": Asset(""),
+                                "tiling": Float(0.0),
+                                "tint": Color(1.0, 1.0, 1.0, 1.0),
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ],
+)

@@ -300,6 +300,18 @@ impl Ctx<'_> {
 
     // ----- запросы -----
 
+    /// Объект из поля-ссылки ([`ObjectRef`](crate::objref::ObjectRef) или
+    /// [`ComponentRef`](crate::objref::ComponentRef)): `None`, если поле не назначено или
+    /// объект уничтожен.
+    pub fn resolve(&self, reference: impl Into<crate::objref::ObjectRef>) -> Option<GameObjectId> {
+        self.world.scene.resolve(reference.into())
+    }
+
+    /// Ссылка на объект `id` для поля-ссылки (`NONE`, если объекта нет).
+    pub fn object_ref(&self, id: GameObjectId) -> crate::objref::ObjectRef {
+        crate::objref::ObjectRef::new(&self.world.scene, id)
+    }
+
     /// Unity: `GameObject.Find`.
     pub fn find_by_name(&self, name: &str) -> Option<GameObjectId> {
         self.world.scene.find_by_name(name)

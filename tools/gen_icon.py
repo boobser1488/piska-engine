@@ -5,6 +5,7 @@
 
     python tools/gen_icon.py                       # assets/branding/*
     python tools/gen_icon.py --candidates out.png  # сравнительный лист кандидатов
+    python tools/gen_icon.py --design M_modeler --out tools/piska-modeler/assets  # значок Piska Modeler
     python tools/test_gen_icon.py                  # проверка: размеры, .ico, воспроизводимость
 
 Рисует значок в высоком разрешении (суперсэмплинг 4x) и уменьшает фильтром LANCZOS.
@@ -107,7 +108,59 @@ def design_layers(c):
         c.poly([(0.5, cy - h), (0.5 + w, cy), (0.5, cy + h), (0.5 - w, cy)], color)
 
 
-DESIGNS = {"A_monogram": design_monogram, "B_cube": design_cube, "C_layers": design_layers}
+def design_modeler(c):
+    """M: значок Piska Modeler — та же «P», плитка оранжевая, вместо искры — кубик."""
+    tile = (226, 96, 38, 255)
+    c.tile(tile)
+    white = (255, 255, 255, 255)
+    c.rect(0.29, 0.19, 0.46, 0.81, white)
+    c.rect(0.46, 0.19, 0.52, 0.57, white)
+    c.circle(0.52, 0.38, 0.19, white)
+    c.rect(0.46, 0.31, 0.53, 0.45, tile)
+    c.circle(0.53, 0.38, 0.07, tile)
+    # Кубик в изометрии у основания (три тона).
+    r, dx = 0.11, 0.11 * math.sqrt(3) / 2
+    cx, cy = 0.66, 0.70
+    top, ur, lr, bot, ll, ul = (cx, cy - r), (cx + dx, cy - r / 2), (cx + dx, cy + r / 2), (cx, cy + r), (cx - dx, cy + r / 2), (cx - dx, cy - r / 2)
+    ctr = (cx, cy)
+    c.poly([top, ur, ctr, ul], (255, 255, 255, 255))
+    c.poly([ul, ctr, bot, ll], (255, 214, 170, 255))
+    c.poly([ctr, ur, lr, bot], (54, 32, 22, 255))
+
+
+def _letter_r(c, tile, white):
+    """Ножка и чаша «R» — те же, что были у «P»; ногу дорисовывает вызывающий."""
+    c.rect(0.29, 0.19, 0.46, 0.81, white)
+    c.rect(0.46, 0.19, 0.52, 0.57, white)
+    c.circle(0.52, 0.38, 0.19, white)
+    c.rect(0.46, 0.31, 0.53, 0.45, tile)
+    c.circle(0.53, 0.38, 0.07, tile)
+
+
+def design_r_monogram(c):
+    """R: белая «R» на синей плитке; нога буквы — янтарная (прежняя «искра» стала ногой)."""
+    tile = (47, 84, 235, 255)
+    c.tile(tile)
+    _letter_r(c, tile, (255, 255, 255, 255))
+    c.poly([(0.44, 0.55), (0.58, 0.55), (0.75, 0.81), (0.61, 0.81)], (255, 176, 32, 255))
+
+
+def design_r_modeler(c):
+    """RM: значок редактора моделей — та же «R» на оранжевой плитке, нога тёмная."""
+    tile = (226, 96, 38, 255)
+    c.tile(tile)
+    _letter_r(c, tile, (255, 255, 255, 255))
+    c.poly([(0.44, 0.55), (0.58, 0.55), (0.75, 0.81), (0.61, 0.81)], (54, 32, 22, 255))
+
+
+DESIGNS = {
+    "A_monogram": design_monogram,
+    "B_cube": design_cube,
+    "C_layers": design_layers,
+    "M_modeler": design_modeler,
+    "R_monogram": design_r_monogram,
+    "R_modeler": design_r_modeler,
+}
 CHOSEN = "A_monogram"
 
 

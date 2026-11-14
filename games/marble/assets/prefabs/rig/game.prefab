@@ -1,0 +1,18 @@
+(
+    name: "Game",
+    id: 28732414052294,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "GameManager",
+            fields: {
+                "course": Int(-1),
+                "start_yaw_deg": Float(0.0),
+            },
+        ),
+    ],
+)

@@ -570,12 +570,55 @@ impl Audio {
     }
 
     // ------------------------------------------------------------------
+    // Монитор (редактор) и мастер-шина
+    // ------------------------------------------------------------------
+
+    /// Громкость прослушивания в редакторе (0..1) — поверх всех шин. Её ставит
+    /// редактор (кнопка звука в Game View, Preferences → Game View); игра своими
+    /// `set_bus_volume` её не перебивает. Меняется плавно.
+    pub fn set_editor_volume(&mut self, volume: f32) {
+        self.lock().set_monitor_volume(volume);
+    }
+
+    pub fn editor_volume(&self) -> f32 {
+        self.lock().monitor_volume()
+    }
+
+    /// «Mute audio in editor»: заглушить весь звук игры, не трогая её шины.
+    pub fn set_editor_muted(&mut self, muted: bool) {
+        self.lock().set_monitor_muted(muted);
+    }
+
+    pub fn is_editor_muted(&self) -> bool {
+        self.lock().is_monitor_muted()
+    }
+
+    /// Запас мастер-шины, дБ (по умолчанию −6; см. «Политика громкости» в `docs/api/audio.md`).
+    pub fn set_headroom_db(&mut self, db: f32) {
+        self.lock().set_headroom_db(db);
+    }
+
+    pub fn headroom_db(&self) -> f32 {
+        self.lock().headroom_db()
+    }
+
+    /// Сколько копий одного клипа может звучать одновременно (по умолчанию 6).
+    pub fn set_max_instances(&mut self, count: usize) {
+        self.lock().set_max_instances(count);
+    }
+
+    // ------------------------------------------------------------------
     // Музыка
     // ------------------------------------------------------------------
 
+    /// Самое короткое нарастание / перекрёстное затухание музыки, секунд: музыка
+    /// никогда не начинается и не обрывается «в полную силу».
+    pub const MIN_MUSIC_FADE: f32 = 0.5;
+
     /// Включить музыку (шина Music, по кругу). Предыдущая музыка затухает за
-    /// `crossfade` секунд, а новая за это же время нарастает. Если этот клип уже
-    /// играет как музыка, ничего не происходит.
+    /// `crossfade` секунд, а новая за это же время нарастает (равномощные кривые; не
+    /// короче [`Self::MIN_MUSIC_FADE`]). Если этот клип уже играет как музыка, ничего
+    /// не происходит.
     pub fn play_music(&mut self, clip: impl Into<ClipRef>, crossfade: f32) -> VoiceId {
         let Some(clip) = self.resolve(clip.into()) else {
             return VoiceId::NONE;
@@ -585,13 +628,14 @@ impl Audio {
                 return current.voice;
             }
         }
+        let crossfade = if crossfade.is_finite() { crossfade.max(Self::MIN_MUSIC_FADE) } else { Self::MIN_MUSIC_FADE };
         if let Some(old) = self.music.take() {
             self.lock().fade_out(old.voice, crossfade);
         }
         let params = VoiceParams {
             looping: true,
             bus: Bus::Music,
-            fade_in: crossfade.max(0.0),
+            fade_in: crossfade,
             ..VoiceParams::default()
         };
         let voice = self.lock().play(Arc::clone(&clip), params);

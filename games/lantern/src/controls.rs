@@ -1,36 +1,7 @@
-//! Управление: действия ввода (клавиатура + геймпад) и экранные кнопки для касаний.
+//! Управление: экранные кнопки для касаний. Карта клавиш и геймпада — в
+//! `assets/project.settings` (раздел `input`).
 
 use engine::prelude::*;
-
-/// Привязки действий. Клавиатура: A/D или стрелки — бег, Пробел / W / ↑ — прыжок,
-/// Shift / X — рывок, S / ↓ — спрыгнуть с «облачка», Esc / P — пауза.
-/// Геймпад: стик или крестовина, A — прыжок, X / RB — рывок, Start — пауза.
-pub fn setup(input: &mut Input) {
-    input.set_button_bindings(
-        "Jump",
-        vec![
-            Key::Space.into(),
-            Key::W.into(),
-            Key::Up.into(),
-            GamepadButton::South.into(),
-        ],
-    );
-    input.set_button_bindings(
-        "Dash",
-        vec![
-            Key::LShift.into(),
-            Key::RShift.into(),
-            Key::X.into(),
-            GamepadButton::West.into(),
-            GamepadButton::RightBumper.into(),
-            GamepadButton::RightTrigger.into(),
-        ],
-    );
-    input.set_button_bindings(
-        "Pause",
-        vec![Key::Escape.into(), Key::P.into(), GamepadButton::Start.into()],
-    );
-}
 
 /// Размеры экранных кнопок в единицах холста (холст 1280×720, масштаб по высоте).
 pub const PAD: f32 = 120.0;

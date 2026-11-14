@@ -66,7 +66,8 @@ impl Default for PlayerSettings {
             height: 720,
             resizable: true,
             fullscreen: FullscreenMode::Windowed,
-            vsync: false,
+            // Включена: без неё камера движется рывками даже при высоком FPS.
+            vsync: true,
             fps_cap: 0,
             icon: String::new(),
             default_scene: String::new(),

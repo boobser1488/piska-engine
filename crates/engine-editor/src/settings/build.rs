@@ -14,6 +14,7 @@
 //! остальной текст (комментарии, порядок, другие таблицы) остаётся байт в байт.
 //! Неверное значение не записывается: строка показывает ошибку, файл не меняется.
 
+use crate::i18n::{tr_s, trf};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -67,9 +68,9 @@ impl AndroidOrientation {
 
     fn label(self) -> &'static str {
         match self {
-            AndroidOrientation::Landscape => "Landscape",
-            AndroidOrientation::Portrait => "Portrait",
-            AndroidOrientation::Any => "Any (follows the phone)",
+            AndroidOrientation::Landscape => tr_s("Landscape"),
+            AndroidOrientation::Portrait => tr_s("Portrait"),
+            AndroidOrientation::Any => tr_s("Any (follows the phone)"),
         }
     }
 }
@@ -104,10 +105,10 @@ pub fn validate_android_package(id: &str) -> Result<(), String> {
     if parts.len() >= 2 && parts.iter().all(valid_part) {
         Ok(())
     } else {
-        Err(format!(
+        Err(trf!(
             "`{id}` is not a valid Android package id: use at least two dot-separated parts, each starting \
              with a letter and containing only letters, digits and `_` (for example `com.example.my_game`)"
-        ))
+        , id = id))
     }
 }
 
@@ -119,7 +120,7 @@ impl BuildOptions {
         }
         if let Some(icon) = &self.icon {
             if !icon.to_ascii_lowercase().ends_with(".png") {
-                return Err(format!("icon `{icon}` must be a PNG file inside assets/"));
+                return Err(trf!("icon `{icon}` must be a PNG file inside assets/", icon = icon));
             }
         }
         if let Some(id) = &self.android_package {
@@ -127,18 +128,18 @@ impl BuildOptions {
         }
         if let Some(code) = self.android_version_code {
             if code == 0 || code > ANDROID_MAX_VERSION_CODE {
-                return Err(format!("the Android version code must be from 1 to {ANDROID_MAX_VERSION_CODE}, not {code}"));
+                return Err(trf!("the Android version code must be from 1 to {ANDROID_MAX_VERSION_CODE}, not {code}", ANDROID_MAX_VERSION_CODE = ANDROID_MAX_VERSION_CODE, code = code));
             }
         }
         if self.android_version_name.as_deref().is_some_and(|t| t.trim().is_empty()) {
-            return Err("the Android version name cannot be blank: clear the field to use the package version".to_string());
+            return Err(tr_s("the Android version name cannot be blank: clear the field to use the package version").to_string());
         }
         if let Some(sdk) = self.android_min_sdk {
             if !(ANDROID_MIN_SDK..=99).contains(&sdk) {
-                return Err(format!(
+                return Err(trf!(
                     "the minimum Android SDK must be at least {ANDROID_MIN_SDK} (Android 8.0: the engine plays sound \
                      through AAudio) and at most 99, not {sdk}"
-                ));
+                , ANDROID_MIN_SDK = ANDROID_MIN_SDK, sdk = sdk));
             }
         }
         Ok(())
@@ -159,9 +160,9 @@ fn piska_table(doc: &DocumentMut) -> Option<&dyn TableLike> {
 pub fn read_build_options(manifest: &str) -> Result<(BuildOptions, Vec<String>), EditorError> {
     let doc: DocumentMut = manifest
         .parse()
-        .map_err(|e| EditorError::Other(format!("Cargo.toml is not valid TOML: {e}. Fix the file and reopen this page")))?;
+        .map_err(|e| EditorError::Other(trf!("Cargo.toml is not valid TOML: {e}. Fix the file and reopen this page", e = e)))?;
     if doc.get("package").and_then(Item::as_table_like).is_none() {
-        return Err(EditorError::Other("Cargo.toml has no [package] table: it is not a game crate".to_string()));
+        return Err(EditorError::Other(tr_s("Cargo.toml has no [package] table: it is not a game crate").to_string()));
     }
     let mut options = BuildOptions::default();
     let mut problems = Vec::new();
@@ -173,7 +174,7 @@ pub fn read_build_options(manifest: &str) -> Result<(BuildOptions, Vec<String>),
         match item.as_str() {
             Some(text) => Some(text.to_string()),
             None => {
-                problems.push(format!("`{path}` must be a string, not `{}`", item.to_string().trim()));
+                problems.push(trf!("`{path}` must be a string, not `{p0}`", p0 = item.to_string().trim(), path = path));
                 None
             }
         }
@@ -190,7 +191,7 @@ pub fn read_build_options(manifest: &str) -> Result<(BuildOptions, Vec<String>),
             match item.as_integer() {
                 Some(n) if n > 0 && n <= i64::from(u32::MAX >> 1) => Some(n as u32),
                 _ => {
-                    problems.push(format!("`android.{key}` must be a positive whole number, not `{}`", item.to_string().trim()));
+                    problems.push(trf!("`android.{key}` must be a positive whole number, not `{p0}`", p0 = item.to_string().trim(), key = key));
                     None
                 }
             }
@@ -200,7 +201,7 @@ pub fn read_build_options(manifest: &str) -> Result<(BuildOptions, Vec<String>),
         if let Some(text) = orientation {
             match AndroidOrientation::parse(&text) {
                 Some(o) => options.android_orientation = Some(o),
-                None => problems.push(format!("`android.orientation = \"{text}\"` is not supported: use landscape, portrait or any")),
+                None => problems.push(trf!("`android.orientation = \"{text}\"` is not supported: use landscape, portrait or any", text = text)),
             }
         }
     }
@@ -220,7 +221,7 @@ fn child<'a>(parent: &'a mut dyn TableLike, key: &str, create: bool, implicit: b
     }
     match parent.get_mut(key).and_then(Item::as_table_like_mut) {
         Some(table) => Ok(Some(table)),
-        None => Err(EditorError::Other(format!("`{key}` in Cargo.toml is not a table: fix it by hand, then edit it here"))),
+        None => Err(EditorError::Other(trf!("`{key}` in Cargo.toml is not a table: fix it by hand, then edit it here", key = key))),
     }
 }
 
@@ -249,7 +250,7 @@ pub fn write_build_options(manifest: &str, options: &BuildOptions) -> Result<Str
     if current == *options {
         return Ok(manifest.to_string());
     }
-    let mut doc: DocumentMut = manifest.parse().map_err(|e| EditorError::Other(format!("Cargo.toml is not valid TOML: {e}")))?;
+    let mut doc: DocumentMut = manifest.parse().map_err(|e| EditorError::Other(trf!("Cargo.toml is not valid TOML: {e}", e = e)))?;
     let str_value = |v: &Option<String>| v.as_ref().map(|s| Value::from(s.as_str()));
     let int_value = |v: Option<u32>| v.map(|n| Value::from(i64::from(n)));
 
@@ -274,7 +275,7 @@ pub fn write_build_options(manifest: &str, options: &BuildOptions) -> Result<Str
     let package = doc
         .get_mut("package")
         .and_then(Item::as_table_like_mut)
-        .ok_or_else(|| EditorError::Other("Cargo.toml has no [package] table".to_string()))?;
+        .ok_or_else(|| EditorError::Other(tr_s("Cargo.toml has no [package] table").to_string()))?;
     let Some(metadata) = child(package, "metadata", need_piska, true)? else {
         return Ok(manifest.to_string());
     };
@@ -353,7 +354,7 @@ impl Editor {
     pub fn build_options(&self) -> Result<BuildOptions, EditorError> {
         let path = self.game_manifest_path().ok_or_else(no_game_crate)?;
         let text = std::fs::read_to_string(&path)
-            .map_err(|e| EditorError::Other(format!("cannot read `{}`: {e}", path.display())))?;
+            .map_err(|e| EditorError::Other(trf!("cannot read `{p0}`: {e}", p0 = path.display(), e = e)))?;
         read_build_options(&text).map(|(options, _)| options)
     }
 
@@ -365,7 +366,7 @@ impl Editor {
         self.settings.build.loaded = None;
         let status = &mut self.settings.status[SettingsScope::Project.index()];
         match &result {
-            Ok(()) => *status = Some((format!("Saved export options to {}", short_path(&path)), false)),
+            Ok(()) => *status = Some((trf!("Saved export options to {}", short_path(&path)), false)),
             Err(error) => *status = Some((error.to_string(), true)),
         }
         result
@@ -391,10 +392,10 @@ fn no_game_crate() -> EditorError {
 }
 
 fn write_manifest(path: &Path, options: &BuildOptions) -> Result<(), EditorError> {
-    let text = std::fs::read_to_string(path).map_err(|e| EditorError::Other(format!("cannot read `{}`: {e}", path.display())))?;
+    let text = std::fs::read_to_string(path).map_err(|e| EditorError::Other(trf!("cannot read `{p0}`: {e}", p0 = path.display(), e = e)))?;
     let new = write_build_options(&text, options)?;
     if new != text {
-        std::fs::write(path, new).map_err(|e| EditorError::Other(format!("cannot write `{}`: {e}. Is the file read-only?", path.display())))?;
+        std::fs::write(path, new).map_err(|e| EditorError::Other(trf!("cannot write `{p0}`: {e}. Is the file read-only?", p0 = path.display(), e = e)))?;
     }
     Ok(())
 }
@@ -426,14 +427,7 @@ fn text_row(
     let shown = draft.as_ref().map_or_else(|| value.clone().unwrap_or_default(), |(text, _)| text.clone());
     let row = s.row(label, description, value.is_some() || draft.is_some(), |ui| {
         let mut text = shown.clone();
-        let edit = ui.add(
-            egui::TextEdit::singleline(&mut text)
-                .id(Editor::build_field_id(key))
-                .hint_text(egui::RichText::new(hint).color(theme::TEXT_DISABLED))
-                .vertical_align(egui::Align::Center)
-                .min_size(vec2(0.0, theme::FIELD_H))
-                .desired_width(WIDE_W),
-        );
+        let edit = crate::controls::text_field_with_id(ui, Some(Editor::build_field_id(key)), &mut text, hint, WIDE_W);
         if let Some((_, error)) = &draft {
             let (rect, response) = ui.allocate_exact_size(vec2(theme::ICON, theme::ICON), Sense::hover());
             icons::paint(ui.painter(), rect.shrink(1.0), Icon::Error, theme::ERROR);
@@ -474,13 +468,10 @@ fn number_row(
 ) {
     let mut number = value.unwrap_or(default);
     let row = s.row(label, description, value.is_some(), |ui| {
-        let response = ui.add_sized(
-            vec2(super::rows::NUMBER_W, theme::FIELD_H),
-            egui::DragValue::new(&mut number).range(range).speed(0.2),
-        );
+        let response = crate::controls::number_field_range(ui, &mut number, range, 0.2, "", super::rows::NUMBER_W);
         let _ = ui.interact(response.rect, Editor::build_field_id(key), Sense::hover());
         if value.is_none() {
-            ui.label(egui::RichText::new("default").font(theme::caption()).color(theme::TEXT_DISABLED));
+            ui.label(egui::RichText::new(tr_s("default")).font(theme::caption()).color(theme::TEXT_DISABLED));
         }
         response.changed()
     });
@@ -493,7 +484,7 @@ fn number_row(
 
 pub(super) fn build(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     let Some(path) = editor.game_manifest_path() else {
-        s.group("Game crate");
+        s.group(tr_s("Game crate"));
         s.note(
             "This project has no game crate, so there are no export options to edit. The Build page edits \
              [package.metadata.piska] in the Cargo.toml of the crate that holds the assets folder \
@@ -511,7 +502,7 @@ pub(super) fn build(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     };
     if stale && state.pending.is_none() {
         let loaded = std::fs::read_to_string(&path)
-            .map_err(|e| format!("cannot read `{}`: {e}", path.display()))
+            .map_err(|e| trf!("cannot read `{p0}`: {e}", p0 = path.display(), e = e))
             .and_then(|text| read_build_options(&text).map_err(|e| e.to_string()));
         state.loaded = Some((path.clone(), modified, loaded));
         state.drafts.clear();
@@ -520,8 +511,8 @@ pub(super) fn build(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     let (saved, problems) = match loaded {
         Ok(found) => found,
         Err(error) => {
-            s.group("Game crate");
-            s.note(&format!("{error}. The export options cannot be edited until the file is fixed."));
+            s.group(tr_s("Game crate"));
+            s.note(&trf!("{error}. The export options cannot be edited until the file is fixed.", error = error));
             return;
         }
     };
@@ -534,38 +525,38 @@ pub(super) fn build(s: &mut SettingsUi<'_>, editor: &mut Editor) {
         .unwrap_or_default();
     let state = &mut editor.settings.build;
 
-    s.group("Game crate");
-    s.row("Manifest", "Export options live in [package.metadata.piska] of this file; the rest of it is never touched.", false, |ui| {
+    s.group(tr_s("Game crate"));
+    s.row(tr_s("Manifest"), tr_s("Export options live in [package.metadata.piska] of this file; the rest of it is never touched."), false, |ui| {
         ui.label(egui::RichText::new(short_path(&path)).font(theme::mono()).color(theme::TEXT_MUTED))
             .on_hover_text(path.display().to_string());
     });
     for problem in &problems {
-        s.note(&format!("Cargo.toml: {problem}. Export stops on it: set the value here or fix the file."));
+        s.note(&trf!("Cargo.toml: {problem}. Export stops on it: set the value here or fix the file.", problem = problem));
     }
 
-    s.group("All platforms");
+    s.group(tr_s("All platforms"));
     text_row(
         s,
         &mut state.drafts,
         "title",
-        "Title",
-        "Web page title and Android app name. Empty: the package name.",
+        tr_s("Title"),
+        tr_s("Web page title and Android app name. Empty: the package name."),
         &package_name,
         &mut options.title,
         |_| Ok(()),
     );
     let mut icon = options.icon.clone().unwrap_or_default();
-    if s.choice("Icon", "Icon of the exported game on every platform. None: assets/icon.png, otherwise the engine icon.", &mut icon, "", &icons, "None (icon.png)") {
+    if s.choice(tr_s("Icon"), tr_s("Icon of the exported game on every platform. None: assets/icon.png, otherwise the engine icon."), &mut icon, "", &icons, tr_s("None (icon.png)")) {
         options.icon = (!icon.is_empty()).then_some(icon);
     }
 
-    s.group("Android");
+    s.group(tr_s("Android"));
     text_row(
         s,
         &mut state.drafts,
         "android.package",
-        "Package id",
-        "Application id in the store, for example com.example.my_game. Empty: org.piska.<game folder>.",
+        tr_s("Package id"),
+        tr_s("Application id in the store, for example com.example.my_game. Empty: org.piska.<game folder>."),
         &format!("org.piska.{}", package_name.replace('-', "_")),
         &mut options.android_package,
         validate_android_package,
@@ -573,8 +564,8 @@ pub(super) fn build(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     number_row(
         s,
         "android.version_code",
-        "Version code",
-        "Whole number that must grow with every release you upload to a store.",
+        tr_s("Version code"),
+        tr_s("Whole number that must grow with every release you upload to a store."),
         &mut options.android_version_code,
         1,
         1..=ANDROID_MAX_VERSION_CODE,
@@ -583,19 +574,17 @@ pub(super) fn build(s: &mut SettingsUi<'_>, editor: &mut Editor) {
         s,
         &mut state.drafts,
         "android.version_name",
-        "Version name",
-        "Version players see, for example 1.2.0. Empty: the package version.",
-        "package version",
+        tr_s("Version name"),
+        tr_s("Version players see, for example 1.2.0. Empty: the package version."),
+        tr_s("package version"),
         &mut options.android_version_name,
         |_| Ok(()),
     );
     let current = options.android_orientation;
-    let row = s.row("Orientation", "How the screen is held. Landscape and portrait still turn by 180°.", current.is_some(), |ui| {
+    let row = s.row(tr_s("Orientation"), tr_s("How the screen is held. Landscape and portrait still turn by 180°."), current.is_some(), |ui| {
         let mut value = current.unwrap_or(AndroidOrientation::Landscape);
-        egui::ComboBox::from_id_salt(Editor::build_field_id("android.orientation"))
-            .selected_text(if current.is_some() { value.label().to_string() } else { format!("{} (default)", value.label()) })
-            .width(WIDE_W)
-            .show_ui(ui, |ui| {
+        let shown = if current.is_some() { value.label().to_string() } else { trf!("{} (default)", value.label()) };
+        crate::controls::combo(ui, Editor::build_field_id("android.orientation"), &shown, WIDE_W, |ui| {
                 for option in AndroidOrientation::ALL {
                     ui.selectable_value(&mut value, option, option.label());
                 }
@@ -610,17 +599,17 @@ pub(super) fn build(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     number_row(
         s,
         "android.min_sdk",
-        "Minimum SDK",
-        "Oldest Android API the game installs on. 26 (Android 8.0) is the lowest the engine supports.",
+        tr_s("Minimum SDK"),
+        tr_s("Oldest Android API the game installs on. 26 (Android 8.0) is the lowest the engine supports."),
         &mut options.android_min_sdk,
         ANDROID_MIN_SDK,
         ANDROID_MIN_SDK..=99,
     );
 
-    s.group("Windows and Linux");
+    s.group(tr_s("Windows and Linux"));
     s.note(
-        "Windows and Linux builds use the title and icon above. The glibc version of a Linux build is an option of \
-         the export itself: piska-export linux --glibc 2.31.",
+        tr_s("Windows and Linux builds use the title and icon above. The glibc version of a Linux build is an option of \
+         the export itself: piska-export linux --glibc 2.31."),
     );
 
     // Записать, когда правка закончилась (мышь отпущена, никто не печатает) — или сразу в

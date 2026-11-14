@@ -1,0 +1,19 @@
+(
+    name: "zone",
+    id: 180789211702717,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "MapZone",
+            fields: {
+                "site": Bool(false),
+                "size": Vec3(10.0, 8.0, 10.0),
+                "title": Str(""),
+            },
+        ),
+    ],
+)

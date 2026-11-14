@@ -781,6 +781,7 @@ dependencies = [
  "engine-core",
  "engine-cpp-bridge",
  "engine-editor",
+ "engine-i18n",
  "engine-physics",
  "engine-render",
  "engine-scenario",
@@ -800,11 +801,12 @@ name = "engine-assets"
 version = "0.0.1"
 dependencies = [
  "engine-core",
- "engine-modeler",
+ "engine-model-formats",
  "gltf",
  "log",
  "ron",
  "serde",
+ "serde_json",
  "thiserror 1.0.69",
  "web-time",
 ]
@@ -828,6 +830,7 @@ version = "0.0.1"
 dependencies = [
  "image",
  "thiserror 1.0.69",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -870,11 +873,22 @@ dependencies = [
  "egui-winit",
  "egui_dock",
  "engine-assets",
+ "engine-audio",
+ "engine-build",
  "engine-core",
+ "engine-i18n",
+ "engine-project",
  "engine-render",
+ "engine-scenario",
  "image",
  "log",
+ "naga",
  "pollster",
+ "proc-macro2",
+ "ron",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
  "thiserror 1.0.69",
  "toml_edit 0.22.27",
  "wgpu",
@@ -882,18 +896,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "engine-modeler"
+name = "engine-i18n"
+version = "0.0.1"
+
+[[package]]
+name = "engine-model-formats"
 version = "0.0.1"
 dependencies = [
- "egui",
- "glam",
- "gltf",
- "image",
- "log",
- "ron",
- "serde",
+ "png",
  "serde_json",
- "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -908,12 +919,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "engine-project"
+version = "0.0.1"
+dependencies = [
+ "flate2",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "toml",
+]
+
+[[package]]
 name = "engine-render"
 version = "0.0.1"
 dependencies = [
  "bytemuck",
  "engine-assets",
  "engine-core",
+ "glam",
  "image",
  "log",
  "pollster",
@@ -1568,6 +1591,8 @@ dependencies = [
  "engine",
  "engine-build",
  "log",
+ "ron",
+ "serde",
 ]
 
 [[package]]
@@ -1587,6 +1612,14 @@ name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
+
+[[package]]
+name = "letter"
+version = "0.0.1"
+dependencies = [
+ "engine",
+ "log",
+]
 
 [[package]]
 name = "lewton"
@@ -1699,6 +1732,8 @@ dependencies = [
  "engine-build",
  "engine-cpp-build",
  "log",
+ "ron",
+ "serde",
 ]
 
 [[package]]
@@ -2457,11 +2492,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
+name = "piska-editor"
+version = "0.0.1"
+dependencies = [
+ "engine",
+ "engine-build",
+]
+
+[[package]]
 name = "piska-export"
 version = "0.0.1"
 dependencies = [
  "engine-assets",
  "engine-build",
+ "engine-i18n",
+ "engine-project",
  "flate2",
  "image",
  "serde_json",
@@ -2476,7 +2521,9 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "engine-build",
  "engine-editor",
+ "engine-project",
  "engine-render",
  "image",
  "log",
@@ -2486,23 +2533,29 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "toml",
+ "toml_edit 0.22.27",
  "wgpu",
  "winit",
 ]
 
 [[package]]
-name = "piska-modeler"
+name = "piska-installer"
 version = "0.0.1"
 dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "engine-build",
  "engine-editor",
- "engine-modeler",
  "engine-render",
  "image",
  "log",
+ "piska-hub",
  "pollster",
+ "ron",
+ "serde",
+ "serde_json",
+ "toml",
  "wgpu",
  "winit",
 ]
@@ -3116,6 +3169,8 @@ dependencies = [
  "engine",
  "engine-build",
  "log",
+ "ron",
+ "serde",
 ]
 
 [[package]]
@@ -3138,6 +3193,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tashbazar"
+version = "0.0.1"
+dependencies = [
+ "engine",
+ "engine-build",
+ "image",
+ "log",
+ "ron",
+ "serde",
 ]
 
 [[package]]

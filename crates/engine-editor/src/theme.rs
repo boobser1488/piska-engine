@@ -5,6 +5,7 @@
 //! Правило одно: цвета, размеры и отступы берутся отсюда, а не пишутся числами в панелях.
 //! Палитра — сдержанная тёмная с одним акцентом; акцент выбирается в Preferences.
 
+use crate::i18n::n_;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -41,6 +42,10 @@ pub const LINE_STRONG: Color32 = Color32::from_rgb(0x0f, 0x0f, 0x0f);
 pub const LINE_SOFT: Color32 = Color32::from_rgb(0x30, 0x30, 0x30);
 /// Рамка поля под курсором.
 pub const LINE_HOVER: Color32 = Color32::from_rgb(0x55, 0x55, 0x55);
+/// Направляющие уровней дерева (Hierarchy): заметнее `LINE_SOFT`, тише текста.
+pub const LINE_GUIDE: Color32 = Color32::from_rgb(0x3c, 0x3c, 0x3c);
+/// Чередование строк длинного дерева (Hierarchy): на 3 ступени светлее `BG_PANEL`.
+pub const BG_ROW_ALT: Color32 = Color32::from_rgb(0x29, 0x29, 0x29);
 
 pub const TEXT: Color32 = Color32::from_rgb(0xdc, 0xdc, 0xdc);
 /// Текст на акценте, выбранная вкладка, имя под курсором.
@@ -69,11 +74,11 @@ pub const SCENE_CLEAR: [f32; 3] = [0.016, 0.016, 0.016];
 /// Готовые акцентные цвета (Preferences → Accent). Все приглушённые: акцент отмечает
 /// выделение и фокус, а не украшает.
 pub const ACCENTS: [(&str, Color32); 5] = [
-    ("Blue", Color32::from_rgb(0x47, 0x72, 0xb3)),
-    ("Orange", Color32::from_rgb(0xc4, 0x75, 0x30)),
-    ("Green", Color32::from_rgb(0x46, 0x8f, 0x5e)),
-    ("Purple", Color32::from_rgb(0x7d, 0x66, 0xb8)),
-    ("Teal", Color32::from_rgb(0x34, 0x8e, 0x96)),
+    (n_("Blue"), Color32::from_rgb(0x47, 0x72, 0xb3)),
+    (n_("Orange"), Color32::from_rgb(0xc4, 0x75, 0x30)),
+    (n_("Green"), Color32::from_rgb(0x46, 0x8f, 0x5e)),
+    (n_("Purple"), Color32::from_rgb(0x7d, 0x66, 0xb8)),
+    (n_("Teal"), Color32::from_rgb(0x34, 0x8e, 0x96)),
 ];
 
 static ACCENT: AtomicU32 = AtomicU32::new(0x4772b3);
@@ -124,13 +129,44 @@ pub fn play_tint(strength: f32) -> Color32 {
 // Шкалы
 // ---------------------------------------------------------------------------
 
-/// Отступы: 2 · 4 · 8 · 12 · 16 · 24.
-pub const SP_XS: f32 = 2.0;
-pub const SP_S: f32 = 4.0;
-pub const SP_M: f32 = 8.0;
-pub const SP_L: f32 = 12.0;
-pub const SP_XL: f32 = 16.0;
-pub const SP_XXL: f32 = 24.0;
+/// Шкала отступов — единственный источник промежутков и полей в редакторе, хабе и Modeler
+/// (`docs/design/ui-guidelines.md`, «Шкала отступов»): 2 · 4 · 6 · 8 · 12 · 16 · 24.
+pub const SP_1: f32 = 2.0;
+pub const SP_2: f32 = 4.0;
+pub const SP_3: f32 = 6.0;
+pub const SP_4: f32 = 8.0;
+pub const SP_6: f32 = 12.0;
+pub const SP_8: f32 = 16.0;
+pub const SP_12: f32 = 24.0;
+/// Прежние имена той же шкалы.
+pub const SP_XS: f32 = SP_1;
+pub const SP_S: f32 = SP_2;
+pub const SP_M: f32 = SP_4;
+pub const SP_L: f32 = SP_6;
+pub const SP_XL: f32 = SP_8;
+pub const SP_XXL: f32 = SP_12;
+
+/// Смысловые отступы (только из шкалы).
+/// Поле панели слева и справа (и сверху у содержимого).
+pub const PANEL_PAD: f32 = SP_4;
+/// Между разделами панели / страницы настроек.
+pub const SECTION_GAP: f32 = SP_6;
+/// Между строками свойств.
+pub const ROW_GAP: f32 = SP_2;
+/// Подпись над полем → поле.
+pub const LABEL_FIELD_GAP: f32 = SP_2;
+/// Между контролами в одной строке.
+pub const ITEM_GAP: f32 = SP_3;
+/// Между группами на полосе инструментов.
+pub const TOOLBAR_GROUP_GAP: f32 = SP_4;
+/// Поле содержимого диалога и плавающего окна.
+pub const DIALOG_PAD: f32 = SP_6;
+/// Поле содержимого карточки.
+pub const CARD_PAD: f32 = SP_8;
+/// Поле подписи внутри кнопки слева и справа.
+pub const BUTTON_PAD_X: f32 = SP_4;
+/// Толщина рамки любого контрола (рисуется внутри его прямоугольника).
+pub const STROKE: f32 = 1.0;
 
 /// Скругления: контролы · плашки и миниатюры · меню и окна. У панелей — 0.
 pub const R_S: f32 = 2.0;
@@ -152,10 +188,76 @@ pub const ROW: f32 = 22.0;
 pub const TAB_BAR: f32 = 24.0;
 /// Полоса инструментов под вкладкой (`toolbar_strip`, `panel_header`).
 pub const STRIP: f32 = 28.0;
-/// Поле или кнопка в инспекторе и диалогах.
-pub const FIELD_H: f32 = 20.0;
-/// Кнопка, поиск, переключатель на полосе инструментов.
+/// Поле или кнопка в инспекторе и диалогах — та же высота, что у всех контролов
+/// ([`CONTROL_H`]): кнопка рядом с полем не выше и не ниже его.
+pub const FIELD_H: f32 = CONTROL_H;
+/// Отступ строки кнопок диалога («Cancel | Главная» справа внизу) от последнего поля
+/// (`docs/design/ui-guidelines.md`: «12–14 px»); общий для редактора, хаба и Modeler.
+pub const DIALOG_ACTIONS_GAP: f32 = SP_6;
+/// Высота и минимальная ширина кнопки в строке кнопок диалога.
+pub const DIALOG_BUTTON_H: f32 = CONTROL_H;
+pub const DIALOG_BUTTON_MIN_W: f32 = 80.0;
+/// Единая внешняя высота контрола, который может стоять в строке с другими: кнопка,
+/// кнопка-иконка, поле, число, список, сегменты, поиск, вкладка. Рамка — внутри.
 pub const CONTROL_H: f32 = 22.0;
+/// Высота контрола плотности [`Density::Comfortable`] (хаб, установщик).
+pub const CONTROL_H_COMFORTABLE: f32 = 28.0;
+
+/// Плотность контролов. Их ровно две: [`Density::Compact`] — редактор и Modeler
+/// (высота [`CONTROL_H`] = 22), [`Density::Comfortable`] — хаб и установщик (28).
+/// Внутри плотности у всех контролов строки одна внешняя высота; программа выбирает
+/// плотность один раз ([`set_density`]) — контролы набора читают её сами.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Density {
+    #[default]
+    Compact,
+    Comfortable,
+}
+
+impl Density {
+    /// Внешняя высота контрола.
+    pub const fn control_h(self) -> f32 {
+        match self {
+            Density::Compact => CONTROL_H,
+            Density::Comfortable => CONTROL_H_COMFORTABLE,
+        }
+    }
+    /// Поле подписи от края кнопки или поля.
+    pub const fn pad_x(self) -> f32 {
+        match self {
+            Density::Compact => SP_4,
+            Density::Comfortable => SP_6,
+        }
+    }
+    /// Шрифт подписи кнопки.
+    pub fn button_font(self) -> FontId {
+        match self {
+            Density::Compact => body(),
+            Density::Comfortable => strong(FONT_BODY),
+        }
+    }
+}
+
+fn density_id() -> egui::Id {
+    egui::Id::new("kit::density")
+}
+
+/// Плотность контролов программы (хранится в контексте egui).
+pub fn set_density(ctx: &egui::Context, density: Density) {
+    ctx.data_mut(|d| d.insert_temp(density_id(), density));
+    // Контролы egui без набора (флажок, ползунок) — той же высоты.
+    ctx.style_mut(|s| s.spacing.interact_size.y = density.control_h());
+}
+
+/// Текущая плотность.
+pub fn density(ctx: &egui::Context) -> Density {
+    ctx.data(|d| d.get_temp(density_id())).unwrap_or_default()
+}
+
+/// Высота контрола текущей плотности.
+pub fn control_h(ui: &Ui) -> f32 {
+    density(ui.ctx()).control_h()
+}
 /// Главное меню, главная панель инструментов, строка состояния.
 pub const MENU_BAR: f32 = 22.0;
 pub const MAIN_TOOLBAR: f32 = 32.0;
@@ -174,7 +276,65 @@ const MENU_GUTTER: f32 = 26.0;
 
 /// Ширина колонки подписей в инспекторе для панели шириной `width`.
 pub fn label_width(width: f32) -> f32 {
-    (width * 0.4).clamp(110.0, 180.0)
+    (width * 0.4).clamp(PROP_LABEL_MIN, PROP_LABEL_MAX).min(width * 0.5)
+}
+
+/// Сетка свойств (инспектор, редактор материала, страницы настроек): колонка подписей —
+/// 40 % ширины в этих пределах…
+pub const PROP_LABEL_MIN: f32 = 90.0;
+pub const PROP_LABEL_MAX: f32 = 170.0;
+/// …колонка значения — остальное, но не шире этого: в широком окне поля стоят слева, а не
+/// растягиваются на весь экран. Векторы делят колонку поровну.
+pub const PROP_VALUE_MAX: f32 = 340.0;
+
+/// Сворачиваемая группа полей: строка со стрелкой (иконка набора, а не треугольник egui) и
+/// обрезаемой подписью; тело — с отступом. Состояние хранится в памяти egui по `id`.
+pub fn foldout<R>(ui: &mut Ui, id: egui::Id, title: &str, default_open: bool, add: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+    let mut open = ui.data_mut(|d| *d.get_persisted_mut_or(id, default_open));
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width().max(0.0), ROW), Sense::click());
+    if response.hovered() {
+        ui.painter().rect_filled(rect, R_S, hover_fill());
+    }
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(rect.left() + 6.0, rect.center().y), vec2(9.0, 9.0)),
+        if open { Icon::ChevronDown } else { Icon::ChevronRight },
+        TEXT_MUTED,
+    );
+    let mut job = LayoutJob::simple_singleline(title.to_string(), body(), TEXT_MUTED);
+    job.wrap = egui::text::TextWrapping::truncate_at_width((rect.width() - 18.0).max(0.0));
+    let galley = ui.painter().layout_job(job);
+    ui.painter().galley(pos2(rect.left() + 16.0, rect.center().y - galley.size().y * 0.5), galley, TEXT_MUTED);
+    if response.on_hover_text(title).clicked() {
+        open = !open;
+        ui.data_mut(|d| d.insert_persisted(id, open));
+    }
+    if !open {
+        return None;
+    }
+    Some(ui.indent(id.with("body"), add).inner)
+}
+
+/// Виджет в области ровно `size`: занимает её в родителе, а всё, что внутри шире или
+/// выше, обрезается и не раздвигает окно (длинные имена, тексты, списки).
+pub fn fixed<R>(ui: &mut Ui, size: egui::Vec2, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let (rect, _) = ui.allocate_exact_size(size.max(egui::Vec2::ZERO), Sense::hover());
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    child.set_clip_rect(rect.intersect(ui.clip_rect()));
+    add(&mut child)
+}
+
+/// Колонки строки свойства шириной `width`: (подпись, значение). Сумма с промежутком
+/// никогда не больше `width`.
+pub fn property_columns(width: f32) -> (f32, f32) {
+    let width = width.max(0.0);
+    let label = label_width(width);
+    let value = (width - label - SP_S).clamp(0.0, PROP_VALUE_MAX);
+    (label, value)
 }
 
 pub fn body() -> FontId {
@@ -295,7 +455,7 @@ pub fn apply(ctx: &egui::Context, with_fonts: bool) {
     let spacing = &mut style.spacing;
     spacing.item_spacing = vec2(SP_S + 2.0, SP_S);
     spacing.button_padding = vec2(SP_M, 2.0);
-    spacing.interact_size = vec2(36.0, FIELD_H);
+    spacing.interact_size = vec2(36.0, CONTROL_H);
     spacing.indent = INDENT;
     spacing.menu_margin = egui::Margin::same(SP_S);
     spacing.window_margin = egui::Margin::same(SP_L);
@@ -369,27 +529,32 @@ pub fn apply(ctx: &egui::Context, with_fonts: bool) {
     widgets.inactive.bg_stroke = Stroke::new(1.0_f32, LINE_STRONG);
     widgets.inactive.fg_stroke = Stroke::new(1.0_f32, TEXT);
     widgets.inactive.rounding = rounding;
-    widgets.inactive.expansion = 0.0;
+    widgets.inactive.expansion = -STROKE * 0.5;
 
     widgets.hovered.bg_fill = BG_HOVER;
     widgets.hovered.weak_bg_fill = BG_HOVER;
     widgets.hovered.bg_stroke = Stroke::new(1.0_f32, LINE_STRONG);
     widgets.hovered.fg_stroke = Stroke::new(1.0_f32, TEXT_STRONG);
     widgets.hovered.rounding = rounding;
-    widgets.hovered.expansion = 0.0;
+    widgets.hovered.expansion = -STROKE * 0.5;
 
     widgets.active.bg_fill = BG_ACTIVE;
     widgets.active.weak_bg_fill = BG_ACTIVE;
     widgets.active.bg_stroke = Stroke::new(1.0_f32, accent);
     widgets.active.fg_stroke = Stroke::new(1.0_f32, TEXT_STRONG);
     widgets.active.rounding = rounding;
-    widgets.active.expansion = 0.0;
+    widgets.active.expansion = -STROKE * 0.5;
 
     widgets.open.bg_fill = BG_HOVER;
     widgets.open.weak_bg_fill = BG_HOVER;
     widgets.open.bg_stroke = Stroke::new(1.0_f32, LINE_STRONG);
     widgets.open.fg_stroke = Stroke::new(1.0_f32, TEXT_STRONG);
     widgets.open.rounding = rounding;
+    widgets.open.expansion = -STROKE * 0.5;
+    widgets.noninteractive.expansion = -STROKE * 0.5;
+    // Рамки виджетов egui рисуются по краю прямоугольника (обводка наполовину снаружи);
+    // отрицательное расширение на половину обводки кладёт её внутрь — кнопка egui не выше
+    // поля рядом, и ни одно состояние не меняет внешний размер.
 
     ctx.set_style(style);
 }
@@ -420,7 +585,7 @@ pub fn panel_header(ui: &mut Ui, _icon: Icon, _title: &str, right: impl FnOnce(&
 
 /// Полоса инструментов под заголовком окна (поиск, фильтры).
 pub fn toolbar_strip(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), STRIP), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().max(0.0), STRIP), Sense::hover());
     ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0_f32, LINE));
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -433,7 +598,7 @@ pub fn toolbar_strip(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
 
 /// Вертикальный разделитель 1 px между группами кнопок на полосе инструментов.
 pub fn toolbar_separator(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(SP_M + 1.0, CONTROL_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(SP_M + 1.0, control_h(ui)), Sense::hover());
     ui.painter().vline(
         rect.center().x.round() + 0.5,
         rect.y_range().shrink(3.0),
@@ -465,7 +630,7 @@ pub fn section_header(ui: &mut Ui, title: &str) {
 pub fn field_label(ui: &mut Ui, label: &str, tooltip: &str) -> Response {
     let width = ui.available_width();
     let response = ui.add_sized(
-        vec2(width, FIELD_H),
+        vec2(width, control_h(ui)),
         egui::Label::new(egui::RichText::new(label).color(TEXT_MUTED))
             .truncate()
             .selectable(false),
@@ -545,6 +710,10 @@ pub fn window_frame(style: &egui::Style) -> egui::Frame {
 
 /// Заголовок диалога: иконка 16 px и текст слева.
 pub fn dialog_title(ui: &mut Ui, icon: Icon, color: Color32, title: &str) {
+    // В окне из `window_kit` заголовок — его полоса: тянуть, двойной щелчок, крестик.
+    if crate::window_kit::inline_title(ui, title, &|painter, rect| icons::paint(painter, rect.shrink(0.5), icon, color)) {
+        return;
+    }
     ui.horizontal(|ui| {
         let (rect, _) = ui.allocate_exact_size(vec2(ICON, ICON), Sense::hover());
         icons::paint(ui.painter(), rect.shrink(0.5), icon, color);
@@ -560,23 +729,16 @@ pub fn dialog_title(ui: &mut Ui, icon: Icon, color: Color32, title: &str) {
 
 /// Главная кнопка диалога (акцентная заливка). Одна на окно.
 pub fn primary_button(ui: &mut Ui, label: &str) -> Response {
-    let enabled = ui.is_enabled();
-    let text = egui::RichText::new(label).color(if enabled { TEXT_STRONG } else { TEXT_DISABLED });
-    let fill = if enabled { accent() } else { BG_FIELD };
-    ui.add(
-        egui::Button::new(text)
-            .fill(fill)
-            .stroke(Stroke::new(1.0_f32, LINE_STRONG))
-            .min_size(vec2(80.0, FIELD_H + 2.0)),
-    )
+    crate::controls::button_ex(ui, crate::controls::Kind::Primary, None, label, DIALOG_BUTTON_MIN_W)
 }
 
 /// Широкая кнопка с иконкой (Add Component): по центру, как в Unity, не на всю ширину.
 pub fn primary_button_wide(ui: &mut Ui, icon: Icon, label: &str) -> Response {
     let galley = ui.painter().layout_no_wrap(label.to_string(), body(), TEXT);
-    let width = (galley.size().x + ICON_S + 40.0).max(ui.available_width() * 0.55).min(ui.available_width());
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), FIELD_H + 4.0), Sense::hover());
-    let rect = Rect::from_center_size(row.center(), vec2(width, FIELD_H + 2.0));
+    let available = ui.available_width().max(0.0);
+    let width = (galley.size().x + ICON_S + 40.0).max(available * 0.55).min(available);
+    let (row, _) = ui.allocate_exact_size(vec2(available, control_h(ui) + SP_2), Sense::hover());
+    let rect = Rect::from_center_size(row.center(), vec2(width, control_h(ui)));
     let response = ui.interact(rect, ui.id().with(("wide_button", label)), Sense::click());
     let fill = if response.is_pointer_button_down_on() {
         BG_ACTIVE
@@ -585,7 +747,7 @@ pub fn primary_button_wide(ui: &mut Ui, icon: Icon, label: &str) -> Response {
     } else {
         BG_FIELD
     };
-    ui.painter().rect(rect, R_S, fill, Stroke::new(1.0_f32, LINE_STRONG));
+    crate::controls::paint_frame(ui.painter(), rect, R_S, fill, LINE_STRONG);
     let total = ICON_S + SP_S + 2.0 + galley.size().x;
     let start = rect.center().x - total * 0.5;
     icons::paint(
@@ -604,12 +766,12 @@ pub fn primary_button_wide(ui: &mut Ui, icon: Icon, label: &str) -> Response {
 
 /// Обычная кнопка (в инспекторе, на полосах): высота поля, без минимальной ширины.
 pub fn button(ui: &mut Ui, label: &str) -> Response {
-    ui.add(egui::Button::new(label).min_size(vec2(0.0, FIELD_H)))
+    crate::controls::button(ui, label)
 }
 
 /// Обычная кнопка диалога.
 pub fn secondary_button(ui: &mut Ui, label: &str) -> Response {
-    ui.add(egui::Button::new(label).min_size(vec2(80.0, FIELD_H + 2.0)))
+    crate::controls::button_ex(ui, crate::controls::Kind::Normal, None, label, DIALOG_BUTTON_MIN_W)
 }
 
 /// Текстовая кнопка без фона (действие-ссылка в строке).
@@ -633,24 +795,18 @@ pub fn ghost_button(ui: &mut Ui, label: &str) -> Response {
 
 /// Опасное действие (удалить безвозвратно).
 pub fn danger_button(ui: &mut Ui, label: &str) -> Response {
-    let text = egui::RichText::new(label).color(TEXT_STRONG);
-    ui.add(
-        egui::Button::new(text)
-            .fill(mix(BG_FIELD, ERROR, 0.7))
-            .stroke(Stroke::new(1.0_f32, LINE_STRONG))
-            .min_size(vec2(80.0, FIELD_H + 2.0)),
-    )
+    crate::controls::button_ex(ui, crate::controls::Kind::Danger, None, label, DIALOG_BUTTON_MIN_W)
 }
 
 /// Кнопка с иконкой и подписью — обычного вида (полосы инструментов).
 pub fn icon_text_button(ui: &mut Ui, icon: Icon, label: &str) -> Response {
     let galley = ui.painter().layout_no_wrap(label.to_string(), body(), Color32::PLACEHOLDER);
-    let size = vec2(SP_S + 2.0 + ICON_S + SP_S + 1.0 + galley.size().x + SP_M, CONTROL_H);
+    let size = vec2(SP_S + 2.0 + ICON_S + SP_S + 1.0 + galley.size().x + SP_M, control_h(ui));
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let enabled = ui.is_enabled();
     let visuals = ui.style().interact(&response);
     let fill = if enabled { visuals.weak_bg_fill } else { BG_FIELD };
-    ui.painter().rect(rect, R_S, fill, Stroke::new(1.0_f32, LINE_STRONG));
+    crate::controls::paint_frame(ui.painter(), rect, R_S, fill, LINE_STRONG);
     let color = if enabled { TEXT } else { TEXT_DISABLED };
     icons::paint(
         ui.painter(),
@@ -669,7 +825,7 @@ pub fn icon_text_button(ui: &mut Ui, icon: Icon, label: &str) -> Response {
 /// Переключатель с иконкой и подписью на полосе инструментов (Collapse, Error Pause…).
 pub fn toggle_button(ui: &mut Ui, on: &mut bool, icon: Icon, label: &str, tooltip: &str) -> Response {
     let galley = ui.painter().layout_no_wrap(label.to_string(), body(), Color32::PLACEHOLDER);
-    let size = vec2(SP_S + 2.0 + ICON_S + SP_S + 1.0 + galley.size().x + SP_M, CONTROL_H);
+    let size = vec2(SP_S + 2.0 + ICON_S + SP_S + 1.0 + galley.size().x + SP_M, control_h(ui));
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let fill = if *on {
         accent_soft()
@@ -678,7 +834,7 @@ pub fn toggle_button(ui: &mut Ui, on: &mut bool, icon: Icon, label: &str, toolti
     } else {
         BG_FIELD
     };
-    ui.painter().rect(rect, R_S, fill, Stroke::new(1.0_f32, LINE_STRONG));
+    crate::controls::paint_frame(ui.painter(), rect, R_S, fill, LINE_STRONG);
     let color = if *on { TEXT_STRONG } else { TEXT };
     icons::paint(
         ui.painter(),
@@ -700,22 +856,23 @@ pub fn toggle_button(ui: &mut Ui, on: &mut bool, icon: Icon, label: &str, toolti
 /// Сегментированный переключатель: варианты встык, выбранный — с акцентом.
 pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str, &str)]) -> bool {
     let mut changed = false;
-    let height = CONTROL_H;
+    let height = control_h(ui);
+    let pad = density(ui.ctx()).pad_x();
     let galleys: Vec<_> = options
         .iter()
         .map(|(_, label, _)| ui.painter().layout_no_wrap(label.to_string(), body(), Color32::PLACEHOLDER))
         .collect();
-    let widths: Vec<f32> = galleys.iter().map(|g| (g.size().x + 16.0).max(28.0).round()).collect();
+    let widths: Vec<f32> = galleys.iter().map(|g| (g.size().x + pad * 2.0).max(height + SP_3).round()).collect();
     let total: f32 = widths.iter().sum();
     let (rect, _) = ui.allocate_exact_size(vec2(total, height), Sense::hover());
-    ui.painter().rect(rect, R_S, BG_FIELD, Stroke::new(1.0_f32, LINE_STRONG));
+    crate::controls::paint_frame(ui.painter(), rect, R_S, BG_FIELD, LINE_STRONG);
     let mut x = rect.left();
     let count = options.len();
     for (index, (((option, _, tooltip), galley), width)) in options.iter().zip(galleys).zip(widths).enumerate() {
         let cell = Rect::from_min_size(pos2(x, rect.top()), vec2(width, height));
         x += width;
         let response = ui
-            .interact(cell, ui.id().with(("segmented", tooltip)), Sense::click())
+            .interact(cell, ui.id().with(("segmented", index, options.len(), *tooltip)), Sense::click())
             .on_hover_text(*tooltip);
         let selected = *value == *option;
         let inner = cell.shrink(1.0);
@@ -729,7 +886,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
                 .vline(cell.right() - 0.5, cell.y_range().shrink(4.0), Stroke::new(1.0_f32, LINE_STRONG));
         }
         let color = if selected { TEXT_STRONG } else { TEXT_MUTED };
-        ui.painter().galley(cell.center() - galley.size() * 0.5, galley, color);
+        ui.painter().galley((cell.center() - galley.size() * 0.5).round(), galley, color);
         if response.clicked() && !selected {
             *value = *option;
             changed = true;
@@ -750,10 +907,11 @@ pub fn dropdown_button<R>(ui: &mut Ui, label: &str, tooltip: &str, add: impl FnO
     job.append(label, 0.0, format.clone());
     // Место под стрелку справа.
     job.append("    ", 0.0, format);
+    let h = control_h(ui);
     let background = ui.painter().add(egui::Shape::Noop);
     let inner = egui::menu::menu_custom_button(
         ui,
-        egui::Button::new(job).frame(false).min_size(vec2(0.0, CONTROL_H)),
+        egui::Button::new(job).frame(false).min_size(vec2(0.0, h)),
         |ui| {
             menu_body(ui);
             add(ui)
@@ -775,7 +933,7 @@ pub fn dropdown_button<R>(ui: &mut Ui, label: &str, tooltip: &str, add: impl FnO
 
 /// Поле поиска с лупой и кнопкой очистки. Возвращает ответ текстового поля.
 pub fn search_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Response {
-    let height = CONTROL_H;
+    let height = control_h(ui);
     let width = width.min(ui.available_width()).max(80.0);
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let edit_rect = Rect::from_min_max(pos2(rect.left() + 22.0, rect.top()), pos2(rect.right() - 20.0, rect.bottom()));
@@ -799,7 +957,7 @@ pub fn search_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> R
     };
     ui.painter().set(
         background,
-        egui::epaint::RectShape::new(rect, R_S, BG_INSET, stroke),
+        egui::epaint::RectShape::new(rect.shrink(stroke.width * 0.5), R_S, BG_INSET, stroke),
     );
     icons::paint(
         ui.painter(),
@@ -818,6 +976,9 @@ pub fn search_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> R
             text.clear();
         }
     }
+    // Ответ — на весь контрол (лупа, поле, крестик): раскладка и замеры видят его размер.
+    let mut response = response;
+    response.rect = rect;
     response
 }
 
@@ -825,7 +986,7 @@ pub fn search_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> R
 /// акцентом: включённый — светлее и с цветной иконкой, выключенный — серый.
 pub fn pill_toggle(ui: &mut Ui, on: &mut bool, icon: Icon, color: Color32, text: &str, tooltip: &str) -> Response {
     let galley = ui.painter().layout_no_wrap(text.to_string(), mono(), Color32::PLACEHOLDER);
-    let size = vec2(SP_S + 2.0 + ICON_S + SP_S + galley.size().x + SP_S + 2.0, CONTROL_H);
+    let size = vec2(SP_S + 2.0 + ICON_S + SP_S + galley.size().x + SP_S + 2.0, control_h(ui));
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let fill = if *on {
         BG_ACTIVE
@@ -834,7 +995,7 @@ pub fn pill_toggle(ui: &mut Ui, on: &mut bool, icon: Icon, color: Color32, text:
     } else {
         BG_FIELD
     };
-    ui.painter().rect(rect, R_S, fill, Stroke::new(1.0_f32, LINE_STRONG));
+    crate::controls::paint_frame(ui.painter(), rect, R_S, fill, LINE_STRONG);
     let tint = if *on { color } else { TEXT_DISABLED };
     icons::paint(
         ui.painter(),
@@ -978,7 +1139,7 @@ pub fn menu_section(ui: &mut Ui, title: &str) {
 
 /// Разделитель в меню.
 pub fn menu_separator(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 7.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().max(0.0), 7.0), Sense::hover());
     ui.painter().hline(
         rect.x_range().shrink(SP_XS),
         rect.center().y.round() + 0.5,

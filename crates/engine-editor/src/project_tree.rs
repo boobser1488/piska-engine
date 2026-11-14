@@ -1,6 +1,7 @@
 //! Левая панель окна Project: «Favorites» (сохранённые поиски и закреплённые каталоги),
 //! дерево каталогов и «Code». Строки каталогов принимают перетаскиваемые элементы.
 
+use crate::i18n::{tr_s, trf};
 use std::collections::HashSet;
 
 use egui::{pos2, vec2, Align2, Color32, Rect, Sense, Stroke};
@@ -30,10 +31,10 @@ fn rows(editor: &Editor) -> Vec<Row> {
     let mut rows = Vec::new();
     let collapsed = &editor.project.collapsed;
     let favorites_open = !collapsed.contains(FAVORITES_KEY);
-    rows.push(Row::Header { key: FAVORITES_KEY, title: "Favorites", open: favorites_open });
+    rows.push(Row::Header { key: FAVORITES_KEY, title: tr_s("Favorites"), open: favorites_open });
     if favorites_open {
         for (name, query) in DEFAULT_SEARCHES {
-            rows.push(Row::Search { query: query.to_string(), name: name.to_string(), user: false });
+            rows.push(Row::Search { query: query.to_string(), name: tr_s(name).to_string(), user: false });
         }
         for (name, query) in &editor.prefs.project_ui.searches {
             rows.push(Row::Search { query: query.clone(), name: name.clone(), user: true });
@@ -189,12 +190,12 @@ fn draw_row(editor: &mut Editor, ui: &mut egui::Ui, row: &Row, cx: &MenuCx) {
             let user = *user;
             let query = query.clone();
             let cmds = &mut editor.project.cmds;
-            response.on_hover_text(format!("Search: {query}")).context_menu(|ui| {
+            response.on_hover_text(trf!("Search: {query}", query = query)).context_menu(|ui| {
                 theme::menu_body(ui);
-                if theme::item("Show Results").icon(Icon::Search).show(ui) {
+                if theme::item(tr_s("Show Results")).icon(Icon::Search).show(ui) {
                     cmds.push(Cmd::RunSearch(query.clone()));
                 }
-                if user && theme::item("Delete Saved Search").icon(Icon::Trash).show(ui) {
+                if user && theme::item(tr_s("Delete Saved Search")).icon(Icon::Trash).show(ui) {
                     cmds.push(Cmd::DeleteSearch(query.clone()));
                 }
             });
@@ -213,7 +214,7 @@ fn draw_row(editor: &mut Editor, ui: &mut egui::Ui, row: &Row, cx: &MenuCx) {
                 Icon::Folder,
                 theme::FOLDER,
             );
-            let name = if path.is_empty() { "Assets" } else { file_name(path) };
+            let name = if path.is_empty() { tr_s("Assets") } else { file_name(path) };
             let text = elide_middle(&painter, name, &theme::body(), rect.right() - left - 44.0);
             painter.text(pos2(left + 38.0, rect.center().y), Align2::LEFT_CENTER, text, theme::body(), theme::TEXT);
             if response.clicked() {
@@ -224,10 +225,10 @@ fn draw_row(editor: &mut Editor, ui: &mut egui::Ui, row: &Row, cx: &MenuCx) {
             let cmds = &mut editor.project.cmds;
             response.on_hover_text(format!("Assets/{path}")).context_menu(|ui| {
                 theme::menu_body(ui);
-                if theme::item("Open").icon(Icon::FolderOpen).show(ui) {
+                if theme::item(tr_s("Open")).icon(Icon::FolderOpen).show(ui) {
                     cmds.push(Cmd::Go(path.clone()));
                 }
-                if theme::item("Remove from Favorites").icon(Icon::Check).show(ui) {
+                if theme::item(tr_s("Remove from Favorites")).icon(Icon::Check).show(ui) {
                     cmds.push(Cmd::Unpin(path.clone()));
                 }
             });
@@ -265,7 +266,7 @@ fn draw_row(editor: &mut Editor, ui: &mut egui::Ui, row: &Row, cx: &MenuCx) {
                 if selected { Icon::FolderOpen } else { Icon::Folder },
                 theme::FOLDER,
             );
-            let name = if path.is_empty() { "Assets" } else { file_name(path) };
+            let name = if path.is_empty() { tr_s("Assets") } else { file_name(path) };
             let color = if selected { theme::TEXT_STRONG } else { theme::TEXT };
             let text = elide_middle(&painter, name, &theme::body(), (rect.right() - left - 40.0).max(30.0));
             painter.text(pos2(left + 34.0, rect.center().y), Align2::LEFT_CENTER, text, theme::body(), color);
@@ -290,7 +291,7 @@ fn draw_row(editor: &mut Editor, ui: &mut egui::Ui, row: &Row, cx: &MenuCx) {
             painter.text(
                 pos2(left + 34.0, rect.center().y),
                 Align2::LEFT_CENTER,
-                "Code",
+                tr_s("Code"),
                 theme::body(),
                 if selected { theme::TEXT_STRONG } else { theme::TEXT },
             );

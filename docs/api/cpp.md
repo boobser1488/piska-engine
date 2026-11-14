@@ -557,8 +557,9 @@ wants_keyboard}`. Точные аргументы — в `crates/engine/src/cpp_
 ## 17. C++ в своей игре
 
 Игре из `games/<имя>/` не нужен ни CMake, ни DLL: её собственные `*.cpp` собираются в
-`build.rs` и **статически линкуются в крейт игры**. Так устроен «Шаровой завод»
-(`games/marble`): ядро на Rust, механизмы уровней — 14 компонентов на C++ в `cpp/`.
+`build.rs` и **статически линкуются в крейт игры**. Пример — «Шаровой завод»
+(`games/marble`): игра целиком на Rust-скриптах, а один небольшой C++-компонент `CppSpinner`
+в `cpp/` собирается по желанию (cargo-фича игры `cpp-example`).
 
 Три шага.
 
@@ -663,6 +664,6 @@ app.world.scene.get_mut(id).unwrap().add_boxed(c);
 
 Скрипты игры видят те же сервисы (`physics::`, `audio::`, `ui::`, §9–§13), что и плагин
 движка; игра может добавить свои (`engine::cpp_services::register`, §13). Пример
-целиком — `games/marble/cpp/` и `games/marble/src/kit.rs` (как Rust создаёт C++-компоненты
-по имени), тест — `games/marble/tests/cpp_mechanisms.rs`.
+целиком — `games/marble/cpp/` и `games/marble/build.rs` (за фичей `cpp-example`), тест —
+`games/marble/tests/cpp_example.rs`.
 

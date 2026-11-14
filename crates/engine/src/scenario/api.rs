@@ -68,6 +68,18 @@ pub fn to_script(v: &EValue) -> Value {
         EValue::Quat(x, y, z, w) => Value::list(vec![Value::Num(clean(*x)), Value::Num(clean(*y)), Value::Num(clean(*z)), Value::Num(clean(*w))]),
         EValue::Color(r, g, b, a) => Value::color(*r, *g, *b, *a),
         EValue::List(items) => Value::list(items.iter().map(to_script).collect()),
+        // Ссылку на объект без сцены не разрешить: ручкой её делает `get_path`.
+        EValue::Object(_) => Value::Nil,
+    }
+}
+
+/// Значение движка → значение скрипта; поля-ссылки (`ObjectRef`) — ручки объектов
+/// класса `class` (nil, если не назначено или объект уничтожен).
+fn to_script_in(world: &World, class: u32, v: &EValue) -> Value {
+    match v {
+        EValue::Object(uid) => world.scene.find_by_uid(*uid).map_or(Value::Nil, |id| handle(class, id)),
+        EValue::List(items) => Value::list(items.iter().map(|item| to_script_in(world, class, item)).collect()),
+        other => to_script(other),
     }
 }
 
@@ -174,7 +186,7 @@ fn split_path(path: &str) -> Result<(&str, &str), Throw> {
         .ok_or_else(|| Throw::msg(format!("expected \"Component.field\", got \"{path}\" (for example \"Light.color\")")))
 }
 
-fn get_path(world: &World, id: GameObjectId, path: &str) -> Result<Value, Throw> {
+fn get_path(world: &World, class: u32, id: GameObjectId, path: &str) -> Result<Value, Throw> {
     let (component, field) = split_path(path)?;
     let obj = world.scene.get(id).ok_or_else(|| Throw::msg("this object was destroyed"))?;
     let c = obj.components().find(|c| c.type_name() == component).ok_or_else(|| {
@@ -184,11 +196,17 @@ fn get_path(world: &World, id: GameObjectId, path: &str) -> Result<Value, Throw>
     let v = c.get_field(field).ok_or_else(|| {
         Throw::msg(format!("component `{component}` has no field `{field}` (fields: {})", c.field_names().join(", ")))
     })?;
-    Ok(to_script(&v))
+    Ok(to_script_in(world, class, &v))
 }
 
-fn set_path(world: &mut World, id: GameObjectId, path: &str, v: &Value) -> Result<(), Throw> {
+fn set_path(world: &mut World, class: u32, id: GameObjectId, path: &str, v: &Value) -> Result<(), Throw> {
     let (component, field) = split_path(path)?;
+    // Ручка объекта (или nil) для поля-ссылки — стабильный номер объекта.
+    let reference = match v {
+        Value::Handle(h) if h.class == class => Some(EValue::Object(world.scene.get(live(world, h.id)?).map_or(0, |o| o.uid()))),
+        Value::Nil => Some(EValue::Object(0)),
+        _ => None,
+    };
     let obj = world.scene.get_mut(id).ok_or_else(|| Throw::msg("this object was destroyed"))?;
     let name = obj.name.clone();
     let c = obj
@@ -198,7 +216,11 @@ fn set_path(world: &mut World, id: GameObjectId, path: &str, v: &Value) -> Resul
     let like = c.get_field(field).ok_or_else(|| {
         Throw::msg(format!("component `{component}` has no field `{field}` (fields: {})", c.field_names().join(", ")))
     })?;
-    let value = from_script(v, Some(&like)).map_err(|e| Throw::msg(format!("`{path}`: {e}")))?;
+    let value = match (&like, reference) {
+        (EValue::Object(_), Some(reference)) => reference,
+        (EValue::Object(_), None) => return Err(Throw::msg(format!("`{path}`: expected an object (from `find`) or nil"))),
+        _ => from_script(v, Some(&like)).map_err(|e| Throw::msg(format!("`{path}`: {e}")))?,
+    };
     c.set_field(field, &value).map_err(|e| Throw::msg(format!("`{path}`: {e}")))
 }
 
@@ -440,12 +462,12 @@ pub(crate) fn install(vm: &mut Vm) -> u32 {
     vm.class_method(obj, "get", move |ctx, a| {
         let w = world(ctx)?;
         let id = object_arg(w, obj, &a, 0)?;
-        get_path(w, id, a.str(1)?)
+        get_path(w, obj, id, a.str(1)?)
     });
     vm.class_method(obj, "set", move |ctx, a| {
         let w = world(ctx)?;
         let id = object_arg(w, obj, &a, 0)?;
-        set_path(w, id, a.str(1)?, a.get(2))?;
+        set_path(w, obj, id, a.str(1)?, a.get(2))?;
         Ok(Value::Nil)
     });
     vm.class_method(obj, "send", move |ctx, a| {

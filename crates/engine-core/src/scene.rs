@@ -2,6 +2,7 @@
 
 use std::any::TypeId;
 use std::cell::{RefCell, RefMut};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -40,6 +41,8 @@ pub struct Scene {
     instance: u64,
     /// В `roots` остались уничтоженные объекты (см. `remove_subtree_lazy`).
     dead_roots: bool,
+    /// Стабильный номер объекта → объект (поля-ссылки, см. `crate::objref`).
+    uids: HashMap<u64, GameObjectId>,
 }
 
 impl Default for Scene {
@@ -62,6 +65,7 @@ impl Scene {
             hierarchy: 0,
             spawned: 0,
             dead_roots: false,
+            uids: HashMap::new(),
             instance: NEXT_SCENE.fetch_add(1, Ordering::Relaxed),
         }
     }
@@ -96,6 +100,13 @@ impl Scene {
     pub fn spawn(&mut self, name: impl Into<String>) -> GameObjectId {
         let mut obj = GameObject::new(name.into());
         obj.journal = Some(self.journal.clone());
+        obj.uid = loop {
+            let uid = crate::objref::fresh_uid();
+            if !self.uids.contains_key(&uid) {
+                break uid;
+            }
+        };
+        let uid = obj.uid;
         let id = match self.free.pop() {
             Some(index) => {
                 obj.slot = index;
@@ -118,6 +129,7 @@ impl Scene {
                 }
             }
         };
+        self.uids.insert(uid, id);
         self.roots.push(id);
         self.spawned += 1;
         let spawned = self.spawned;
@@ -163,6 +175,39 @@ impl Scene {
 
     pub fn contains(&self, id: GameObjectId) -> bool {
         self.get(id).is_some()
+    }
+
+    /// Живой объект по стабильному номеру ([`GameObject::uid`]); `None` для 0, для
+    /// уничтоженного объекта и для номера из другой сцены.
+    pub fn find_by_uid(&self, uid: u64) -> Option<GameObjectId> {
+        if uid == 0 {
+            return None;
+        }
+        let id = *self.uids.get(&uid)?;
+        self.get(id).filter(|o| o.uid == uid).map(|_| id)
+    }
+
+    /// Объект, на который ссылается поле (см. [`ObjectRef`](crate::objref::ObjectRef)).
+    pub fn resolve(&self, reference: crate::objref::ObjectRef) -> Option<GameObjectId> {
+        self.find_by_uid(reference.uid())
+    }
+
+    /// Задать объекту стабильный номер (загрузчик сцен ставит номер из файла).
+    /// `false` — объекта нет, номер 0 или его уже носит другой объект этой сцены.
+    pub fn set_uid(&mut self, id: GameObjectId, uid: u64) -> bool {
+        let uid = uid & crate::objref::UID_MASK;
+        if uid == 0 || self.find_by_uid(uid).is_some_and(|other| other != id) {
+            return false;
+        }
+        let Some(obj) = self.get_mut(id) else {
+            return false;
+        };
+        let old = std::mem::replace(&mut obj.uid, uid);
+        if self.uids.get(&old) == Some(&id) {
+            self.uids.remove(&old);
+        }
+        self.uids.insert(uid, id);
+        true
     }
 
     pub fn len(&self) -> usize {
@@ -658,6 +703,11 @@ impl Scene {
         for id in doomed {
             index.forget(id);
             let slot = &mut self.slots[id.index as usize];
+            if let Some(uid) = slot.obj.as_ref().map(|o| o.uid) {
+                if self.uids.get(&uid) == Some(&id) {
+                    self.uids.remove(&uid);
+                }
+            }
             slot.obj = None;
             slot.generation += 1;
             self.free.push(id.index);

@@ -4,6 +4,7 @@
 //! а [`Editor::apply`] выполняет его. Поэтому всё, что можно сделать мышью,
 //! можно сделать и из теста: `editor.apply(Action::Play)`.
 
+use crate::i18n::{tr_s, trf};
 use std::path::PathBuf;
 
 use engine_assets::{AssetDatabase, AssetHandle, Guid};
@@ -59,7 +60,7 @@ pub struct EditorConfig {
 impl Default for EditorConfig {
     fn default() -> Self {
         Self {
-            title: "Piska Editor".to_string(),
+            title: tr_s("Piska Editor").to_string(),
             width: 1440,
             height: 860,
             scene: None,
@@ -212,6 +213,9 @@ pub enum Action {
     /// Создать объект со спрайтом из текстуры.
     CreateSpriteFromTexture { guid: Guid, position: Option<Vec3> },
     SavePrefab(GameObjectId),
+    /// Сохранить объект префабом в каталог ассетов `folder` (строку иерархии бросили в окно
+    /// Project); объект становится экземпляром.
+    SavePrefabIn { object: GameObjectId, folder: String },
     UnpackPrefab(GameObjectId),
     Play,
     /// Пауза / продолжить.
@@ -220,6 +224,8 @@ pub enum Action {
     Step,
     Stop,
     NewScene,
+    /// Новая 3D-сцена: камера с перспективой, направленный свет, земля; вид Scene — 3D.
+    NewScene3D,
     /// Путь относительно каталога ассетов.
     OpenScene(String),
     Save,
@@ -269,6 +275,10 @@ pub enum Action {
     Export(crate::export::ExportSettings),
     /// Показать каталог последнего экспорта в файловом менеджере.
     RevealExport,
+    /// Открыть модель (`.pmodel`) в Piska Modeler.
+    EditInModeler(std::path::PathBuf),
+    /// Чужой меш (`.obj`, `.glb`…): новая `.pmodel` рядом с ним как опорой — в Piska Modeler.
+    EditCopyInModeler(std::path::PathBuf),
     /// Открыть последнюю веб-сборку в браузере через локальный сервер.
     RunInBrowser,
     /// Окна: открыть, закрыть, пристыковать, развернуть, раскладки (меню Window).
@@ -299,6 +309,59 @@ pub enum Action {
     /// File → Open Recent: попросить Piska Hub открыть проект (каталог крейта игры) и
     /// закрыть этот редактор.
     OpenProject(PathBuf),
+    /// Выделить несколько объектов; `active` (или последний) — активный.
+    SelectMany { ids: Vec<GameObjectId>, active: Option<GameObjectId> },
+    /// Ctrl+щелчок: добавить к выделению или убрать из него.
+    ToggleSelect(GameObjectId),
+    /// Ctrl+A: все объекты сцены.
+    SelectAll,
+    /// Удалить все выделенные объекты (одним шагом Undo).
+    DeleteSelection,
+    /// Ctrl+D для всего выделения.
+    DuplicateSelection,
+    /// Ctrl+C: скопировать выделенные объекты (с потомками) в буфер редактора.
+    CopySelection,
+    /// Ctrl+X: скопировать и удалить.
+    CutSelection,
+    /// Ctrl+V — рядом с активным объектом; `as_child` (Ctrl+Shift+V) — внутрь него.
+    Paste { as_child: bool },
+    /// Ctrl+G: новый пустой родитель в середине выделения, выделенное — внутрь.
+    GroupSelection,
+    /// H / Shift+H: выключить или включить все выделенные объекты.
+    SetSelectionActive(bool),
+}
+
+/// Имя действия для окна Undo History: вариант `Action` словами (`CreateEmpty` →
+/// «Create Empty»).
+fn action_label(action: &Action) -> String {
+    let debug = format!("{action:?}");
+    let variant = debug.split(|c: char| !c.is_alphanumeric()).next().unwrap_or_default();
+    crate::theme::pretty_type(variant)
+}
+
+impl Editor {
+    /// Шаги окна Undo History: имена от первого к последнему и сколько из них сейчас
+    /// применено (позиция «вы здесь»; шаги дальше неё — то, что вернёт Redo).
+    pub fn undo_history(&self) -> (Vec<String>, usize) {
+        let mut steps = self.history.undo_labels.clone();
+        steps.extend(self.history.redo_labels.iter().rev().cloned());
+        (steps, self.history.undo_labels.len())
+    }
+
+    /// Перейти к позиции `position` истории (0 — до первого шага): Undo / Redo нужное число раз.
+    pub fn jump_in_history(&mut self, position: usize) {
+        self.settle();
+        while self.history.undo.len() > position {
+            let before = self.history.undo.len();
+            self.apply(Action::Undo);
+            if self.history.undo.len() == before {
+                break;
+            }
+        }
+        while self.history.undo.len() < position && !self.history.redo.is_empty() {
+            self.apply(Action::Redo);
+        }
+    }
 }
 
 /// Строка окна Project.
@@ -326,6 +389,12 @@ struct History {
     editing: bool,
     undo: Vec<SceneSnapshot>,
     redo: Vec<SceneSnapshot>,
+    /// Имена шагов (окно Undo History): `undo_labels[i]` — шаг из `undo[i]` в следующее
+    /// состояние, `redo_labels[i]` — шаг в `redo[i]`.
+    undo_labels: Vec<String>,
+    redo_labels: Vec<String>,
+    /// Имя для следующего шага (действие, которое сейчас выполняется).
+    next_label: Option<String>,
 }
 
 /// Редактор: приложение-игра плюс всё состояние окон.
@@ -338,6 +407,22 @@ pub struct Editor {
     pub(crate) view_tab: ViewTab,
     pub(crate) bottom_tab: BottomTab,
     pub(crate) selection: Option<GameObjectId>,
+    /// Всё выделение (с активным `selection`), см. `selection.rs`.
+    pub(crate) selected: Vec<GameObjectId>,
+    /// Объекты, скопированные Ctrl+C / Ctrl+X.
+    pub(crate) object_clipboard: Vec<engine_core::serialize::NodeData>,
+    /// Гизмо крутит выделение вокруг его середины, а не активного объекта.
+    pub(crate) pivot_center: bool,
+    /// Окно Help → Keyboard Shortcuts.
+    pub(crate) shortcuts_help_open: bool,
+    /// Окна Help: Getting Started, «Piska Modeler не найден».
+    pub(crate) help: crate::help::HelpState,
+    /// Заставка оконного запуска (splash.rs).
+    pub(crate) splash: crate::splash::Splash,
+    /// Сколько кадров нарисовано уже с темой и шрифтами.
+    pub(crate) themed_frames: u64,
+    /// Где в последнем кадре стояли части рамки окна (для проверок выравнивания).
+    pub(crate) chrome: ChromeRects,
     pub(crate) scene_path: Option<String>,
     pub(crate) dirty: bool,
     history: History,
@@ -394,6 +479,10 @@ pub struct Editor {
     pub(crate) dock: crate::dock::DockLayout,
     /// Кисти рельефа и черновик его параметров (terrain_tools.rs).
     pub(crate) terrain_tools: crate::terrain_tools::TerrainTools,
+    /// Окна Open Scene… и New Scene… (scene_picker.rs).
+    pub(crate) scene_picker: crate::scene_picker::ScenePicker,
+    /// Окно Edit → Undo History (undo_history.rs).
+    pub(crate) undo_history_open: bool,
 }
 
 impl Editor {
@@ -412,6 +501,14 @@ impl Editor {
             view_tab: ViewTab::Scene,
             bottom_tab: BottomTab::Project,
             selection: None,
+            selected: Vec::new(),
+            object_clipboard: Vec::new(),
+            pivot_center: false,
+            shortcuts_help_open: false,
+            help: crate::help::HelpState::default(),
+            splash: crate::splash::Splash::default(),
+            themed_frames: 0,
+            chrome: ChromeRects::default(),
             scene_path: None,
             dirty: false,
             history: History {
@@ -419,6 +516,9 @@ impl Editor {
                 editing: false,
                 undo: Vec::new(),
                 redo: Vec::new(),
+                undo_labels: Vec::new(),
+                redo_labels: Vec::new(),
+                next_label: None,
             },
             play_snapshot: None,
             cam_center: Vec2::ZERO,
@@ -457,6 +557,8 @@ impl Editor {
             folders: Vec::new(),
             dock: crate::dock::DockLayout::default(),
             terrain_tools: Default::default(),
+            scene_picker: Default::default(),
+            undo_history_open: false,
             config,
         };
         editor.reindex_assets();
@@ -548,6 +650,10 @@ impl Editor {
     /// Заменить настройки (масштаб интерфейса применится в следующем кадре).
     pub fn set_preferences(&mut self, prefs: Preferences) {
         self.prefs = prefs;
+        // Сцена, открытая при запуске (до чтения настроек), — тоже в недавние.
+        if let Some(path) = self.scene_path.clone() {
+            self.remember_scene(&path);
+        }
         self.apply_panel_prefs();
         // Раскладку окон из настроек (испорченную — Default с предупреждением).
         self.restore_layout_from_prefs();
@@ -743,16 +849,16 @@ impl Editor {
         let valid = name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
             && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
         if !valid {
-            return Err(EditorError::Other(format!(
+            return Err(EditorError::Other(trf!(
                 "`{name}` cannot be a script name: use a C++ class name such as `EnemyPatrol` \
                  (Latin letters, digits and `_`, starting with a capital letter)"
-            )));
+            , name = name)));
         }
-        let path = dir.join(format!("{name}.cpp"));
+        let path = dir.join(format!("{name}.cpp", name = name));
         if self.app.world.registry.contains(name) || path.exists() {
-            return Err(EditorError::Other(format!(
+            return Err(EditorError::Other(trf!(
                 "a component named `{name}` already exists; pick another name"
-            )));
+            , name = name)));
         }
         let io = |source: std::io::Error| SceneError::Io {
             path: path.display().to_string(),
@@ -808,6 +914,8 @@ impl Editor {
                 let mut view = self.orbit.view(aspect, Color::rgb(r, g, b));
                 // Сетка — внутри 3D-прохода: модели закрывают её, а не рисуется поверх.
                 view.grid = self.scene_grid();
+                // Туман сцены в виде Scene — по выбору (Preferences → Scene View, меню Gizmos).
+                view.fog = self.prefs.scene_fog;
                 view
             }
             ViewTab::Scene => {
@@ -854,10 +962,14 @@ impl Editor {
         if !self.history.editing {
             self.history.editing = true;
             self.history.undo.push(self.history.baseline.clone());
+            let label = self.history.next_label.take().unwrap_or_else(|| "Edit".to_string());
+            self.history.undo_labels.push(label);
             if self.history.undo.len() > self.prefs.undo_limit.max(1) {
                 self.history.undo.remove(0);
+                self.history.undo_labels.remove(0);
             }
             self.history.redo.clear();
+            self.history.redo_labels.clear();
         }
     }
 
@@ -870,6 +982,7 @@ impl Editor {
         let now = self.app.world.snapshot();
         if now == self.history.baseline {
             self.history.undo.pop(); // «правка», которая ничего не изменила
+            self.history.undo_labels.pop();
         } else {
             self.history.baseline = now;
         }
@@ -881,16 +994,17 @@ impl Editor {
             editing: false,
             undo: Vec::new(),
             redo: Vec::new(),
+            undo_labels: Vec::new(),
+            redo_labels: Vec::new(),
+            next_label: None,
         };
         self.dirty = false;
     }
 
     fn restore_baseline(&mut self) -> Result<(), EditorError> {
-        let path = self
-            .selection
-            .and_then(|id| path_of(&self.app.world.scene, id));
+        let paths = self.selection_paths();
         self.app.world.restore(&self.history.baseline)?;
-        self.selection = path.and_then(|path| id_at(&self.app.world.scene, &path));
+        self.restore_selection_paths(paths);
         self.dirty = true;
         Ok(())
     }
@@ -904,6 +1018,9 @@ impl Editor {
         if let Err(err) = self.try_apply(action) {
             log::error!("{err}");
         }
+        // Действие без правки (выделение) не должно назвать следующую правку мышью.
+        self.history.next_label = None;
+        self.normalize_selection();
     }
 
     /// Выполнить всё, что панели накопили за кадр.
@@ -914,10 +1031,19 @@ impl Editor {
     }
 
     pub(crate) fn try_apply(&mut self, action: Action) -> Result<(), EditorError> {
+        // Имя шага Undo — по действию («Rename», «Create Empty»); правки мышью — «Edit».
+        if !self.history.editing && !matches!(action, Action::Undo | Action::Redo) {
+            self.history.next_label = Some(action_label(&action));
+        }
         // Действия, которые выбрасывают текущую сцену, сначала спрашивают про несохранённое.
         let discards_scene = matches!(
             action,
-            Action::NewScene | Action::OpenScene(_) | Action::Quit | Action::ProjectHub | Action::OpenProject(_)
+            Action::NewScene
+                | Action::NewScene3D
+                | Action::OpenScene(_)
+                | Action::Quit
+                | Action::ProjectHub
+                | Action::OpenProject(_)
         );
         if discards_scene {
             if self.mode != Mode::Edit {
@@ -932,8 +1058,19 @@ impl Editor {
         }
 
         match action {
+            Action::SelectMany { .. }
+            | Action::ToggleSelect(_)
+            | Action::SelectAll
+            | Action::DeleteSelection
+            | Action::DuplicateSelection
+            | Action::CopySelection
+            | Action::CutSelection
+            | Action::Paste { .. }
+            | Action::GroupSelection
+            | Action::SetSelectionActive(_) => self.apply_selection_action(action)?,
             Action::Select(id) => {
                 self.selection = id.filter(|id| self.app.world.scene.contains(*id));
+                self.selected = self.selection.into_iter().collect();
                 // Выделили объект — инспектор снова показывает его, а не материал.
                 if self.selection.is_some() {
                     self.open_material(None);
@@ -946,7 +1083,7 @@ impl Editor {
             }
             Action::CreateSprite { parent } => {
                 self.touch();
-                let id = self.create_object("Sprite", parent)?;
+                let id = self.create_object(tr_s("Sprite"), parent)?;
                 if let Some(obj) = self.app.world.scene.get_mut(id) {
                     obj.add(SpriteRenderer::default());
                 }
@@ -967,8 +1104,8 @@ impl Editor {
             Action::CreateLight(kind) => {
                 self.touch();
                 let name = match kind {
-                    LightKind::Directional => "Directional Light",
-                    LightKind::Point => "Point Light",
+                    LightKind::Directional => tr_s("Directional Light"),
+                    LightKind::Point => tr_s("Point Light"),
                 };
                 let id = self.create_object(name, None)?;
                 if let Some(obj) = self.app.world.scene.get_mut(id) {
@@ -987,7 +1124,7 @@ impl Editor {
             }
             Action::CreateCamera => {
                 self.touch();
-                let id = self.create_object("Camera", None)?;
+                let id = self.create_object(tr_s("Camera"), None)?;
                 if let Some(obj) = self.app.world.scene.get_mut(id) {
                     obj.add(Camera::default());
                 }
@@ -1117,7 +1254,7 @@ impl Editor {
                     .iter()
                     .find(|asset| asset.guid == guid)
                     .map(|asset| capitalize(file_stem(&asset.path)))
-                    .unwrap_or_else(|| "Sprite".to_string());
+                    .unwrap_or_else(|| tr_s("Sprite").to_string());
                 let id = self.create_object(&name, None)?;
                 let position = position.unwrap_or_else(|| self.spawn_point());
                 if let Some(obj) = self.app.world.scene.get_mut(id) {
@@ -1127,6 +1264,7 @@ impl Editor {
                 self.selection = Some(id);
             }
             Action::SavePrefab(id) => self.save_prefab(id)?,
+            Action::SavePrefabIn { object, folder } => self.save_prefab_in(object, &folder)?,
             Action::UnpackPrefab(id) => {
                 if self.app.world.scene.get(id).is_some_and(|o| o.prefab().is_some()) {
                     self.touch();
@@ -1161,21 +1299,36 @@ impl Editor {
                 self.drop_dead_selection();
             }
             Action::Stop => self.stop()?,
-            Action::NewScene => {
+            Action::NewScene | Action::NewScene3D => {
+                let three_d = action == Action::NewScene3D;
                 self.app.world.restore(&SceneSnapshot {
-                    name: "Untitled".to_string(),
+                    name: tr_s("Untitled").to_string(),
                     objects: Vec::new(),
                 })?;
-                // Как в Unity: новая сцена сразу с камерой.
-                self.app
-                    .world
-                    .scene
-                    .build("Main Camera")
-                    .tag("MainCamera")
-                    .with(Camera::default());
+                // Как в Unity: новая сцена сразу с камерой (в 3D — ещё свет и земля).
+                // Имена объектов попадают в файл сцены и от языка интерфейса не зависят.
+                let scene = &mut self.app.world.scene;
+                if three_d {
+                    let camera = scene.build("Main Camera").tag("MainCamera").with(Camera::perspective(60.0)).id(); // i18n-skip
+                    if let Some(object) = scene.get_mut(camera) {
+                        object.transform.position = Vec3::new(0.0, 2.0, 8.0);
+                        object.transform.set_euler_deg(Vec3::new(-12.0, 0.0, 0.0));
+                    }
+                    let light = scene.build("Directional Light").with(Light::default()).id(); // i18n-skip
+                    if let Some(object) = scene.get_mut(light) {
+                        object.transform.set_euler_deg(Vec3::new(-50.0, 30.0, 0.0));
+                    }
+                    let ground = scene.build("Ground").with(MeshRenderer::shape(MeshShape::Plane)).id(); // i18n-skip
+                    if let Some(object) = scene.get_mut(ground) {
+                        object.transform.scale = Vec3::new(10.0, 1.0, 10.0);
+                    }
+                } else {
+                    scene.build("Main Camera").tag("MainCamera").with(Camera::default()); // i18n-skip
+                }
                 self.scene_path = None;
                 self.selection = None;
                 self.reset_history();
+                self.set_scene_3d(three_d);
                 self.frame_initial();
             }
             Action::OpenScene(path) => {
@@ -1197,6 +1350,8 @@ impl Editor {
                     if let Some(previous) = self.history.undo.pop() {
                         let current = std::mem::replace(&mut self.history.baseline, previous);
                         self.history.redo.push(current);
+                        let label = self.history.undo_labels.pop().unwrap_or_default();
+                        self.history.redo_labels.push(label);
                         self.restore_baseline()?;
                     }
                 }
@@ -1207,24 +1362,33 @@ impl Editor {
                     if let Some(next) = self.history.redo.pop() {
                         let current = std::mem::replace(&mut self.history.baseline, next);
                         self.history.undo.push(current);
+                        let label = self.history.redo_labels.pop().unwrap_or_default();
+                        self.history.undo_labels.push(label);
                         self.restore_baseline()?;
                     }
                 }
             }
             Action::FrameSelected if self.scene_3d => {
-                if let Some((center, radius)) = self.selection.and_then(|id| self.bounds_3d(id)) {
+                // Всё выделение: сфера, в которую входят сферы всех объектов.
+                let spheres: Vec<(Vec3, f32)> = self.selected().into_iter().filter_map(|id| self.bounds_3d(id)).collect();
+                if !spheres.is_empty() {
+                    let center = spheres.iter().map(|(c, _)| *c).sum::<Vec3>() / spheres.len() as f32;
+                    let radius = spheres.iter().map(|(c, r)| c.distance(center) + r).fold(0.0_f32, f32::max);
                     self.orbit.target = center;
                     self.orbit.distance = (radius * 3.2).max(1.5);
                 }
             }
-            Action::FrameSelected => match self.selection {
-                Some(id) => {
-                    if let Some((min, max)) = self.bounds_of(id) {
-                        self.frame_rect(min, max);
-                    }
+            Action::FrameSelected => {
+                let bounds = self
+                    .selected()
+                    .into_iter()
+                    .filter_map(|id| self.bounds_of(id))
+                    .reduce(|(a0, a1), (b0, b1)| (a0.min(b0), a1.max(b1)));
+                match bounds {
+                    Some((min, max)) => self.frame_rect(min, max),
+                    None => self.frame_all(),
                 }
-                None => self.frame_all(),
-            },
+            }
             Action::RefreshAssets => self.refresh_assets()?,
             Action::Quit => self.quit = true,
             Action::ProjectHub => self.go_to_hub(None)?,
@@ -1330,17 +1494,20 @@ impl Editor {
             }
             Action::OpenModel(relative) => {
                 let root = self.require_assets_root("open a model")?;
-                crate::modeler_link::open_model(&root.join(relative.trim_matches('/')))?;
+                self.launch_modeler(Some(&root.join(relative.trim_matches('/'))));
             }
             Action::CreateModel { folder } => {
                 let root = self.require_assets_root("create a model")?;
                 let relative = crate::modeler_link::create_model(&root, &folder)?;
                 self.refresh_assets()?;
-                crate::modeler_link::open_model(&root.join(&relative))?;
+                self.select_asset(&relative);
+                self.launch_modeler(Some(&root.join(&relative)));
             }
             Action::ShowBuildDialog(open) => self.export.open = open,
             Action::Export(settings) => self.start_export(settings)?,
             Action::RevealExport => self.reveal_export()?,
+            Action::EditInModeler(path) => self.launch_modeler(Some(&path)),
+            Action::EditCopyInModeler(path) => self.edit_copy_in_modeler(&path)?,
             Action::RunInBrowser => self.run_in_browser()?,
             Action::Layout(action) => self.apply_layout_action(action)?,
         }
@@ -1350,10 +1517,10 @@ impl Editor {
     /// Объект по заготовке каталога (`"UI/Button"`).
     fn create_preset(&mut self, id: &str, parent: Option<GameObjectId>) -> Result<(), EditorError> {
         let preset = catalog::preset(id).ok_or_else(|| {
-            EditorError::Other(format!(
-                "there is no `{id}` in the GameObject menu; use one of: {}",
-                catalog::PRESETS.iter().map(|p| p.id).collect::<Vec<_>>().join(", ")
-            ))
+            EditorError::Other(trf!(
+                "there is no `{id}` in the GameObject menu; use one of: {p0}",
+                p0 = catalog::PRESETS.iter().map(|p| p.id).collect::<Vec<_>>().join(", ")
+            , id = id))
         })?;
         let registry = &self.app.world.registry;
         if !preset.available(registry) {
@@ -1426,8 +1593,8 @@ impl Editor {
         if !self.app.world.registry.contains("Canvas") {
             return Ok(None);
         }
-        let canvas = self.create_object("Canvas", None)?;
-        self.add_components(canvas, &["Canvas"])?;
+        let canvas = self.create_object(tr_s("Canvas"), None)?;
+        self.add_components(canvas, &[tr_s("Canvas")])?;
         Ok(Some(canvas))
     }
 
@@ -1435,11 +1602,11 @@ impl Editor {
         let root = self.require_assets_root("rename an asset")?;
         let (from, to) = (from.trim_matches('/'), to.trim().trim_matches('/').replace('\\', "/"));
         if to.is_empty() || to.split('/').any(|part| part.is_empty() || part == "..") {
-            return Err(EditorError::Other(format!("`{to}` is not a valid name for an asset")));
+            return Err(EditorError::Other(trf!("`{to}` is not a valid name for an asset", to = to)));
         }
         let (source, target) = (root.join(from), root.join(&to));
         if target.exists() {
-            return Err(EditorError::Other(format!("`{to}` already exists; pick another name")));
+            return Err(EditorError::Other(trf!("`{to}` already exists; pick another name", to = to)));
         }
         let io = |source: std::io::Error| SceneError::Io {
             path: from.to_string(),
@@ -1559,8 +1726,22 @@ impl Editor {
         world.time.frame = 0;
         world.time.delta = 0.0;
         self.mode = Mode::Playing;
-        self.view_tab = ViewTab::Game;
+        // Ввод у игры, только пока фокус у окна Game (ui.rs, `forward_game_input`):
+        // Play сам отдаёт ему фокус, если это не выключено в Preferences.
+        self.dock.game.released = false;
+        if self.prefs.focus_game_on_play {
+            self.view_tab = ViewTab::Game;
+            self.focus_panel(crate::dock::Panel::Game);
+        }
         log::info!("play: `{}`", self.app.world.scene.name);
+        let missing = self.missing_script_types();
+        if !missing.is_empty() {
+            log::warn!(
+                "Play runs without {}: these scripts are not built into this editor, so the game cannot work as \
+                 intended. Build the project's scripts (the banner in the Game view) or open the project from Piska Hub",
+                missing.join(", ")
+            );
+        }
     }
 
     fn stop(&mut self) -> Result<(), EditorError> {
@@ -1570,14 +1751,19 @@ impl Editor {
         self.mode = Mode::Edit;
         self.view_tab = ViewTab::Scene;
         self.viewport.drag = None;
+        self.dock.game.input_focus = false;
+        self.dock.game.released = false;
+        // Stop снимает всё: и нажатое, и захват курсора с просьбой игры.
+        if self.app.world.input.is_cursor_captured() {
+            self.dock.game.cursor_request = Some(false);
+        }
         self.app.world.input.release_all();
+        self.app.world.input.set_cursor_capture_state(false);
         self.app.world.reset_gameplay_state();
         if let Some(snapshot) = self.play_snapshot.take() {
-            let path = self
-                .selection
-                .and_then(|id| path_of(&self.app.world.scene, id));
+            let paths = self.selection_paths();
             self.app.world.restore(&snapshot)?;
-            self.selection = path.and_then(|path| id_at(&self.app.world.scene, &path));
+            self.restore_selection_paths(paths);
         }
         log::info!("stop: scene restored to its state before play");
         Ok(())
@@ -1590,6 +1776,7 @@ impl Editor {
     fn load_scene(&mut self, relative: &str) -> Result<(), EditorError> {
         let relative = relative.replace('\\', "/");
         self.app.world.load_scene(self.scene_file(&relative))?;
+        self.remember_scene(&relative);
         self.scene_path = Some(relative);
         self.selection = None;
         self.reset_history();
@@ -1600,8 +1787,8 @@ impl Editor {
     fn save(&mut self) -> Result<(), EditorError> {
         if self.mode != Mode::Edit {
             return Err(EditorError::Other(
-                "the game is running: press Stop before saving, otherwise the file would get \
-                 the mid-game state of the scene"
+                tr_s("the game is running: press Stop before saving, otherwise the file would get \
+                 the mid-game state of the scene")
                     .to_string(),
             ));
         }
@@ -1626,13 +1813,13 @@ impl Editor {
             .chars()
             .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
             .collect();
-        format!("scenes/{name}.scene")
+        format!("scenes/{name}.scene", name = name)
     }
 
     fn save_as(&mut self, relative: &str) -> Result<(), EditorError> {
         if self.mode != Mode::Edit {
             return Err(EditorError::Other(
-                "the game is running: press Stop before saving".to_string(),
+                tr_s("the game is running: press Stop before saving").to_string(),
             ));
         }
         let mut relative = relative.trim().replace('\\', "/");
@@ -1656,6 +1843,7 @@ impl Editor {
             self.history.baseline = self.app.world.snapshot();
         }
         self.app.world.save_scene(&file)?;
+        self.remember_scene(&relative);
         self.scene_path = Some(relative.clone());
         self.dirty = false;
         log::info!("saved `{relative}`");
@@ -1666,6 +1854,12 @@ impl Editor {
     }
 
     fn save_prefab(&mut self, id: GameObjectId) -> Result<(), EditorError> {
+        self.save_prefab_in(id, "prefabs")
+    }
+
+    fn save_prefab_in(&mut self, id: GameObjectId, folder: &str) -> Result<(), EditorError> {
+        let folder = folder.trim_matches('/');
+        let folder = if folder.is_empty() { "prefabs" } else { folder };
         let root = self.require_assets_root("save a prefab")?;
         let scene = &self.app.world.scene;
         let prefab = Prefab::from_object(scene, id).ok_or(SceneError::DeadObject(id))?;
@@ -1675,15 +1869,15 @@ impl Editor {
             .chars()
             .map(|c| if c.is_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '_' })
             .collect();
-        let dir = root.join("prefabs");
+        let dir = root.join(folder);
         std::fs::create_dir_all(&dir).map_err(|source| SceneError::Io {
             path: dir.display().to_string(),
             source,
         })?;
-        let mut relative = format!("prefabs/{stem}.prefab");
+        let mut relative = format!("{folder}/{stem}.prefab");
         let mut suffix = 1;
         while root.join(&relative).exists() {
-            relative = format!("prefabs/{stem}_{suffix}.prefab");
+            relative = format!("{folder}/{stem}_{suffix}.prefab");
             suffix += 1;
         }
         prefab.save(root.join(&relative))?;
@@ -1837,6 +2031,11 @@ impl Editor {
         crate::view3d::Projector::new(&self.orbit, self.viewport.rect).project(world)
     }
 
+    /// Мировая точка гизмо (Pivot — активный объект, Center — середина выделения).
+    pub fn gizmo_pivot_world(&self) -> Option<Vec3> {
+        self.gizmo_pivot()
+    }
+
     /// Навести камеру редактора на всю сцену.
     pub(crate) fn frame_all(&mut self) {
         let bounds = self
@@ -1868,7 +2067,8 @@ impl Editor {
         let mut best_sprite: Option<((i32, i32, f32, usize), GameObjectId)> = None;
         let mut best_marker: Option<(f32, GameObjectId)> = None;
         for (index, id) in scene.ids().into_iter().enumerate() {
-            if !scene.is_active(id) {
+            // Запертые замком иерархии (с детьми) щелчком не выбираются.
+            if !scene.is_active(id) || self.pick_locked(id) {
                 continue;
             }
             match scene.get_component::<SpriteRenderer>(id) {
@@ -2129,16 +2329,10 @@ impl Editor {
 
 /// Показать файл в файловом менеджере системы.
 pub(crate) fn reveal(path: &std::path::Path) {
-    #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("explorer")
-        .arg(format!("/select,{}", path.display()))
-        .spawn();
-    #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg("-R").arg(path).spawn();
-    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
-    let result = std::process::Command::new("xdg-open")
-        .arg(if path.is_dir() { path } else { path.parent().unwrap_or(path) })
-        .spawn();
+    // Общая реализация (engine-build): `explorer /select,"C:\…"` одним аргументом — путь с
+    // пробелами и `/` больше не уводит проводник на рабочий стол.
+    #[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
+    let result = engine_build::host::reveal_in_file_manager(path);
     #[cfg(any(target_os = "android", target_arch = "wasm32"))]
     let result: std::io::Result<()> = Err(std::io::Error::other("this platform has no file manager"));
     if let Err(err) = result {
@@ -2227,7 +2421,7 @@ pub(crate) fn id_at(scene: &Scene, path: &[usize]) -> Option<GameObjectId> {
 }
 
 /// Имя, которого ещё нет среди детей `parent`: `Coin`, `Coin (1)`, `Coin (2)`…
-fn unique_name(
+pub(crate) fn unique_name(
     scene: &Scene,
     parent: Option<GameObjectId>,
     base: &str,
@@ -2273,5 +2467,36 @@ fn capitalize(text: &str) -> String {
     match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),
         None => String::new(),
+    }
+}
+
+/// Области рамки окна в последнем кадре: главная панель инструментов и группа
+/// Play / Pause / Step (проверки выравнивания, `Editor::chrome_rects`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChromeRects {
+    pub toolbar: egui::Rect,
+    pub transport: egui::Rect,
+}
+
+impl Default for ChromeRects {
+    fn default() -> Self {
+        Self { toolbar: egui::Rect::NOTHING, transport: egui::Rect::NOTHING }
+    }
+}
+
+impl Editor {
+    /// Где в последнем кадре стояли главная панель и группа Play / Pause / Step.
+    pub fn chrome_rects(&self) -> ChromeRects {
+        self.chrome
+    }
+
+    /// Насколько содержимое инспектора в последнем кадре вышло за ширину окна (0 — нет).
+    pub fn inspector_overflow(&self) -> f32 {
+        self.inspector.overflow
+    }
+
+    /// Где в последнем кадре нарисованы виджеты значений инспектора: (компонент, поле).
+    pub fn inspector_field_rects(&self) -> Vec<((&'static str, &'static str), egui::Rect)> {
+        self.inspector.field_rects.iter().map(|(k, v)| (*k, *v)).collect()
     }
 }

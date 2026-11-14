@@ -1,6 +1,7 @@
 //! Файл хаба `hub.ron`: добавленные проекты, закреплённые, время последнего открытия,
 //! настройки. Переживает перезапуск; испорченный файл не мешает запуску.
 
+use engine_editor::kit::i18n::{tr_s, trf, trn};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -77,6 +78,14 @@ pub struct Settings {
     pub sort: SortOrder,
     /// Каталоги, в которых хаб создавал проекты: из них можно удалять проекты с диска.
     pub project_roots: Vec<PathBuf>,
+    /// Где мастер создал проект в прошлый раз (с него он начинает).
+    pub last_location: Option<PathBuf>,
+    /// Шаблон прошлого раза (`Empty 2D`, `Empty 3D`, `Starfall sample`).
+    pub last_template: Option<String>,
+    /// Куда импортировали проекты в прошлый раз.
+    pub last_import_location: Option<PathBuf>,
+    /// Куда сохраняли файл проекта в прошлый раз.
+    pub last_pack_dir: Option<PathBuf>,
 }
 
 impl HubConfig {
@@ -88,15 +97,15 @@ impl HubConfig {
                 Ok(config) => (config, None),
                 Err(err) => (
                     Self::default(),
-                    Some(format!(
-                        "`{}` could not be read ({err}); starting with an empty list. \
+                    Some(trf!(
+                        "`{p0}` could not be read ({err}); starting with an empty list. \
                          Fix or delete the file to restore it.",
-                        path.display()
-                    )),
+                        p0 = path.display()
+                    , err = err)),
                 ),
             },
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => (Self::default(), None),
-            Err(err) => (Self::default(), Some(format!("`{}` could not be read: {err}", path.display()))),
+            Err(err) => (Self::default(), Some(trf!("`{p0}` could not be read: {err}", p0 = path.display(), err = err))),
         }
     }
 
@@ -172,16 +181,15 @@ pub fn recent_text(items: &[(u64, String, PathBuf)]) -> String {
 /// «5 minutes ago», «Yesterday», «2026-11-02».
 pub fn ago(then: Option<u64>, now: u64) -> String {
     let Some(then) = then else {
-        return "Never".to_string();
+        return tr_s("Never").to_string();
     };
     let seconds = now.saturating_sub(then);
-    let plural = |n: u64, unit: &str| format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" });
     match seconds {
-        0..=59 => "Just now".to_string(),
-        60..=3599 => plural(seconds / 60, "minute"),
-        3600..=86_399 => plural(seconds / 3600, "hour"),
-        86_400..=172_799 => "Yesterday".to_string(),
-        172_800..=604_799 => plural(seconds / 86_400, "day"),
+        0..=59 => tr_s("Just now").to_string(),
+        60..=3599 => trn!("{n} minute ago", "{n} minutes ago", seconds / 60),
+        3600..=86_399 => trn!("{n} hour ago", "{n} hours ago", seconds / 3600),
+        86_400..=172_799 => tr_s("Yesterday").to_string(),
+        172_800..=604_799 => trn!("{n} day ago", "{n} days ago", seconds / 86_400),
         _ => date(then),
     }
 }
@@ -220,6 +228,10 @@ mod tests {
             view: ViewMode::Grid,
             sort: SortOrder::Name,
             project_roots: vec![dir.join("projects")],
+            last_location: Some(dir.join("projects")),
+            last_template: Some("Empty 3D".into()),
+            last_import_location: Some(dir.join("imported")),
+            last_pack_dir: Some(dir.join("saved")),
         };
         config.save(&file).unwrap();
         let (loaded, problem) = HubConfig::load(&file);

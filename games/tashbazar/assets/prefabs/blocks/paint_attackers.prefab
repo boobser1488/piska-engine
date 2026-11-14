@@ -1,0 +1,31 @@
+(
+    name: "paint_attackers",
+    id: 9737507645953,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "MeshRenderer",
+            fields: {
+                "cast_shadows": Bool(false),
+                "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                "grid": Bool(false),
+                "materials": List([
+                    Asset("b10f0d88e06953b8ea5a5d904d9844cc"),
+                ]),
+                "mesh": Asset(""),
+                "metallic": Float(0.0),
+                "model_materials": Bool(false),
+                "roughness": Float(0.6),
+                "shape": Enum("Cube"),
+                "texture": Asset(""),
+                "tiling": Float(0.0),
+                "tint": Color(1.0, 1.0, 1.0, 1.0),
+            },
+        ),
+    ],
+)

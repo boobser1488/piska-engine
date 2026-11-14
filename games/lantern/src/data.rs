@@ -5,21 +5,63 @@ use engine::prelude::*;
 /// Сколько уровней в игре.
 pub const LEVEL_COUNT: usize = 6;
 
-/// Описание уровня для меню (сами карты — в `assets/scenes/levelN.scene`).
+/// Строка таблицы уровней `assets/data/levels.ron`.
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct LevelInfo {
-    pub scene: &'static str,
-    pub name: &'static str,
-    pub blurb: &'static str,
+    /// Имя сцены (`level1` → `scenes/level1.scene`).
+    pub scene: String,
+    pub name: String,
+    pub subtitle: String,
+    /// Короткое описание на карточке выбора уровня.
+    pub blurb: String,
+    /// Сколько светлячков нужно для выхода.
+    pub need: i32,
+    /// Контрольное время для третьей звезды, секунд.
+    pub par_time: f32,
+    /// Имя клипа музыки (`assets/audio/<имя>.wav`).
+    pub music: String,
 }
 
-pub static LEVELS: [LevelInfo; LEVEL_COUNT] = [
-    LevelInfo { scene: "level1", name: "Тихая пещера", blurb: "Первые огоньки" },
-    LevelInfo { scene: "level2", name: "Грибной грот", blurb: "Пружины и подъёмы" },
-    LevelInfo { scene: "level3", name: "Кристальные залы", blurb: "Двойной прыжок в деле" },
-    LevelInfo { scene: "level4", name: "Ржавые шахты", blurb: "Платформы и шипы" },
-    LevelInfo { scene: "level5", name: "Ледяной провал", blurb: "Рывок сквозь тьму" },
-    LevelInfo { scene: "level6", name: "Сердце тьмы", blurb: "Хозяин пещер" },
-];
+/// Правила звёзд — `assets/data/rules.ron`.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct Rules {
+    /// Для второй звезды: доля собранных светлячков, %.
+    pub star2_fireflies_percent: i32,
+    /// Для второй звезды: не больше стольких поражений.
+    pub star2_max_deaths: i32,
+}
+
+impl Default for Rules {
+    fn default() -> Self {
+        Rules { star2_fireflies_percent: 60, star2_max_deaths: 2 }
+    }
+}
+
+/// Таблицы содержимого игры, прочитанные из `assets/data/`.
+#[derive(Clone, Debug)]
+pub struct GameData {
+    pub levels: Vec<LevelInfo>,
+    pub rules: Rules,
+}
+
+impl GameData {
+    /// Прочитать `data/levels.ron` и `data/rules.ron` через базу ассетов (работает и из пака).
+    pub fn load(db: &AssetDatabase) -> Result<GameData, engine::assets::AssetError> {
+        // Файлы данных читает движок (`AssetDatabase::load_data`): RON или JSON по расширению.
+        let data = GameData { levels: db.load_data("data/levels.ron")?, rules: db.load_data("data/rules.ron")? };
+        if data.levels.len() != LEVEL_COUNT {
+            return Err(engine::assets::AssetError::Import {
+                path: "data/levels.ron".to_string(),
+                reason: format!("expected {LEVEL_COUNT} levels, found {}", data.levels.len()),
+            });
+        }
+        Ok(data)
+    }
+
+    pub fn level(&self, index: usize) -> &LevelInfo {
+        &self.levels[index.min(self.levels.len() - 1)]
+    }
+}
 
 /// Какой уровень сейчас выбран (меню → сцена уровня).
 #[derive(Clone, Copy, Debug, Default)]
@@ -39,11 +81,11 @@ pub struct RunResult {
 }
 
 impl RunResult {
-    /// Звёзды: 1 — дошёл; 2 — не менее 60 % светлячков и не больше двух смертей;
+    /// Звёзды: 1 — дошёл; 2 — достаточно светлячков и не больше N поражений (`rules.ron`);
     /// 3 — золотой светлячок и время не хуже контрольного.
-    pub fn stars(&self, par: f32) -> u8 {
+    pub fn stars(&self, par: f32, rules: &Rules) -> u8 {
         let mut stars = 1;
-        if self.total > 0 && self.fireflies * 5 >= self.total * 3 && self.deaths <= 2 {
+        if self.total > 0 && self.fireflies * 100 >= self.total * rules.star2_fireflies_percent && self.deaths <= rules.star2_max_deaths {
             stars = 2;
             if self.golden && self.time <= par {
                 stars = 3;
@@ -137,12 +179,12 @@ impl Progress {
 
     /// Записать результат уровня `level` (с нуля): лучшие значения сохраняются, следующий
     /// уровень открывается.
-    pub fn record(&mut self, level: usize, result: &RunResult, par: f32) {
+    pub fn record(&mut self, level: usize, result: &RunResult, par: f32, rules: &Rules) {
         if level >= LEVEL_COUNT {
             return;
         }
         self.completed[level] = true;
-        self.stars[level] = self.stars[level].max(result.stars(par));
+        self.stars[level] = self.stars[level].max(result.stars(par, rules));
         if self.best_time[level] <= 0.0 || result.time < self.best_time[level] {
             self.best_time[level] = result.time;
         }
@@ -174,18 +216,19 @@ mod tests {
     #[test]
     fn stars_follow_the_rules() {
         let r = |ff, gold, time, deaths| RunResult { time, fireflies: ff, total: 10, golden: gold, deaths };
-        assert_eq!(r(2, false, 500.0, 9).stars(100.0), 1);
-        assert_eq!(r(8, false, 500.0, 2).stars(100.0), 2);
-        assert_eq!(r(8, true, 90.0, 2).stars(100.0), 3);
-        assert_eq!(r(8, true, 190.0, 2).stars(100.0), 2);
-        assert_eq!(r(10, true, 10.0, 3).stars(100.0), 1);
+        let rules = Rules::default();
+        assert_eq!(r(2, false, 500.0, 9).stars(100.0, &rules), 1);
+        assert_eq!(r(8, false, 500.0, 2).stars(100.0, &rules), 2);
+        assert_eq!(r(8, true, 90.0, 2).stars(100.0, &rules), 3);
+        assert_eq!(r(8, true, 190.0, 2).stars(100.0, &rules), 2);
+        assert_eq!(r(10, true, 10.0, 3).stars(100.0, &rules), 1);
     }
 
     #[test]
     fn progress_roundtrips_through_save_data() {
         let mut p = Progress { music: 0.25, shake: false, ..Progress::default() };
-        p.record(0, &RunResult { time: 61.0, fireflies: 9, total: 10, golden: true, deaths: 0 }, 90.0);
-        p.record(1, &RunResult { time: 80.0, fireflies: 5, total: 10, golden: false, deaths: 1 }, 90.0);
+        p.record(0, &RunResult { time: 61.0, fireflies: 9, total: 10, golden: true, deaths: 0 }, 90.0, &Rules::default());
+        p.record(1, &RunResult { time: 80.0, fireflies: 5, total: 10, golden: false, deaths: 1 }, 90.0, &Rules::default());
         let mut save = SaveData::in_memory();
         p.store(&mut save);
         let back = Progress::load(&save);
@@ -198,8 +241,8 @@ mod tests {
     #[test]
     fn best_results_are_kept() {
         let mut p = Progress::default();
-        p.record(0, &RunResult { time: 50.0, fireflies: 9, total: 10, golden: false, deaths: 0 }, 90.0);
-        p.record(0, &RunResult { time: 70.0, fireflies: 4, total: 10, golden: false, deaths: 0 }, 90.0);
+        p.record(0, &RunResult { time: 50.0, fireflies: 9, total: 10, golden: false, deaths: 0 }, 90.0, &Rules::default());
+        p.record(0, &RunResult { time: 70.0, fireflies: 4, total: 10, golden: false, deaths: 0 }, 90.0, &Rules::default());
         assert_eq!(p.best_time[0], 50.0);
         assert_eq!(p.best_fireflies[0], 9);
         assert_eq!(p.stars[0], 2);

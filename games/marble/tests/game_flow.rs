@@ -4,7 +4,6 @@ mod common;
 
 use common::*;
 use engine::prelude::*;
-use marble::courses::COURSES;
 use marble::{Action, Progress, Screen};
 
 /// Нажать и отпустить клавишу (по кадру на каждое).
@@ -90,7 +89,7 @@ fn locked_courses_cannot_be_started() {
     act(&mut app, Action::Course(3));
     assert_eq!(state(&app).screen, Screen::Select, "course 4 is locked at the beginning");
     act(&mut app, Action::Course(0));
-    assert_eq!(state(&app).screen, Screen::Countdown);
+    run_until(&mut app, Screen::Countdown, 20);
 }
 
 #[test]
@@ -133,12 +132,12 @@ fn pause_menu_restarts_and_leaves() {
     app.run_headless(30, DT);
     act(&mut app, Action::Pause);
     act(&mut app, Action::Restart);
-    assert_eq!(state(&app).screen, Screen::Countdown, "restart begins a fresh countdown");
+    run_until(&mut app, Screen::Countdown, 20);
     assert_eq!(state(&app).clock, 0.0);
     app.run_headless(150, DT);
     act(&mut app, Action::Pause);
     act(&mut app, Action::ToMenu);
-    assert_eq!(state(&app).screen, Screen::Menu);
+    run_until(&mut app, Screen::Menu, 20);
     assert_eq!(app.world.time.time_scale, 1.0, "time runs again in the menu");
     assert!(state(&app).ball.is_none(), "the ball is gone with the course");
 }
@@ -149,7 +148,7 @@ fn falling_below_the_kill_plane_respawns_at_the_last_checkpoint() {
     start_course(&mut app, 0);
     app.run_headless(20, DT);
 
-    // Проезжаем первые ворота: шар в триггере → C++ шлёт «checkpoint».
+    // Проезжаем первые ворота: шар в триггере → скрипт шлёт «checkpoint».
     let gate = app
         .world
         .scene
@@ -223,7 +222,8 @@ fn finishing_records_a_medal_unlocks_the_next_course_and_saves() {
     let backend = MemoryBackend::default();
     let mut app = game_with(SaveData::with_backend(backend.clone()));
     start_course(&mut app, 0);
-    state_mut(&mut app).clock = COURSES[0].gold - 5.0;
+    let t = state(&app).courses[0].gold;
+    state_mut(&mut app).clock = t - 5.0;
 
     let finish = find(&app, "Finish");
     let pos = app.world.scene.world_position(finish);
@@ -248,11 +248,12 @@ fn finishing_records_a_medal_unlocks_the_next_course_and_saves() {
 
 #[test]
 fn silver_and_bronze_follow_the_time_thresholds() {
-    for (index, info) in COURSES.iter().enumerate() {
-        assert_eq!(marble::game::medal_for(index, info.gold - 0.1), 3);
-        assert_eq!(marble::game::medal_for(index, info.gold + 0.1), 2);
-        assert_eq!(marble::game::medal_for(index, info.silver + 0.1), 1);
-        assert_eq!(marble::game::medal_for(index, info.bronze + 0.1), 0);
+    let app = game();
+    for info in &state(&app).courses {
+        assert_eq!(marble::medal_for(info, info.gold - 0.1), 3);
+        assert_eq!(marble::medal_for(info, info.gold + 0.1), 2);
+        assert_eq!(marble::medal_for(info, info.silver + 0.1), 1);
+        assert_eq!(marble::medal_for(info, info.bronze + 0.1), 0);
     }
 }
 
@@ -260,7 +261,8 @@ fn silver_and_bronze_follow_the_time_thresholds() {
 fn a_slower_run_keeps_the_better_medal_and_time() {
     let mut app = game();
     start_course(&mut app, 0);
-    state_mut(&mut app).clock = COURSES[0].gold - 1.0;
+    let t = state(&app).courses[0].gold;
+    state_mut(&mut app).clock = t - 1.0;
     let finish = find(&app, "Finish");
     let pos = app.world.scene.world_position(finish);
     teleport_ball(&mut app, pos + Vec3::Y);
@@ -269,7 +271,8 @@ fn a_slower_run_keeps_the_better_medal_and_time() {
     // Ещё раз, медленнее.
     act(&mut app, Action::Restart);
     app.run_headless(150, DT);
-    state_mut(&mut app).clock = COURSES[0].bronze + 3.0;
+    let t = state(&app).courses[0].bronze;
+    state_mut(&mut app).clock = t + 3.0;
     let finish = find(&app, "Finish");
     let pos = app.world.scene.world_position(finish);
     teleport_ball(&mut app, pos + Vec3::Y);
@@ -285,7 +288,8 @@ fn a_slower_run_keeps_the_better_medal_and_time() {
 fn running_out_of_time_loses_the_shift() {
     let mut app = game();
     start_course(&mut app, 0);
-    state_mut(&mut app).clock = COURSES[0].limit - 0.5;
+    let t = state(&app).courses[0].limit;
+    state_mut(&mut app).clock = t - 0.5;
     app.run_headless(60, DT);
     let st = state(&app);
     assert_eq!(st.screen, Screen::Results);
@@ -295,6 +299,7 @@ fn running_out_of_time_loses_the_shift() {
     assert!(!st.progress.done[0], "a lost shift does not count as completed");
     // Заново — снова отсчёт; дальше идти нельзя.
     act(&mut app, Action::Next);
+    run_until(&mut app, Screen::Menu, 20);
     assert_eq!(state(&app).screen, Screen::Menu, "after a loss the main button leaves... to the menu");
 }
 
@@ -372,12 +377,8 @@ fn the_camera_follows_the_ball_and_stays_out_of_walls() {
     assert!(cam.z > ball.z, "behind: the ball rolls toward -Z");
 
     // Тяжёлая стена за шаром: луч подтягивает камеру ближе.
-    let root = app.world.scene.spawn("Wall Lab");
     let ball = ball_pos(&app);
-    {
-        let mut kit = marble::kit::Kit::new(&mut app.world, root);
-        kit.block("Test Wall", ball + Vec3::new(0.0, 3.0, 3.5), Vec3::new(12.0, 8.0, 1.0), Quat::IDENTITY, marble::kit::Mat::Plate);
-    }
+    spawn_block(&mut app, ball + Vec3::new(0.0, 3.0, 3.5), Vec3::new(12.0, 8.0, 1.0));
     app.run_headless(40, DT);
     let wall_distance = (app.world.scene.world_position(camera) - ball_pos(&app)).length();
     assert!(wall_distance < distance - 2.0, "pulled in near the wall: {wall_distance} < {distance}");

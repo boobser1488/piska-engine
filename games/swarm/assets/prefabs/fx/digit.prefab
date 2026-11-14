@@ -1,0 +1,29 @@
+(
+    name: "Digit",
+    id: 222667196958212,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.5),
+                "sheet_columns": Int(1),
+                "sheet_rows": Int(1),
+                "size": Vec2(0.33333334, 0.5),
+                "sorting_layer": Int(9),
+                "texture": Asset("e3e1852cdcfddfa538e7955ea1db931d"),
+                "uv_offset": Vec2(0.3569336, 0.63720703),
+                "uv_size": Vec2(0.030273438, 0.045898438),
+            },
+        ),
+    ],
+)

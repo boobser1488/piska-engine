@@ -16,10 +16,11 @@
 //! * файл сеанса, через который старый процесс передаёт состояние новому
 //!   (`--editor-session <файл>`).
 
+use crate::i18n::{tr_s, trf};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -125,10 +126,10 @@ const RUST_KEYWORDS: [&str; 51] = [
 /// Имя типа на Rust в стиле `UpperCamelCase`: `EnemyPatrol`, `Player2D`.
 pub(crate) fn validate_rust_name(name: &str) -> Result<(), String> {
     let explain = || {
-        format!(
+        trf!(
             "`{name}` cannot be a Rust script name: use a type name in UpperCamelCase such as \
              `EnemyPatrol` (Latin letters and digits, starting with a capital letter, no spaces or `_`)"
-        )
+        , name = name)
     };
     let mut chars = name.chars();
     let starts_upper = chars.next().is_some_and(|c| c.is_ascii_uppercase());
@@ -137,10 +138,10 @@ pub(crate) fn validate_rust_name(name: &str) -> Result<(), String> {
     }
     let module = snake_case(name);
     if RUST_KEYWORDS.contains(&name) || RUST_KEYWORDS.contains(&module.as_str()) {
-        return Err(format!(
+        return Err(trf!(
             "`{name}` cannot be a Rust script name: its file would be `{module}.rs`, and `{module}` \
              is a Rust keyword. Pick another name, e.g. `{name}Script`"
-        ));
+        , name = name, module = module));
     }
     Ok(())
 }
@@ -241,7 +242,7 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, String> {
                 _ => *i += 1,
             }
         }
-        Err(format!("a string starting on line {start_line} is never closed"))
+        Err(trf!("a string starting on line {start_line} is never closed", start_line = start_line))
     };
     while i < chars.len() {
         let c = chars[i];
@@ -259,7 +260,7 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, String> {
             let mut depth = 0;
             loop {
                 if i >= chars.len() {
-                    return Err(format!("a comment starting on line {start} is never closed"));
+                    return Err(trf!("a comment starting on line {start} is never closed", start = start));
                 }
                 if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
                     depth += 1;
@@ -313,7 +314,7 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, String> {
                     i += hashes + 1;
                     loop {
                         if i >= chars.len() {
-                            return Err(format!("a raw string starting on line {start_line} is never closed"));
+                            return Err(trf!("a raw string starting on line {start_line} is never closed", start_line = start_line));
                         }
                         if chars[i] == '"' && (0..hashes).all(|k| chars.get(i + 1 + k) == Some(&'#')) {
                             i += 1 + hashes;
@@ -364,12 +365,12 @@ pub(crate) fn declared_components(source: &str) -> Result<Vec<Declared>, String>
                             matching.insert(start, index);
                         }
                         Some((found, start)) => {
-                            return Err(format!(
-                                "line {line}: `{c}` closes `{found}` opened on line {}",
-                                tokens[start].1
-                            ))
+                            return Err(trf!(
+                                "line {line}: `{c}` closes `{found}` opened on line {p0}",
+                                p0 = tokens[start].1
+                            , line = line, c = c, found = found))
                         }
-                        None => return Err(format!("line {line}: `{c}` has no matching opening bracket")),
+                        None => return Err(trf!("line {line}: `{c}` has no matching opening bracket", line = line, c = c)),
                     }
                 }
                 _ => {}
@@ -377,7 +378,7 @@ pub(crate) fn declared_components(source: &str) -> Result<Vec<Declared>, String>
         }
     }
     if let Some((c, index)) = stack.pop() {
-        return Err(format!("line {}: `{c}` is never closed", tokens[index].1));
+        return Err(trf!("line {p0}: `{c}` is never closed", p0 = tokens[index].1, c = c));
     }
 
     let mut found = Vec::new();
@@ -495,36 +496,36 @@ pub(crate) fn scan_scripts(dir: &Path) -> std::io::Result<ScriptFolder> {
             continue;
         }
         if !is_module_name(&module) {
-            folder.warnings.push(format!(
+            folder.warnings.push(trf!(
                 "`{file}` is skipped: a script file name must be a Rust module name in snake_case, \
                  such as `enemy_patrol.rs`"
-            ));
+            , file = file));
             continue;
         }
         let source = std::fs::read_to_string(&path)?;
         let declared = match declared_components(&source) {
             Ok(declared) => declared,
             Err(reason) => {
-                folder.warnings.push(format!(
+                folder.warnings.push(trf!(
                     "`{file}` is skipped until it parses ({reason}); fix it and build again"
-                ));
+                , file = file, reason = reason));
                 continue;
             }
         };
         let mut names = Vec::new();
         for component in declared {
             if !component.public {
-                folder.warnings.push(format!(
-                    "`{file}`: component `{}` is not registered because it is private; write \
-                     `pub struct {}` inside `component!`",
-                    component.name, component.name
-                ));
+                folder.warnings.push(trf!(
+                    "`{file}`: component `{p0}` is not registered because it is private; write \
+                     `pub struct {p1}` inside `component!`",
+                    p0 = component.name, p1 = component.name
+                , file = file));
             } else if let Some(other) = seen.get(&component.name) {
-                folder.warnings.push(format!(
-                    "`{file}`: component `{}` is already declared in `{other}`; component type names \
+                folder.warnings.push(trf!(
+                    "`{file}`: component `{p0}` is already declared in `{other}`; component type names \
                      must be unique, so only that one is registered",
-                    component.name
-                ));
+                    p0 = component.name
+                , file = file, other = other));
             } else {
                 seen.insert(component.name.clone(), file.clone());
                 names.push(component.name);
@@ -548,7 +549,7 @@ pub(crate) fn mod_rs_text(folder: &ScriptFolder) -> String {
          //! Игра вызывает один раз: `scripts::register(&mut app);`\n\n",
     );
     for (module, _) in &folder.modules {
-        text.push_str(&format!("pub mod {module};\n"));
+        text.push_str(&format!("pub mod {module};\n", module = module));
     }
     if !folder.modules.is_empty() {
         text.push('\n');
@@ -573,7 +574,7 @@ pub(crate) fn mod_rs_text(folder: &ScriptFolder) -> String {
 /// пропущенных файлах в консоль.
 pub(crate) fn regenerate_mod(dir: &Path) -> Result<ScriptFolder, EditorError> {
     let io = |source: std::io::Error| {
-        EditorError::Other(format!("cannot update `{}`: {source}", dir.join("mod.rs").display()))
+        EditorError::Other(trf!("cannot update `{p0}`: {source}", p0 = dir.join("mod.rs").display(), source = source))
     };
     let folder = scan_scripts(dir).map_err(io)?;
     for warning in &folder.warnings {
@@ -796,10 +797,10 @@ fn aside_name(path: &Path, pid: u32) -> PathBuf {
     (0..)
         .map(|n| {
             let suffix = if n == 0 { String::new() } else { format!("-{n}") };
-            dir.join(format!("{stem}.old-{pid}{suffix}{extension}"))
+            dir.join(format!("{stem}.old-{pid}{suffix}{extension}", stem = stem, pid = pid, suffix = suffix, extension = extension))
         })
         .find(|candidate| !candidate.exists())
-        .unwrap_or_else(|| dir.join(format!("{stem}.old-{pid}{extension}")))
+        .unwrap_or_else(|| dir.join(format!("{stem}.old-{pid}{extension}", stem = stem, pid = pid, extension = extension)))
 }
 
 /// Каталог `deps` cargo для исполняемого файла: рядом (`debug/x.exe`) или уровнем
@@ -834,7 +835,7 @@ pub(crate) fn set_aside(exe: &Path, target: &str, pid: u32) -> Aside {
     let crate_name = target.replace('-', "_");
     let dir = exe.parent().unwrap_or(Path::new(".")).to_path_buf();
     let mut candidates = vec![exe.to_path_buf()];
-    for pdb in [dir.join(format!("{stem}.pdb")), dir.join(format!("{crate_name}.pdb"))] {
+    for pdb in [dir.join(format!("{stem}.pdb", stem = stem)), dir.join(format!("{crate_name}.pdb", crate_name = crate_name))] {
         if pdb.is_file() && !candidates.contains(&pdb) {
             candidates.push(pdb);
         }
@@ -936,7 +937,7 @@ fn target_dir_of(exe: &Path) -> Option<PathBuf> {
 /// Собрать программу cargo и вернуть путь к собранному исполняемому файлу.
 fn run_cargo(relaunch: &Relaunch) -> Result<PathBuf, String> {
     let build = &relaunch.build;
-    let mut process = Command::new(&build.program);
+    let mut process = engine_build::host::command(&build.program);
     process.args(&build.args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let is_cargo = Path::new(&build.program).file_stem().is_some_and(|s| s == "cargo");
     if is_cargo {
@@ -955,7 +956,7 @@ fn run_cargo(relaunch: &Relaunch) -> Result<PathBuf, String> {
     log::info!(target: "build", "{}: {} {}", build.label, build.program, build.args.join(" "));
     let mut child = process
         .spawn()
-        .map_err(|err| format!("{}: cannot start `{}`: {err}. Is it installed and on PATH?", build.label, build.program))?;
+        .map_err(|err| trf!("{p0}: cannot start `{p1}`: {err}. Is it installed and on PATH?", p0 = build.label, p1 = build.program, err = err))?;
     let stderr = child.stderr.take().map(|stream| {
         std::thread::spawn(move || {
             for line in BufReader::new(stream).lines().map_while(Result::ok) {
@@ -983,7 +984,7 @@ fn run_cargo(relaunch: &Relaunch) -> Result<PathBuf, String> {
         let _ = reader.join();
     }
     if !status.success() {
-        return Err(format!("{}: failed ({status}); the errors are above", build.label));
+        return Err(trf!("{p0}: failed ({status}); the errors are above", p0 = build.label, status = status));
     }
     executable.ok_or_else(|| {
         format!(
@@ -1003,6 +1004,16 @@ struct Handover {
     child: Child,
     session: PathBuf,
     started: Instant,
+    /// Когда новый процесс забрал сеанс (файл исчез): теперь ждём его первый кадр.
+    taken: Option<Instant>,
+}
+
+/// Сколько старый редактор ждёт первый кадр нового после того, как тот забрал сеанс.
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Метка «новый редактор забрал сеанс, но ещё не показал окно» рядом с файлом сеанса.
+pub(crate) fn starting_marker(session: &Path) -> PathBuf {
+    session.with_extension("starting")
 }
 
 /// Новый файл, переименование или удаление скрипта — окно подтверждения.
@@ -1030,6 +1041,8 @@ pub(crate) struct RustState {
     /// Кэш «исходники новее программы»: когда проверяли и что вышло.
     stale_checked: Option<(Instant, bool)>,
     pub file_dialog: Option<FileDialog>,
+    /// Этот процесс — перезапущенный редактор: метку убрать, когда окно покажет кадр.
+    shown_marker: Option<PathBuf>,
 }
 
 impl Editor {
@@ -1066,10 +1079,10 @@ impl Editor {
             .map(|folder| folder.components().any(|c| c == name))
             .unwrap_or(false);
         if self.app.world.registry.contains(name) || path.exists() || taken_in_folder {
-            return Err(EditorError::Other(format!(
-                "a component named `{name}` (or the file `{}`) already exists; pick another name",
-                path.display()
-            )));
+            return Err(EditorError::Other(trf!(
+                "a component named `{name}` (or the file `{p0}`) already exists; pick another name",
+                p0 = path.display()
+            , name = name)));
         }
         let io = |source: std::io::Error| SceneError::Io {
             path: path.display().to_string(),
@@ -1187,7 +1200,15 @@ impl Editor {
                 );
             }
             Ok(None) if !handover.session.exists() => {
-                // Новый процесс восстановил сеанс: этот закрывается.
+                // Новый процесс восстановил сеанс. Окно этого закрывается, когда новое уже
+                // показало первый кадр (метка `.starting` исчезла), — без пустого экрана
+                // между ними и без двух окон после.
+                let taken = *handover.taken.get_or_insert_with(Instant::now);
+                let marker = starting_marker(&handover.session);
+                if marker.exists() && taken.elapsed() < FIRST_FRAME_TIMEOUT {
+                    return;
+                }
+                let _ = std::fs::remove_file(&marker);
                 let handover = self.rust.handover.take().expect("checked above");
                 log::info!("the rebuilt editor took over; closing this one");
                 self.rust.successor = Some(handover.child);
@@ -1208,6 +1229,14 @@ impl Editor {
                 self.rust.handover = None;
                 log::error!("cannot watch the rebuilt editor: {err}");
             }
+        }
+    }
+
+    /// Окно показало первый кадр: прежний редактор (если этот — его перезапуск после
+    /// Build) может закрыть своё окно.
+    pub fn window_shown(&mut self) {
+        if let Some(marker) = self.rust.shown_marker.take() {
+            let _ = std::fs::remove_file(marker);
         }
     }
 
@@ -1285,7 +1314,7 @@ impl Editor {
             path: session.display().to_string(),
             source,
         })?;
-        let mut command = Command::new(exe);
+        let mut command = engine_build::host::command(exe);
         command.args(relaunch_args(&session)).env_remove("ENGINE_PLAY").env_remove(SESSION_ENV);
         match command.spawn() {
             Ok(child) => {
@@ -1294,15 +1323,16 @@ impl Editor {
                     child,
                     session,
                     started: Instant::now(),
+                    taken: None,
                 });
                 Ok(())
             }
             Err(err) => {
                 let _ = std::fs::remove_file(&session);
-                Err(EditorError::Other(format!(
-                    "cannot start the rebuilt editor `{}`: {err}; this editor keeps running the previous code",
-                    exe.display()
-                )))
+                Err(EditorError::Other(trf!(
+                    "cannot start the rebuilt editor `{p0}`: {err}; this editor keeps running the previous code",
+                    p0 = exe.display()
+                , err = err)))
             }
         }
     }
@@ -1313,11 +1343,16 @@ impl Editor {
     /// `*.failed` (в нём несохранённая сцена) и всё равно освобождает старый процесс.
     pub fn resume_session(&mut self, path: &Path) -> Result<(), EditorError> {
         let outcome = std::fs::read_to_string(path)
-            .map_err(|err| EditorError::Other(format!("cannot read the editor session `{}`: {err}", path.display())))
+            .map_err(|err| EditorError::Other(trf!("cannot read the editor session `{p0}`: {err}", p0 = path.display(), err = err)))
             .and_then(|text| Session::from_text(&text).map_err(EditorError::Other))
             .and_then(|session| self.restore_session(&session));
         match &outcome {
             Ok(()) => {
+                // Сначала метка «окно ещё не показано», потом сеанс считается забранным.
+                let marker = starting_marker(path);
+                if std::fs::write(&marker, std::process::id().to_string()).is_ok() {
+                    self.rust.shown_marker = Some(marker);
+                }
                 let _ = std::fs::remove_file(path);
             }
             Err(err) => {
@@ -1482,11 +1517,11 @@ impl Editor {
     pub(crate) fn rename_script(&mut self, from: &Path, name: &str) -> Result<(), EditorError> {
         let name = name.trim();
         if name.is_empty() || name.contains(['/', '\\']) || name == "mod.rs" {
-            return Err(EditorError::Other(format!("`{name}` is not a valid file name")));
+            return Err(EditorError::Other(trf!("`{name}` is not a valid file name", name = name)));
         }
         let to = from.with_file_name(name);
         if to.exists() {
-            return Err(EditorError::Other(format!("`{}` already exists; pick another name", to.display())));
+            return Err(EditorError::Other(trf!("`{}` already exists; pick another name", to.display())));
         }
         std::fs::rename(from, &to).map_err(|source| SceneError::Io {
             path: from.display().to_string(),
@@ -1564,10 +1599,10 @@ fn newer_rust_file(dir: &Path, than: SystemTime, depth: usize) -> bool {
 /// Выбор языка в окне «New Script».
 pub(crate) fn language_switch(ui: &mut egui::Ui, rust: &mut bool) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Language").color(theme::TEXT_MUTED));
+        ui.label(egui::RichText::new(tr_s("Language")).color(theme::TEXT_MUTED));
         ui.add_space(theme::SP_M);
-        ui.selectable_value(rust, true, "Rust");
-        ui.selectable_value(rust, false, "C++");
+        ui.selectable_value(rust, true, tr_s("Rust"));
+        ui.selectable_value(rust, false, tr_s("C++"));
     });
     ui.add_space(theme::SP_M);
 }
@@ -1584,9 +1619,9 @@ pub(crate) fn script_dialog_text(rust: bool, config: &EditorConfig) -> String {
                                 No relaunch command is configured (`EditorConfig::relaunch`), so build the game \
                                 and restart the editor yourself."
                 .to_string(),
-            (Some(_), Some(_)) => "The type name (UpperCamelCase, e.g. EnemyPatrol) becomes the component name. \
+            (Some(_), Some(_)) => tr_s("The type name (UpperCamelCase, e.g. EnemyPatrol) becomes the component name. \
                                    The file opens in the Code tab and the game is rebuilt; the editor then \
-                                   reloads itself with the new code and attaches the script to the selected object."
+                                   reloads itself with the new code and attaches the script to the selected object.")
                 .to_string(),
         }
     } else if config.script_dir.is_none() {
@@ -1594,8 +1629,8 @@ pub(crate) fn script_dialog_text(rust: bool, config: &EditorConfig) -> String {
          `EditorConfig::cpp_scripts(dir)`."
             .to_string()
     } else {
-        "The class name becomes the component name. The plugin is rebuilt and the script is attached to \
-         the selected object."
+        tr_s("The class name becomes the component name. The plugin is rebuilt and the script is attached to \
+         the selected object.")
             .to_string()
     }
 }
@@ -1607,15 +1642,15 @@ pub(crate) fn code_banner(editor: &mut Editor, ui: &mut egui::Ui) {
     }
     let running = editor.code.build_status() == BuildStatus::Running;
     let (icon, color, text, button) = if editor.rust.handover.is_some() {
-        (Icon::Build, theme::OK, "Starting the rebuilt editor… it opens with this scene and these files.", false)
+        (Icon::Build, theme::OK, tr_s("Starting the rebuilt editor… it opens with this scene and these files."), false)
     } else if running && editor.rust.result.is_some() {
-        (Icon::Build, theme::WARN, "Building… the editor reloads itself with the new code when the build succeeds.", false)
+        (Icon::Build, theme::WARN, tr_s("Building… the editor reloads itself with the new code when the build succeeds."), false)
     } else if editor.rust_sources_changed() {
         (
             Icon::Warn,
             theme::WARN,
-            "Rust code changed since this editor was built. Build compiles it and reloads the editor; \
-             the scene, selection and open files are kept.",
+            tr_s("Rust code changed since this editor was built. Build compiles it and reloads the editor; \
+             the scene, selection and open files are kept."),
             !running,
         )
     } else {
@@ -1632,12 +1667,92 @@ pub(crate) fn code_banner(editor: &mut Editor, ui: &mut egui::Ui) {
                 ui.add(egui::Label::new(egui::RichText::new(text).color(theme::TEXT)).wrap());
                 if button {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        build = theme::primary_button(ui, "Build and Reload")
+                        build = theme::primary_button(ui, tr_s("Build and Reload"))
                             .on_hover_text(crate::shortcuts::label(ui.ctx(), "build-code"))
                             .clicked();
                     });
                 }
             });
+        });
+    if build {
+        editor.actions.push(Action::Build);
+    }
+}
+
+impl Editor {
+    /// Типы скриптов сцены, которых нет в этой программе (по алфавиту, без повторов):
+    /// например, проект с кодом на Rust открыт в общем редакторе Piska Editor.
+    pub fn missing_script_types(&self) -> Vec<String> {
+        let scene = &self.app.world.scene;
+        let mut kinds = BTreeSet::new();
+        for id in scene.ids() {
+            if let Some(object) = scene.get(id) {
+                for component in object.components() {
+                    if component.as_any().is::<MissingScript>() {
+                        kinds.insert(component.type_name().to_string());
+                    }
+                }
+            }
+        }
+        kinds.into_iter().collect()
+    }
+}
+
+/// Плашка над видом Game, когда у сцены есть скрипты, которых нет в этой программе:
+/// игра без них «не работает» молча (корзина не едет, звёзды не падают). Плашка говорит
+/// почему и даёт исправление в один щелчок — собрать программу проекта с его кодом
+/// (редактор перезапустится в неё с той же сценой); идущая сборка — её ход.
+pub(crate) fn missing_scripts_banner(editor: &mut Editor, ui: &mut egui::Ui, rect: egui::Rect) {
+    let missing = editor.missing_script_types();
+    if missing.is_empty() {
+        return;
+    }
+    let mut list = missing.iter().take(4).cloned().collect::<Vec<_>>().join(", ");
+    if missing.len() > 4 {
+        list.push_str(", …");
+    }
+    let building = editor.code.build_status() == BuildStatus::Running || editor.rust.result.is_some();
+    let restarting = editor.rust.handover.is_some();
+    let text = if restarting {
+        tr_s("The project's scripts are built: the editor is restarting with them.").to_string()
+    } else if building {
+        trf!("This editor does not contain the project's scripts ({list}). They are building now; when the build is done, the editor restarts with them and Play runs the whole game.", list = list)
+    } else if editor.can_build() {
+        trf!("This editor does not contain the project's scripts ({list}), so Play runs the scene without them. Build them once; the editor restarts with the same scene.", list = list)
+    } else {
+        trf!("This editor does not contain the project's scripts ({list}), so Play runs the scene without them. Open the project from Piska Hub: it builds the project's own editor.", list = list)
+    };
+    let width = (rect.width() - 2.0 * theme::SP_L).clamp(120.0, 720.0);
+    let area = egui::Rect::from_min_size(egui::pos2(rect.center().x - width * 0.5, rect.top() + theme::SP_L), vec2(width, 0.0));
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_size(area.min, vec2(width, rect.height() - 2.0 * theme::SP_L)))
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    let mut build = false;
+    egui::Frame::none()
+        .fill(theme::BG_RAISED)
+        .stroke(egui::Stroke::new(1.0_f32, theme::mix(theme::BG_RAISED, theme::WARN, 0.5)))
+        .rounding(theme::R_M)
+        .inner_margin(egui::Margin::symmetric(theme::SP_L, theme::SP_M))
+        .show(&mut child, |ui| {
+            ui.set_width(width - 2.0 * theme::SP_L);
+            ui.horizontal(|ui| {
+                icons::inline(ui, if building || restarting { Icon::Build } else { Icon::Warn }, theme::WARN);
+                ui.add(egui::Label::new(egui::RichText::new(text).color(theme::TEXT)).wrap());
+            });
+            if building {
+                ui.add_space(theme::SP_S);
+                let step = Editor::export_step().unwrap_or_else(|| tr_s("Building…").to_string());
+                theme::progress_bar(ui, None, &step);
+            } else if !restarting && editor.can_build() {
+                ui.add_space(theme::SP_S);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    build = theme::primary_button(ui, tr_s("Build Scripts"))
+                        .on_hover_text(crate::shortcuts::label(ui.ctx(), "build-code"))
+                        .clicked();
+                });
+            }
         });
     if build {
         editor.actions.push(Action::Build);
@@ -1650,7 +1765,7 @@ pub(crate) fn missing_script_body(ui: &mut egui::Ui, missing: &MissingScript) {
     ui.horizontal_wrapped(|ui| {
         icons::inline(ui, Icon::Warn, theme::WARN);
         ui.label(
-            egui::RichText::new(format!(
+            egui::RichText::new(trf!(
                 "Missing script: `{}` is not in this build. Its data is kept and saved unchanged; \
                  restore the type and build, or remove the component.",
                 missing.kind()
@@ -1674,16 +1789,15 @@ pub(crate) fn script_file_dialog(editor: &mut Editor, ctx: &egui::Context) {
     };
     let mut confirm = false;
     let mut cancel = false;
-    let frame = theme::dialog_frame(&ctx.style());
-    let response = egui::Modal::new(egui::Id::new("editor_script_file_dialog"))
-        .frame(frame)
+    let response = crate::window_kit::dialog(egui::Id::new("editor_script_file_dialog"), "")
+        .width(0.0)
         .show(ctx, |ui| {
             ui.set_width(400.0);
             let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
             let (title, text, label, danger) = match dialog {
                 FileDialog::Rename { path, name } => {
-                    let title = "Rename Script";
-                    let text = format!(
+                    let title = tr_s("Rename Script");
+                    let text = trf!(
                         "New file name for “{}”. Rust scripts must keep a snake_case name ending in `.rs`; the \
                          editor rewrites `mod.rs` for you.",
                         path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
@@ -1692,23 +1806,23 @@ pub(crate) fn script_file_dialog(editor: &mut Editor, ctx: &egui::Context) {
                     ui.add_space(theme::SP_M);
                     ui.label(egui::RichText::new(text).color(theme::TEXT_MUTED));
                     ui.add_space(theme::SP_L);
-                    let edit = ui.add(egui::TextEdit::singleline(name).desired_width(f32::INFINITY));
+                    let edit = crate::controls::text_field(ui, name, "", f32::INFINITY);
                     if !edit.has_focus() && !edit.lost_focus() {
                         edit.request_focus();
                     }
                     if edit.lost_focus() && enter {
                         confirm = true;
                     }
-                    ("", String::new(), "Rename", false)
+                    ("", String::new(), tr_s("Rename"), false)
                 }
                 FileDialog::Delete { path } => (
-                    "Delete script from disk?",
-                    format!(
+                    tr_s("Delete script from disk?"),
+                    trf!(
                         "“{}” is deleted permanently (there is no undo). Objects that use its components keep \
                          their data as missing scripts until you remove them.",
                         path.display()
                     ),
-                    "Delete",
+                    tr_s("Delete"),
                     true,
                 ),
             };
@@ -1717,11 +1831,10 @@ pub(crate) fn script_file_dialog(editor: &mut Editor, ctx: &egui::Context) {
                 ui.add_space(theme::SP_M);
                 ui.label(egui::RichText::new(text).color(theme::TEXT_MUTED));
             }
-            ui.add_space(theme::SP_L);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            crate::window_kit::dialog_actions(ui, |ui| {
                 let pressed = if danger { theme::danger_button(ui, label) } else { theme::primary_button(ui, label) };
                 confirm |= pressed.clicked();
-                cancel |= theme::secondary_button(ui, "Cancel").clicked();
+                cancel |= theme::secondary_button(ui, tr_s("Cancel")).clicked();
             });
         });
     if response.should_close() && !confirm {
@@ -1741,6 +1854,41 @@ pub(crate) fn script_file_dialog(editor: &mut Editor, ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
+
+    /// Перезапуск после Build: старое окно закрывается только после первого кадра нового —
+    /// не раньше (пустой экран) и не «никогда» (второе окно).
+    #[test]
+    fn the_old_editor_closes_only_after_the_rebuilt_one_shows_its_first_frame() {
+        let dir = temp_dir("handover");
+        let session = dir.join("session.txt");
+        // Новый процесс: забирает сеанс — метка «окно ещё не показано», файл сеанса исчезает.
+        let old = Editor::new(App::new(), EditorConfig::default()).unwrap();
+        old.save_session(&session).unwrap();
+        let mut new = Editor::new(App::new(), EditorConfig::default()).unwrap();
+        new.resume_session(&session).unwrap();
+        assert!(!session.exists() && starting_marker(&session).exists());
+
+        // Старый процесс ждёт, пока метка не исчезнет.
+        let mut old = old;
+        let child = if cfg!(windows) {
+            Command::new("ping").args(["-n", "30", "127.0.0.1"]).stdout(Stdio::null()).spawn()
+        } else {
+            Command::new("sleep").arg("30").spawn()
+        }
+        .unwrap();
+        old.rust.handover = Some(Handover { child, session: session.clone(), started: Instant::now(), taken: None });
+        old.poll_rust();
+        assert!(!old.should_quit(), "the new window has not drawn a frame yet");
+        new.window_shown();
+        assert!(!starting_marker(&session).exists());
+        old.poll_rust();
+        assert!(old.should_quit(), "now the old window closes");
+        let mut successor = old.take_successor().expect("the old process waits for the new one");
+        let _ = successor.kill();
+        let _ = successor.wait();
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("piska_rust_scripts_{name}_{}", std::process::id()));

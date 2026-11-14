@@ -1,6 +1,6 @@
 [package]
 name = "marble"
-description = "Шаровой завод: катите стальной шар по цехам завода в небе. 3D-физика, механизмы на C++."
+description = "Шаровой завод: катите стальной шар по цехам завода в небе. 3D-физика, сцены, префабы, интерфейс и механизмы-скрипты на Rust."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,21 +11,28 @@ build = "build.rs"
 title = "Шаровой завод"
 
 [dependencies]
-# Редактор в игру не входит: экспорт собирает только рантайм. Подсистемы — только те,
-# что игра использует (docs/design/engine-features.md): остальные не попадают в exe.
-engine = { path = "../../crates/engine", default-features = false, features = ["physics3d", "cpp", "audio", "ui", "gamepad"] }
+# Подсистемы — только те, что игра использует (docs/design/engine-features.md): остальные
+# не попадают в exe. Игра целиком на Rust: C++ (`cpp`) по умолчанию выключен, поэтому она
+# собирается и для веба.
+engine = { path = "../../crates/engine", default-features = false, features = ["physics3d", "audio", "audio-wav", "ui", "gamepad"] }
 log.workspace = true
+serde.workspace = true
+ron.workspace = true
 
 [build-dependencies]
-# Механизмы уровней написаны на C++ (cpp/*.cpp) и линкуются в крейт статически.
-engine-cpp-build = { path = "../../crates/engine-cpp-build" }
 # Значок приложения в exe на Windows.
 engine-build = { path = "../../crates/engine-build" }
+# Механизмы-пример на C++ (cpp/) — только с возможностью `cpp-example`.
+engine-cpp-build = { path = "../../crates/engine-cpp-build", optional = true }
 
 [features]
 # Программа редактора: `cargo run -p marble --features editor --bin marble-editor`.
 # В экспорт и обычную сборку игры редактор не входит.
 editor = ["engine/editor"]
+# Необязательный пример смешения языков: один маленький C++-скрипт (cpp/CppSpinner.cpp),
+# слинкованный статически через engine-cpp-build. В сценах игры он не используется;
+# в веб-сборку не входит (C++ не собирается под wasm32).
+cpp-example = ["engine/cpp", "dep:engine-cpp-build"]
 
 [[bin]]
 name = "marble-editor"

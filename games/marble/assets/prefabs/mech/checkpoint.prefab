@@ -1,0 +1,158 @@
+(
+    name: "Checkpoint",
+    id: 145578015828643,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Collider",
+            fields: {
+                "collides_with": Int(4294967295),
+                "density": Float(1.0),
+                "friction": Float(0.5),
+                "is_trigger": Bool(true),
+                "mesh": Asset(""),
+                "offset": Vec3(0.0, 1.5, 0.0),
+                "radius": Float(0.5),
+                "restitution": Float(0.0),
+                "shape": Enum("Box"),
+                "size": Vec3(5.0, 3.0, 1.0),
+            },
+        ),
+        (
+            kind: "Checkpoint",
+            fields: {
+                "index": Int(1),
+                "reached": Bool(false),
+                "yaw_deg": Float(0.0),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Post L",
+            id: 68226062888222,
+            transform: (
+                position: (-2.7, 1.6, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.3, 3.2, 0.3),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("a5719af2801376f8fb2f448f61ab76f7"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Post R",
+            id: 260902640738828,
+            transform: (
+                position: (2.7, 1.6, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.3, 3.2, 0.3),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("a5719af2801376f8fb2f448f61ab76f7"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Bar",
+            id: 165946855546034,
+            transform: (
+                position: (0.0, 3.2, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (5.8, 0.32, 0.32),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("9c37ec0f4fa131b8c5fb067814a82027"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Lamp",
+            id: 48764480810343,
+            transform: (
+                position: (0.0, 3.62, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.5, 0.5, 0.5),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.0074990317, 0.010329823, 0.015996292, 1.0),
+                        "emissive": Color(3.0, 0.4, 0.2, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Sphere"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

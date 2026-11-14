@@ -3,16 +3,23 @@
 //! поэтому файлы можно свободно переименовывать и перекладывать.
 #![forbid(unsafe_code)]
 
+mod data;
+mod formats;
 mod material;
 mod mesh;
 mod pack;
 
+pub use data::{parse_data, DataFormat};
+
 pub use material::{AlphaMode, Material, MaterialParseError, Materials};
 pub use mesh::{
-    inspect_mesh, load_mesh, load_mesh_bytes, mesh_extras, parse_obj, MeshData, MeshExtras, MeshInfo, MeshMaterial,
+    inspect_mesh, load_mesh, load_mesh_bytes, load_mesh_bytes_with, mesh_extras, parse_obj, MeshData, MeshExtras, MeshInfo, MeshMaterial,
     SubMesh,
 };
 pub use pack::{AssetPack, AssetPackBuilder};
+/// Чтение сторонних форматов моделей (общий крейт движка и Piska Modeler).
+pub use engine_model_formats as model_formats;
+pub use formats::import_options;
 
 use std::borrow::Cow;
 use std::collections::hash_map::RandomState;
@@ -225,6 +232,10 @@ pub struct AssetMeta {
 }
 
 fn importer_for(path: &Path) -> &'static str {
+    // Модель Minecraft — по двойному расширению; обычный `.json` остаётся данными.
+    if path.to_string_lossy().to_ascii_lowercase().ends_with(model_formats::JAVA_MODEL_SUFFIX) {
+        return "Mesh";
+    }
     match path
         .extension()
         .and_then(|e| e.to_str())
@@ -237,7 +248,7 @@ fn importer_for(path: &Path) -> &'static str {
         "scene" => "Scene",
         // mp3 и flac движок не декодирует (см. docs/api/audio.md) — такие файлы не звук.
         "wav" | "ogg" => "Audio",
-        "gltf" | "glb" | "obj" | "pmodel" => "Mesh",
+        "gltf" | "glb" | "obj" | "pmodel" | "bbmodel" | "vox" | "ply" | "stl" => "Mesh",
         "material" => "Material",
         "ttf" | "otf" => "Font",
         // Сценарии на языке Scenario (`docs/api/scenario.md`).
@@ -255,12 +266,21 @@ fn default_settings_for(path: &Path, importer: &str) -> BTreeMap<String, Value> 
     if is_piska_model(&path.to_string_lossy()) {
         settings.insert("filter".to_string(), Value::Enum("Nearest".to_string()));
     }
+    // Сторонние форматы: явные настройки импорта (масштаб, ось, отражение…) и «ближайший» фильтр.
+    settings.extend(formats::default_settings(&path.to_string_lossy()));
     settings
 }
 
 /// Модель Piska Modeler (`.pmodel`): меш со своей текстурой внутри файла.
 pub fn is_piska_model(path: &str) -> bool {
     path.rsplit_once('.').is_some_and(|(_, e)| e.eq_ignore_ascii_case("pmodel"))
+}
+
+/// Есть ли у меша-файла свой атлас (по имени): `.pmodel`, `.bbmodel`, модель Minecraft,
+/// `.vox`, `.ply` (если в нём цвета — см. [`AssetDatabase::has_embedded_texture`]).
+/// Рендерер грузит такой атлас без мипмапов (грани в нём лежат вплотную).
+pub fn has_embedded_atlas(path: &str) -> bool {
+    is_piska_model(path) || formats::is_model_format(path) && !path.to_ascii_lowercase().ends_with(".stl")
 }
 
 fn default_settings(importer: &str) -> BTreeMap<String, Value> {
@@ -428,6 +448,15 @@ impl AssetDatabase {
     /// (`.pmodel`) — её атлас (PNG).
     pub fn read_image(&self, guid: Guid) -> Result<Cow<'_, [u8]>, AssetError> {
         let relative = self.by_guid.get(&guid).ok_or_else(|| self.unknown_guid(guid))?.clone();
+        if self.third_party_model(guid) {
+            let settings = self.meta(guid).map(|m| m.settings.clone()).unwrap_or_default();
+            let options = formats::import_options(&settings);
+            return self
+                .with_mesh_bytes(guid, |name, bytes, resolve| {
+                    formats::texture_png(name, bytes, resolve, &options).map_err(|reason| AssetError::Import { path: name.to_string(), reason })
+                })
+                .map(Cow::Owned);
+        }
         if !is_piska_model(&relative) {
             return self.read(guid);
         }
@@ -440,7 +469,20 @@ impl AssetDatabase {
     /// Есть ли у меша-ассета своя текстура внутри файла (`.pmodel`): рендерер берёт её,
     /// если у `MeshRenderer` не назначена другая.
     pub fn has_embedded_texture(&self, guid: Guid) -> bool {
-        self.by_guid.get(&guid).is_some_and(|p| is_piska_model(p))
+        let Some(path) = self.by_guid.get(&guid) else { return false };
+        if is_piska_model(path) {
+            return true;
+        }
+        // `.ply` — только с цветами или текстурой, `.stl` — никогда (заголовок дёшев).
+        self.third_party_model(guid) && self.read(guid).is_ok_and(|bytes| model_formats::has_texture(path, &bytes))
+    }
+
+    /// Меш стороннего формата (`.bbmodel`, `.vox`, `.ply`, `.stl`, `.model.json`, или
+    /// `.json` с импортёром `Mesh` в `.meta`).
+    fn third_party_model(&self, guid: Guid) -> bool {
+        let Some(path) = self.by_guid.get(&guid) else { return false };
+        formats::is_model_format(path)
+            || path.to_ascii_lowercase().ends_with(".json") && self.meta(guid).is_some_and(|m| m.importer == "Mesh")
     }
 
     /// Текст ассета (сцена, префаб, RON).
@@ -455,6 +497,11 @@ impl AssetDatabase {
 
     /// Загрузить меш ассета (`.obj`, `.gltf`, `.glb`) — из каталога или из пака.
     pub fn load_mesh(&self, guid: Guid) -> Result<MeshData, AssetError> {
+        if self.third_party_model(guid) {
+            // Через базу: внешние текстуры — только из каталога ассетов, с настройками из `.meta`.
+            let settings = self.meta(guid).map(|m| m.settings.clone()).unwrap_or_default();
+            return self.with_mesh_bytes(guid, |name, bytes, resolve| load_mesh_bytes_with(name, bytes, resolve, &settings));
+        }
         if self.pack.is_none() {
             let path = self.path_of(guid).ok_or_else(|| self.unknown_guid(guid))?;
             return load_mesh(path);
@@ -571,7 +618,13 @@ impl AssetDatabase {
             .rsplit_once('/')
             .map(|(dir, _)| format!("{dir}/"))
             .unwrap_or_default();
-        let resolve = |uri: &str| self.read_path(&format!("{dir}{uri}")).ok().map(Cow::into_owned);
+        let resolve = |uri: &str| {
+            // Ни абсолютных путей, ни выхода выше корня ассетов (`..` обрезается корнем).
+            if uri.contains(':') || uri.starts_with('/') || uri.starts_with('\\') {
+                return None;
+            }
+            self.read_path(&join_normalized(&dir, uri)).ok().map(Cow::into_owned)
+        };
         f(&relative, &bytes, &resolve)
     }
 

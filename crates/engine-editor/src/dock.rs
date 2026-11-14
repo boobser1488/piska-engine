@@ -10,6 +10,7 @@
 //! раскладки Unity, сохранение в текст, разворот, меню вкладок и стыковка к краю окна.
 //! Плавающие окна живут внутри главного окна (окна egui), отдельных окон ОС нет.
 
+use crate::i18n::{tr_s, trf};
 use std::collections::HashSet;
 
 use egui::{pos2, vec2, Color32, Id, Margin, Pos2, Rect, Rounding, Stroke};
@@ -55,14 +56,14 @@ impl Panel {
     /// Заголовок вкладки.
     pub fn title(self) -> &'static str {
         match self {
-            Panel::Hierarchy => "Hierarchy",
-            Panel::Inspector => "Inspector",
-            Panel::Scene => "Scene",
-            Panel::Game => "Game",
-            Panel::Code => "Code",
-            Panel::Project => "Project",
-            Panel::Console => "Console",
-            Panel::Profiler => "Profiler",
+            Panel::Hierarchy => tr_s("Hierarchy"),
+            Panel::Inspector => tr_s("Inspector"),
+            Panel::Scene => tr_s("Scene"),
+            Panel::Game => tr_s("Game"),
+            Panel::Code => tr_s("Code"),
+            Panel::Project => tr_s("Project"),
+            Panel::Console => tr_s("Console"),
+            Panel::Profiler => tr_s("Profiler"),
         }
     }
 
@@ -133,10 +134,10 @@ impl LayoutPreset {
     /// Название в меню.
     pub fn name(self) -> &'static str {
         match self {
-            LayoutPreset::Default => "Default",
+            LayoutPreset::Default => tr_s("Default"),
             LayoutPreset::TwoByThree => "2 by 3",
-            LayoutPreset::Tall => "Tall",
-            LayoutPreset::Wide => "Wide",
+            LayoutPreset::Tall => tr_s("Tall"),
+            LayoutPreset::Wide => tr_s("Wide"),
         }
     }
 
@@ -300,7 +301,7 @@ impl Desc {
                 let mut tabs = Vec::new();
                 while tokens.peek().is_some_and(|t| t != ")") {
                     let key = tokens.next().unwrap_or_default();
-                    tabs.push(Panel::from_key(&key).ok_or_else(|| format!("unknown window `{key}`"))?);
+                    tabs.push(Panel::from_key(&key).ok_or_else(|| trf!("unknown window `{key}`", key = key))?);
                 }
                 if tabs.is_empty() {
                     return Err("an area without tabs".to_string());
@@ -321,7 +322,7 @@ impl Desc {
                     second: Box::new(second),
                 }
             }
-            other => return Err(format!("unknown layout node `{other}`")),
+            other => return Err(trf!("unknown layout node `{other}`", other = other)),
         };
         if tokens.next().as_deref() != Some(")") {
             return Err("expected `)`".to_string());
@@ -393,11 +394,11 @@ impl LayoutDesc {
         }
         for (rect, desc) in &self.windows {
             out.push_str(&format!(
-                "; window {:.0} {:.0} {:.0} {:.0} ",
-                rect.min.x,
-                rect.min.y,
-                rect.width(),
-                rect.height()
+                "; window {} {} {} {} ",
+                format!("{:.0}", rect.min.x),
+                format!("{:.0}", rect.min.y),
+                format!("{:.0}", rect.width()),
+                format!("{:.0}", rect.height())
             ));
             desc.write(&mut out);
         }
@@ -448,7 +449,7 @@ impl LayoutDesc {
                     layout.windows.push((rect, Desc::parse(&mut tokens, 0)?));
                 }
                 "maxplay" => layout.maximize_on_play = rest.trim() == "1",
-                other => return Err(format!("unknown layout section `{other}`")),
+                other => return Err(trf!("unknown layout section `{other}`", other = other)),
             }
         }
         if !seen_main {
@@ -524,6 +525,20 @@ pub(crate) struct GameView {
     pub texture: Option<egui::TextureId>,
     pub rect: Rect,
     pub pixels: [u32; 2],
+    /// Слой egui, в котором нарисован вид Game (плавающее окно — свой слой): меню и
+    /// окна поверх вида забирают щелчки себе, игре они не достаются.
+    pub layer: egui::LayerId,
+    /// Ввод у игры (в прошлом кадре): см. [`crate::Editor::game_has_input_focus`].
+    pub input_focus: bool,
+    /// Shift+Esc отдал ввод редактору; щелчок по виду Game возвращает его игре.
+    pub released: bool,
+    /// Окно редактора в фокусе системы.
+    pub window_focused: bool,
+    /// Окно дока в фокусе в прошлом кадре: фокус пришёл на Game (вкладкой, Ctrl+2) —
+    /// снять Shift+Esc.
+    pub last_panel: Option<Panel>,
+    /// Курсор системы: запереть (`true`) или вернуть — забирает окно редактора.
+    pub cursor_request: Option<bool>,
 }
 
 /// Где на экране окно было в прошлом кадре.
@@ -564,6 +579,9 @@ pub(crate) struct DockLayout {
     requested: Vec<(SurfaceIndex, Rect)>,
     /// Открыт диалог Save Layout… (введённое имя).
     pub(crate) save_dialog: Option<String>,
+    /// Пока док рисует окна, его состояние вынуто из `state`: окно в фокусе на это время
+    /// хранится здесь (иначе окна внутри дока видели бы «фокуса нет»).
+    rendering_focus: Option<Option<Panel>>,
 }
 
 impl Default for DockLayout {
@@ -578,6 +596,12 @@ impl Default for DockLayout {
                 texture: None,
                 rect: Rect::from_min_size(Pos2::ZERO, vec2(960.0, 540.0)),
                 pixels: [960, 540],
+                layer: egui::LayerId::background(),
+                input_focus: false,
+                released: false,
+                window_focused: true,
+                last_panel: None,
+                cursor_request: None,
             },
             placed: Vec::new(),
             tab_rects: Vec::new(),
@@ -587,6 +611,7 @@ impl Default for DockLayout {
             area: Rect::NOTHING,
             requested: Vec::new(),
             save_dialog: None,
+            rendering_focus: None,
         }
     }
 }
@@ -680,10 +705,10 @@ impl DockLayout {
     /// Пристыковать `panel` к `target`: сбоку (поделить область пополам) или вкладкой.
     fn dock(&mut self, panel: Panel, target: Panel, side: DockSide) -> Result<(), String> {
         if panel == target {
-            return Err(format!("{} cannot be docked to itself", panel.title()));
+            return Err(trf!("{} cannot be docked to itself", panel.title()));
         }
         if !self.is_open(target) {
-            return Err(format!("{} is not open: open it from the Window menu first", target.title()));
+            return Err(trf!("{} is not open: open it from the Window menu first", target.title()));
         }
         self.close(panel);
         let (surface, node, _) = self.find(target).expect("the target is open");
@@ -948,19 +973,19 @@ impl Viewer<'_> {
     /// Пункты меню окна: из «⋮» области и из меню вкладки по правой кнопке.
     fn window_menu(&mut self, ui: &mut egui::Ui, panel: Panel) {
         theme::menu_body(ui);
-        let maximize = if self.maximized { "Restore" } else { "Maximize" };
+        let maximize = if self.maximized { tr_s("Restore") } else { tr_s("Maximize") };
         if item(maximize).icon(Icon::Collapse).shortcut(&crate::shortcuts::label(ui.ctx(), "maximize-panel")).checked(self.maximized).show(ui) {
             self.requests.actions.push(LayoutAction::ToggleMaximize(panel));
         }
-        if item("Close Tab").icon(Icon::Close).show(ui) {
+        if item(tr_s("Close Tab")).icon(Icon::Close).show(ui) {
             self.requests.actions.push(LayoutAction::Close(panel));
         }
-        if !self.maximized && !self.floating(panel) && item("Float Window").icon(Icon::External).show(ui) {
+        if !self.maximized && !self.floating(panel) && item(tr_s("Float Window")).icon(Icon::External).show(ui) {
             self.requests.actions.push(LayoutAction::Float(panel));
         }
         theme::menu_separator(ui);
         let open: HashSet<Panel> = self.places.iter().map(|p| p.0).collect();
-        theme::submenu(ui, Icon::Plus, "Add Tab", |ui| {
+        theme::submenu(ui, Icon::Plus, tr_s("Add Tab"), |ui| {
             for other in Panel::ALL {
                 if other == panel {
                     continue;
@@ -990,9 +1015,10 @@ impl Viewer<'_> {
         if hovered {
             child.painter().rect_filled(rect, theme::R_S, theme::BG_HOVER);
         }
-        let response = egui::menu::menu_custom_button(
+        let response = crate::controls::menu_anchor(
             &mut child,
-            egui::Button::new("").frame(false).min_size(rect.size()),
+            rect.size(),
+            false,
             |ui| self.window_menu(ui, panel),
         )
         .response;
@@ -1002,7 +1028,7 @@ impl Viewer<'_> {
             Icon::More,
             if hovered { theme::TEXT } else { theme::TEXT_MUTED },
         );
-        response.on_hover_text("Window options: maximize, close, add a tab");
+        response.on_hover_text(tr_s("Window options: maximize, close, add a tab"));
     }
 }
 
@@ -1174,6 +1200,9 @@ impl Editor {
         });
 
         let style = dock_style(&ctx.style());
+        if maximized.is_none() {
+            self.dock.rendering_focus = Some(focused);
+        }
         let mut viewer = Viewer {
             editor: self,
             dock_id,
@@ -1198,6 +1227,7 @@ impl Editor {
             .window_bounds(area)
             .show_inside(ui, &mut viewer);
         let Viewer { requests, placed, tab_rects, .. } = viewer;
+        self.dock.rendering_focus = None;
 
         if maximized.is_none() {
             self.dock.state = state;
@@ -1244,35 +1274,27 @@ impl Editor {
         };
         let mut save = false;
         let mut cancel = false;
-        let frame = theme::dialog_frame(&ctx.style());
-        let response = egui::Modal::new(Id::new("save_layout_dialog")).frame(frame).show(ctx, |ui| {
+        let response = crate::window_kit::dialog(Id::new("save_layout_dialog"), "").width(0.0).show(ctx, |ui| {
             ui.set_width(380.0);
-            theme::dialog_title(ui, Icon::Tiles, theme::TEXT_MUTED, "Save Layout");
+            theme::dialog_title(ui, Icon::Tiles, theme::TEXT_MUTED, tr_s("Save Layout"));
             ui.label(
-                egui::RichText::new("The current windows, their sizes and floating windows are saved under this name.")
+                egui::RichText::new(tr_s("The current windows, their sizes and floating windows are saved under this name."))
                     .color(theme::TEXT_MUTED),
             );
             ui.add_space(theme::SP_L);
-            let edit = ui.add(
-                egui::TextEdit::singleline(name)
-                    .hint_text("My Layout")
-                    .min_size(vec2(0.0, theme::FIELD_H + 2.0))
-                    .vertical_align(egui::Align::Center)
-                    .desired_width(f32::INFINITY),
-            );
+            let edit = crate::controls::text_field(ui, name, tr_s("My Layout"), f32::INFINITY);
             if !edit.has_focus() && !edit.lost_focus() {
                 edit.request_focus();
             }
             if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 save = true;
             }
-            ui.add_space(theme::SP_L);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            crate::window_kit::dialog_actions(ui, |ui| {
                 let valid = layout_name(name).is_some();
-                if ui.add_enabled_ui(valid, |ui| theme::primary_button(ui, "Save")).inner.clicked() {
+                if ui.add_enabled_ui(valid, |ui| crate::window_kit::primary_action(ui, tr_s("Save"))).inner.clicked() {
                     save = true;
                 }
-                if theme::secondary_button(ui, "Cancel").clicked() {
+                if crate::window_kit::action_button(ui, tr_s("Cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -1335,7 +1357,11 @@ impl Editor {
                 self.dock.maximized = Some(Panel::Game);
                 self.dock.maximized_by_play = true;
             } else if !self.dock.is_visible(Panel::Game) {
-                self.dock.focus(Panel::Game);
+                match self.dock.find(Panel::Game) {
+                    // Focus Game View On Play выключен: показать вкладку, фокус не трогать.
+                    Some(place) if !self.prefs.focus_game_on_play => self.dock.state.set_active_tab(place),
+                    _ => self.dock.focus(Panel::Game),
+                }
             }
         }
         if !playing && self.dock.was_playing && self.dock.maximized_by_play {
@@ -1398,7 +1424,7 @@ impl Editor {
             }
             LayoutAction::Save(name) => {
                 let name = layout_name(&name).ok_or_else(|| {
-                    EditorError::Other("a layout needs a name: type one in the Save Layout dialog".to_string())
+                    EditorError::Other(tr_s("a layout needs a name: type one in the Save Layout dialog").to_string())
                 })?;
                 let text = self.dock.describe().to_text();
                 match self.prefs.saved_layouts.iter_mut().find(|(saved, _)| *saved == name) {
@@ -1414,11 +1440,11 @@ impl Editor {
                     .iter()
                     .find(|(saved, _)| *saved == name)
                     .map(|(_, text)| text.clone())
-                    .ok_or_else(|| EditorError::Other(format!("there is no saved layout named `{name}`")))?;
+                    .ok_or_else(|| EditorError::Other(trf!("there is no saved layout named `{name}`", name = name)))?;
                 let desc = LayoutDesc::parse(&text).map_err(|reason| {
-                    EditorError::Other(format!(
+                    EditorError::Other(trf!(
                         "the saved layout `{name}` cannot be loaded ({reason}); delete it from Window → Layouts → Delete Layout"
-                    ))
+                    , name = name, reason = reason))
                 })?;
                 self.dock.load(&desc);
             }
@@ -1426,7 +1452,7 @@ impl Editor {
                 let before = self.prefs.saved_layouts.len();
                 self.prefs.saved_layouts.retain(|(saved, _)| *saved != name);
                 if self.prefs.saved_layouts.len() == before {
-                    return Err(EditorError::Other(format!("there is no saved layout named `{name}`")));
+                    return Err(EditorError::Other(trf!("there is no saved layout named `{name}`", name = name)));
                 }
             }
             LayoutAction::MaximizeOnPlay(on) => self.dock.maximize_on_play = on,
@@ -1508,6 +1534,28 @@ impl Editor {
         self.dock.maximized
     }
 
+    /// Окно с фокусом клавиатуры: развёрнутое или то, по которому щёлкнули последним.
+    pub fn focused_panel(&self) -> Option<Panel> {
+        // Окна спрашивают фокус и во время отрисовки дока (стрелки в Hierarchy, полёт в Scene).
+        if let Some(focused) = self.dock.rendering_focus {
+            return self.dock.maximized.or(focused);
+        }
+        let state = &self.dock.state;
+        let focused = state.focused_leaf().and_then(|(surface, node)| match &state[surface][node] {
+            Node::Leaf { tabs, active, .. } => tabs.get(active.0).copied(),
+            _ => None,
+        });
+        self.dock.maximized.or(focused)
+    }
+
+    /// Выделение «в фокусе» (синее): фокус в окне, которое с ним работает. Иначе — серое.
+    pub(crate) fn selection_focused(&self) -> bool {
+        matches!(
+            self.focused_panel(),
+            None | Some(Panel::Hierarchy | Panel::Scene | Panel::Game | Panel::Inspector)
+        )
+    }
+
     /// Готовая раскладка: Default, 2 by 3, Tall, Wide.
     pub fn set_layout(&mut self, preset: LayoutPreset) {
         let _ = self.apply_layout_action(LayoutAction::Preset(preset));
@@ -1521,7 +1569,7 @@ impl Editor {
     /// Применить раскладку из текста [`Editor::layout_text`].
     pub fn set_layout_text(&mut self, text: &str) -> Result<(), EditorError> {
         let desc = LayoutDesc::parse(text)
-            .map_err(|reason| EditorError::Other(format!("the window layout cannot be read: {reason}")))?;
+            .map_err(|reason| EditorError::Other(trf!("the window layout cannot be read: {reason}", reason = reason)))?;
         self.dock.load(&desc);
         Ok(())
     }

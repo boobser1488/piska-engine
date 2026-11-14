@@ -13,6 +13,7 @@
 //!
 //! Поэтому всё, что страница меняет, она меняет только через результат этих методов.
 
+use crate::i18n::{tr_s, trf};
 use std::ops::RangeInclusive;
 use std::path::Path;
 
@@ -196,7 +197,7 @@ impl<'a> SettingsUi<'a> {
             }
             let color = if r.hovered() { theme::TEXT_STRONG } else { theme::TEXT_MUTED };
             icons::paint(&painter, Rect::from_center_size(reset_rect.center(), vec2(theme::ICON_S, theme::ICON_S)), Icon::Reset, color);
-            reset = r.on_hover_text("Reset to default").clicked();
+            reset = r.on_hover_text(tr_s("Reset to default")).clicked();
         }
         let label_w = if full_label { reset_rect.left() - rect.left() - GUTTER - theme::SP_S } else { self.label_w };
         let label_rect = Rect::from_min_size(pos2(rect.left() + GUTTER, rect.top()), vec2(label_w, LINE));
@@ -292,10 +293,7 @@ impl<'a> SettingsUi<'a> {
         let before = *value;
         let differs = |a: N, b: N| (a.to_f64() - b.to_f64()).abs() > 1e-6;
         let row = self.row(label, description, differs(*value, default), |ui| {
-            ui.add_sized(
-                vec2(NUMBER_W, theme::FIELD_H),
-                egui::DragValue::new(value).range(range).speed(speed).suffix(suffix),
-            );
+            crate::controls::number_field_range(ui, value, range, speed, suffix, NUMBER_W);
         });
         if row.reset {
             *value = default;
@@ -327,14 +325,11 @@ impl<'a> SettingsUi<'a> {
         default: [f32; N],
         speed: f64,
     ) -> bool {
-        const AXES: [(&str, Color32); 4] =
-            [("X", theme::AXIS_X), ("Y", theme::AXIS_Y), ("Z", theme::AXIS_Z), ("W", theme::TEXT_MUTED)];
         let before = *value;
         let row = self.row(label, description, *value != default, |ui| {
-            for (v, (letter, color)) in value.iter_mut().zip(AXES) {
-                ui.label(egui::RichText::new(letter).color(theme::mix(color, theme::TEXT_MUTED, 0.35)).font(theme::caption()));
-                ui.add_sized(vec2(64.0, theme::FIELD_H), egui::DragValue::new(v).speed(speed).max_decimals(3));
-            }
+            // Те же ячейки «метка оси + поле», что в инспекторе: промежутки — из шкалы.
+            let width = (N as f32 * 80.0).min(ui.available_width());
+            ui.allocate_ui(egui::vec2(width, theme::CONTROL_H), |ui| crate::inspector::axes(ui, value, speed));
         });
         if row.reset {
             *value = default;
@@ -355,14 +350,11 @@ impl<'a> SettingsUi<'a> {
         let scope = self.scope;
         let row = self.row(label, description, *value != default, |ui| {
             let selected = options.iter().find(|(v, _)| *v == *value).map_or("", |(_, name)| *name);
-            egui::ComboBox::from_id_salt(("settings_combo", scope, label))
-                .selected_text(selected)
-                .width(WIDE_W)
-                .show_ui(ui, |ui| {
-                    for (option, name) in options {
-                        ui.selectable_value(value, *option, *name);
-                    }
-                });
+            crate::controls::combo(ui, ("settings_combo", scope, label), selected, WIDE_W, |ui| {
+                for (option, name) in options {
+                    ui.selectable_value(value, *option, *name);
+                }
+            });
         });
         if row.reset {
             *value = default;
@@ -388,14 +380,12 @@ impl<'a> SettingsUi<'a> {
             let shown = if value.is_empty() {
                 none.to_string()
             } else if missing {
-                format!("{value} (missing)")
+                trf!("{value} (missing)", value = value)
             } else {
                 value.clone()
             };
-            egui::ComboBox::from_id_salt(("settings_choice", scope, label))
-                .selected_text(egui::RichText::new(shown).color(if missing { theme::WARN } else { theme::TEXT }))
-                .width(WIDE_W)
-                .show_ui(ui, |ui| {
+            let shown = egui::RichText::new(shown).color(if missing { theme::WARN } else { theme::TEXT });
+            crate::controls::combo_ex(ui, ("settings_choice", scope, label), shown, WIDE_W, |ui| {
                     ui.selectable_value(value, String::new(), none);
                     for option in options {
                         ui.selectable_value(value, option.clone(), option.as_str());
@@ -412,13 +402,7 @@ impl<'a> SettingsUi<'a> {
     pub(crate) fn text(&mut self, label: &str, description: &str, value: &mut String, default: &str, hint: &str) -> bool {
         let before = value.clone();
         let row = self.row(label, description, value.as_str() != default, |ui| {
-            ui.add(
-                egui::TextEdit::singleline(value)
-                    .hint_text(egui::RichText::new(hint).color(theme::TEXT_DISABLED))
-                    .desired_width(WIDE_W)
-                    .vertical_align(egui::Align::Center)
-                    .min_size(vec2(0.0, theme::FIELD_H)),
-            );
+            crate::controls::text_field(ui, value, hint, WIDE_W);
         });
         if row.reset {
             *value = default.to_string();
@@ -435,13 +419,7 @@ impl<'a> SettingsUi<'a> {
         let before = value.clone();
         let row = self.row(label, description, value.as_str() != default, |ui| {
             let width = (ui.available_width() - theme::ICON - theme::SP_S * 2.0).max(80.0);
-            ui.add(
-                egui::TextEdit::singleline(value)
-                    .font(theme::mono())
-                    .desired_width(width)
-                    .vertical_align(egui::Align::Center)
-                    .min_size(vec2(0.0, theme::FIELD_H)),
-            );
+            crate::controls::text_field_font(ui, None, value, "", width, theme::mono());
             if !value.trim().is_empty() {
                 let path = Path::new(value.trim());
                 let full = match base {
@@ -450,9 +428,9 @@ impl<'a> SettingsUi<'a> {
                 };
                 let (rect, response) = ui.allocate_exact_size(vec2(theme::ICON, theme::ICON), Sense::hover());
                 let (icon, color, tip) = if full.exists() {
-                    (Icon::Check, theme::OK, "Found on disk")
+                    (Icon::Check, theme::OK, tr_s("Found on disk"))
                 } else {
-                    (Icon::Warn, theme::WARN, "Not found on disk")
+                    (Icon::Warn, theme::WARN, tr_s("Not found on disk"))
                 };
                 icons::paint(ui.painter(), rect.shrink(1.0), icon, color);
                 response.on_hover_text(format!("{tip}: {}", full.display()));
@@ -469,7 +447,7 @@ impl<'a> SettingsUi<'a> {
     pub(crate) fn color(&mut self, label: &str, description: &str, value: &mut Color32, default: Color32) -> bool {
         let before = *value;
         let row = self.row(label, description, *value != default, |ui| {
-            ui.color_edit_button_srgba(value);
+            crate::controls::color_button(ui, value);
         });
         if row.reset {
             *value = default;

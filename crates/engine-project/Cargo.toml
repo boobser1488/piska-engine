@@ -1,0 +1,15 @@
+[package]
+name = "engine-project"
+description = "Файл с исходниками проекта: упаковка проекта в один переносимый файл и распаковка с проверками (хаб, редактор, piska-export)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Без графики и без движка: крейт читают и хаб, и редактор, и командная строка.
+# Все зависимости уже есть в Cargo.lock (сжатие — flate2, как у piska-export).
+[dependencies]
+flate2 = "1"
+serde.workspace = true
+serde_json = "1"
+thiserror.workspace = true
+toml = "0.8"

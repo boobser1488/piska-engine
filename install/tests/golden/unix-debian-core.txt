@@ -1,0 +1,21 @@
+Components: core
+DRY RUN: nothing is installed, downloaded or changed. Detection below only reads.
+[1/5] STEP core.packages - System packages (compiler, pkg-config, ALSA, udev, Vulkan, X11/Wayland libraries)
+         elevation: administrator rights are needed for the package manager (sudo asks for your password; the command is shown first)
+         run      sudo apt-get update
+         run      sudo apt-get install -y ca-certificates curl git unzip xz-utils build-essential pkg-config libasound2-dev libudev-dev mesa-vulkan-drivers libvulkan1 libxkbcommon0 libwayland-client0 libx11-6
+         note     the package manager runs through sudo and asks for your password
+[2/5] STEP core.rustup - Rust (rustup, stable)
+         download https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init (~20 MB)
+         verify   sha256 from https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init.sha256
+         cache    <FAKE>/prefix/cache
+         run      rustup-init -y --default-toolchain stable --profile minimal
+[3/5] STEP core.rust-components - Rust components (clippy rustfmt)
+         run      rustup component add clippy rustfmt
+[4/5] STEP core.vulkan - Vulkan runtime (GPU driver)
+         note     libvulkan.so.1 comes from the Vulkan loader + a driver (Mesa or NVIDIA); the package step installs the Mesa drivers.
+[5/5] STEP config.preferences - Editor preferences: Build & Tools paths
+         prefs    tool_cargo = <FAKE>/.cargo/bin/cargo
+         file     <FAKE>/.config/PiskaEngine/editor.ron  (merged: existing values are kept, a backup .piska-backup-<time> is made first)
+DRY RUN finished: no changes were made.
+exit=0

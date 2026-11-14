@@ -1,0 +1,45 @@
+(
+    name: "Camera",
+    id: 250668787947888,
+    tag: "MainCamera",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Camera",
+            fields: {
+                "background": Enum("Sky"),
+                "clear_color": Color(0.010960094, 0.017641952, 0.033104762, 1.0),
+                "culling_mask": Int(4294967295),
+                "far": Float(1800.0),
+                "fov_deg": Float(62.0),
+                "near": Float(0.1),
+                "ortho_size": Float(5.0),
+                "priority": Int(0),
+                "projection": Enum("Perspective"),
+            },
+        ),
+        (
+            kind: "CameraRig",
+            fields: {
+                "base_fov": Float(62.0),
+                "height": Float(0.4),
+                "max_distance": Float(15.0),
+                "min_distance": Float(4.5),
+                "orbit": Bool(false),
+                "orbit_center": Vec3(0.0, 0.0, 0.0),
+                "orbit_distance": Float(17.0),
+                "orbit_speed_deg": Float(9.0),
+            },
+        ),
+        (
+            kind: "AudioListener",
+            fields: {
+                "volume": Float(1.0),
+            },
+        ),
+    ],
+)

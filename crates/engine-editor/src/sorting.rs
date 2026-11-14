@@ -4,6 +4,7 @@
 //! Выбор пользователя (ключ, направление, включённые фильтры) хранится в
 //! [`Preferences`](crate::prefs::Preferences) строками и переживает перезапуск.
 
+use crate::i18n::{tr_s, trf};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -36,10 +37,10 @@ impl SortKey {
 
     pub fn label(self) -> &'static str {
         match self {
-            SortKey::Name => "Name",
-            SortKey::Type => "Type",
-            SortKey::Modified => "Date modified",
-            SortKey::Size => "Size",
+            SortKey::Name => tr_s("Name"),
+            SortKey::Type => tr_s("Type"),
+            SortKey::Modified => tr_s("Date modified"),
+            SortKey::Size => tr_s("Size"),
         }
     }
 
@@ -115,14 +116,14 @@ impl TypeFilter {
 
     pub fn label(self) -> &'static str {
         match self {
-            TypeFilter::Scripts => "Scripts",
-            TypeFilter::Scenes => "Scenes",
-            TypeFilter::Prefabs => "Prefabs",
-            TypeFilter::Models => "Models",
-            TypeFilter::Materials => "Materials",
-            TypeFilter::Textures => "Textures",
-            TypeFilter::Audio => "Audio",
-            TypeFilter::Other => "Other",
+            TypeFilter::Scripts => tr_s("Scripts"),
+            TypeFilter::Scenes => tr_s("Scenes"),
+            TypeFilter::Prefabs => tr_s("Prefabs"),
+            TypeFilter::Models => tr_s("Models"),
+            TypeFilter::Materials => tr_s("Materials"),
+            TypeFilter::Textures => tr_s("Textures"),
+            TypeFilter::Audio => tr_s("Audio"),
+            TypeFilter::Other => tr_s("Other"),
         }
     }
 
@@ -160,21 +161,21 @@ pub(crate) fn type_label(importer: &str, path: &str) -> &'static str {
     let extension = path.rsplit_once('.').map_or("", |(_, e)| e).to_ascii_lowercase();
     match importer {
         "Code" => match extension.as_str() {
-            "rs" => "Rust script",
-            "cpp" | "cc" | "cxx" => "C++ source",
-            "h" | "hpp" => "C++ header",
-            _ => "Code",
+            "rs" => tr_s("Rust script"),
+            "cpp" | "cc" | "cxx" => tr_s("C++ source"),
+            "h" | "hpp" => tr_s("C++ header"),
+            _ => tr_s("Code"),
         },
-        "Scenario" => "Scenario script",
-        "Scene" => "Scene",
-        "Prefab" => "Prefab",
-        "Mesh" => "Model",
-        "Material" => "Material",
-        "Texture" => "Texture",
-        "Audio" => "Audio",
-        "Font" => "Font",
-        "Text" => "Text",
-        _ => "File",
+        "Scenario" => tr_s("Scenario script"),
+        "Scene" => tr_s("Scene"),
+        "Prefab" => tr_s("Prefab"),
+        "Mesh" => tr_s("Model"),
+        "Material" => tr_s("Material"),
+        "Texture" => tr_s("Texture"),
+        "Audio" => tr_s("Audio"),
+        "Font" => tr_s("Font"),
+        "Text" => tr_s("Text"),
+        _ => tr_s("File"),
     }
 }
 
@@ -199,10 +200,10 @@ impl Language {
 
     pub fn label(self) -> &'static str {
         match self {
-            Language::Rust => "Rust",
-            Language::Cpp => "C++",
-            Language::Scenario => "Scenario",
-            Language::Other => "Other",
+            Language::Rust => tr_s("Rust"),
+            Language::Cpp => tr_s("C++"),
+            Language::Scenario => tr_s("Scenario"),
+            Language::Other => tr_s("Other"),
         }
     }
 }
@@ -317,9 +318,9 @@ pub(crate) fn modified_label(now: SystemTime, modified: Option<SystemTime>) -> S
     let seconds = age.as_secs();
     match seconds {
         0..=44 => "just now".to_string(),
-        45..=3599 => format!("{} min ago", (seconds / 60).max(1)),
-        3600..=86_399 => format!("{} h ago", seconds / 3600),
-        86_400..=604_799 => format!("{} d ago", seconds / 86_400),
+        45..=3599 => trf!("{} min ago", (seconds / 60).max(1)),
+        3600..=86_399 => trf!("{} h ago", seconds / 3600),
+        86_400..=604_799 => trf!("{} d ago", seconds / 86_400),
         _ => date_label(modified),
     }
 }

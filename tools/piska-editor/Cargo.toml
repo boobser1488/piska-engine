@@ -1,0 +1,23 @@
+[package]
+name = "piska-editor"
+description = "Общий редактор и проигрыватель Piska: открывают любой проект (ассеты, сцены, Scenario, компоненты движка) без компиляции его кода."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Редактор и весь рантайм движка: проект без своего кода открывается этим набором.
+engine = { path = "../../crates/engine", default-features = false, features = ["editor"] }
+
+[[bin]]
+name = "piska-editor"
+path = "src/main.rs"
+
+[[bin]]
+name = "piska-player"
+path = "src/bin/piska-player.rs"
+
+[build-dependencies]
+# Значок приложения в exe на Windows.
+engine-build.workspace = true

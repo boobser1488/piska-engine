@@ -1,0 +1,45 @@
+(
+    name: "PlayerBullet",
+    id: 281129649873543,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.5),
+                "sheet_columns": Int(1),
+                "sheet_rows": Int(1),
+                "size": Vec2(0.95, 0.38),
+                "sorting_layer": Int(6),
+                "texture": Asset("e3e1852cdcfddfa538e7955ea1db931d"),
+                "uv_offset": Vec2(0.8588867, 0.63720703),
+                "uv_size": Vec2(0.038085938, 0.0146484375),
+            },
+        ),
+        (
+            kind: "TrailRenderer",
+            fields: {
+                "blend": Enum("Additive"),
+                "emitting": Bool(true),
+                "end_color": Color(0.25, 1.5, 2.2, 0.0),
+                "end_width": Float(0.0),
+                "lifetime": Float(0.17),
+                "max_points": Int(24),
+                "min_vertex_distance": Float(0.05),
+                "order": Int(0),
+                "sorting_layer": Int(5),
+                "start_color": Color(0.25, 1.5, 2.2, 1.0),
+                "start_width": Float(0.2),
+            },
+        ),
+    ],
+)

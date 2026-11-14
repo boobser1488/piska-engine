@@ -1,0 +1,106 @@
+(
+    name: "Tile",
+    id: 184107647964597,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (2.6, 0.45, 2.6),
+    ),
+    components: [
+        (
+            kind: "MeshRenderer",
+            fields: {
+                "cast_shadows": Bool(true),
+                "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                "grid": Bool(false),
+                "materials": List([
+                    Asset("78490ab630c0fee226782e9685561a63"),
+                ]),
+                "mesh": Asset(""),
+                "metallic": Float(0.0),
+                "model_materials": Bool(false),
+                "roughness": Float(0.6),
+                "shape": Enum("Cube"),
+                "texture": Asset(""),
+                "tiling": Float(0.0),
+                "tint": Color(1.0, 1.0, 1.0, 1.0),
+            },
+        ),
+        (
+            kind: "Rigidbody",
+            fields: {
+                "angular_damping": Float(0.05),
+                "angular_velocity": Vec3(0.0, 0.0, 0.0),
+                "body_type": Enum("Kinematic"),
+                "ccd": Bool(false),
+                "gravity_scale": Float(1.0),
+                "interpolate": Bool(true),
+                "linear_damping": Float(0.0),
+                "lock_rotation": Bool(false),
+                "velocity": Vec3(0.0, 0.0, 0.0),
+            },
+        ),
+        (
+            kind: "Collider",
+            fields: {
+                "collides_with": Int(4294967295),
+                "density": Float(1.0),
+                "friction": Float(0.9),
+                "is_trigger": Bool(false),
+                "mesh": Asset(""),
+                "offset": Vec3(0.0, 0.0, 0.0),
+                "radius": Float(0.5),
+                "restitution": Float(0.0),
+                "shape": Enum("Box"),
+                "size": Vec3(1.0, 1.0, 1.0),
+            },
+        ),
+        (
+            kind: "CollapsingTile",
+            fields: {
+                "delay": Float(0.7),
+                "drop": Float(0.0),
+                "fall_speed": Float(0.0),
+                "origin": Vec3(0.0, 0.0, 0.0),
+                "respawn": Float(5.0),
+                "shake": Float(0.04),
+                "state": Enum("Idle"),
+                "timer": Float(0.0),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Frame",
+            id: 279183939734273,
+            transform: (
+                position: (0.0, 0.51, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.96, 0.03, 0.96),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("1019426dc141204324ea67c5ae3910d1"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

@@ -231,7 +231,8 @@ impl EditorGpu {
                         view: output,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            // Фон окна — цвет темы: даже пустой кадр не белый и не чёрный.
+                            load: wgpu::LoadOp::Clear(theme_clear()),
                             store: wgpu::StoreOp::Store,
                         },
                     })],
@@ -345,4 +346,15 @@ pub fn capture_with_input(
         width,
         height,
     )?)
+}
+
+/// Цвет очистки кадра интерфейса — фон окна темы (поверхность не-sRGB: каналы как есть).
+pub(crate) fn theme_clear() -> wgpu::Color {
+    let c = crate::theme::BG_APP;
+    wgpu::Color {
+        r: f64::from(c.r()) / 255.0,
+        g: f64::from(c.g()) / 255.0,
+        b: f64::from(c.b()) / 255.0,
+        a: 1.0,
+    }
 }

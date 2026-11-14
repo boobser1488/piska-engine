@@ -11,14 +11,21 @@ members = [
     "crates/engine-cpp-bridge",
     "crates/engine-cpp-build",
     "crates/engine-build",
-    "crates/engine-modeler",
+    "crates/engine-i18n",
+    "crates/engine-project",
+    "crates/engine-model-formats",
     "crates/engine-editor",
     "crates/engine",
     "tools/piska-export",
-    "tools/piska-modeler",
     "tools/piska-hub",
+    "tools/piska-editor",
+    "tools/piska-installer",
     "games/*",
 ]
+# Piska Modeler — отдельный репозиторий (своё рабочее пространство Cargo) в `modeler/`:
+# `cargo build --manifest-path modeler/Cargo.toml -p piska-modeler`. Движку его код не нужен:
+# `.pmodel` читается через раздел `baked` (engine-assets).
+exclude = ["modeler"]
 
 [workspace.package]
 version = "0.0.1"
@@ -39,7 +46,10 @@ engine-cpp-bridge = { path = "crates/engine-cpp-bridge" }
 engine-cpp-build = { path = "crates/engine-cpp-build" }
 engine-build = { path = "crates/engine-build" }
 engine-editor = { path = "crates/engine-editor" }
-engine-modeler = { path = "crates/engine-modeler" }
+engine-i18n = { path = "crates/engine-i18n" }
+engine-project = { path = "crates/engine-project" }
+# Сторонние форматы моделей (.bbmodel, Minecraft .json, .vox, .ply, .stl); копия — в modeler/vendor.
+engine-model-formats = { path = "crates/engine-model-formats" }
 
 glam = "0.29"
 serde = { version = "1", features = ["derive"] }
@@ -82,11 +92,6 @@ opt-level = 3
 
 # Готовая игра: полная оптимизация по всей программе и без таблицы символов — файл меньше,
 # кадр быстрее. Сборка дольше, но она делается один раз при экспорте.
-# Окно Piska Modeler рисует модель программным растеризатором: без оптимизации кадр
-# стоит в разы дороже. Крейт небольшой, пересборка остаётся быстрой.
-[profile.dev.package.engine-modeler]
-opt-level = 3
-
 [profile.release]
 opt-level = 3
 lto = "fat"

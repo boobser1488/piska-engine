@@ -10,6 +10,7 @@
 //! компонентов (в том числе в Play). Неприменённые правки живут в `draft` этой страницы;
 //! остальные страницы при записи файла берут действующий порядок.
 
+use crate::i18n::{tr_s, trf};
 use egui::{pos2, vec2, Align2, Color32, Rect, Sense, Stroke};
 use engine_core::prelude::*;
 
@@ -91,8 +92,8 @@ impl Editor {
         let order = self.script_order.draft.script_order.clone();
         self.assets_root().ok_or_else(|| {
             EditorError::Other(
-                "cannot save the script execution order: no assets directory is mounted. \
-                 Call `engine::mount_assets(&mut app, \"assets\")` before starting the editor"
+                tr_s("cannot save the script execution order: no assets directory is mounted. \
+                 Call `engine::mount_assets(&mut app, \"assets\")` before starting the editor")
                     .to_string(),
             )
         })?;
@@ -161,14 +162,14 @@ impl Editor {
         let mut add: Option<String> = None;
         ui.horizontal(|ui| {
             let popup = ui.make_persistent_id("script_order_add_popup");
-            let plus = theme::icon_text_button(ui, Icon::Plus, "Add script");
+            let plus = theme::icon_text_button(ui, Icon::Plus, tr_s("Add script"));
             if plus.clicked() {
                 self.script_order.search.clear();
                 ui.memory_mut(|m| m.toggle_popup(popup));
             }
             egui::popup_below_widget(ui, popup, &plus, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                 ui.set_min_width(340.0);
-                let search = theme::search_field(ui, &mut self.script_order.search, "Search components", f32::INFINITY);
+                let search = theme::search_field(ui, &mut self.script_order.search, tr_s("Search components"), f32::INFINITY);
                 search.request_focus();
                 ui.add_space(theme::SP_S);
                 let listed = &self.script_order.draft.script_order;
@@ -192,12 +193,12 @@ impl Editor {
                     }
                     if found.is_empty() {
                         ui.add_space(theme::SP_M);
-                        ui.label(egui::RichText::new("No component to add").color(theme::TEXT_MUTED));
+                        ui.label(egui::RichText::new(tr_s("No component to add")).color(theme::TEXT_MUTED));
                     }
                 });
             });
             ui.label(
-                egui::RichText::new("Rust, C++ and engine components that are registered in this editor")
+                egui::RichText::new(tr_s("Rust, C++ and engine components that are registered in this editor"))
                     .size(theme::FONT_CAPTION)
                     .color(theme::TEXT_DISABLED),
             );
@@ -282,20 +283,20 @@ impl Editor {
         ui.add_space(theme::SP_M);
         let dirty = self.script_order_is_dirty();
         ui.horizontal(|ui| {
-            let apply = ui.add_enabled_ui(dirty, |ui| theme::primary_button(ui, "Apply")).inner;
-            let apply = ui.interact(apply.rect, Editor::script_order_apply_id(), Sense::click()).on_hover_text("Save project.settings and use this order right away, also in Play");
+            let apply = ui.add_enabled_ui(dirty, |ui| theme::primary_button(ui, tr_s("Apply"))).inner;
+            let apply = ui.interact(apply.rect, Editor::script_order_apply_id(), Sense::click()).on_hover_text(tr_s("Save project.settings and use this order right away, also in Play"));
             if dirty && apply.clicked() {
                 if let Err(error) = self.apply_script_order() {
                     self.script_order.error = Some(error.to_string());
                 }
             }
-            let revert = ui.add_enabled_ui(dirty, |ui| theme::secondary_button(ui, "Revert")).inner;
+            let revert = ui.add_enabled_ui(dirty, |ui| theme::secondary_button(ui, tr_s("Revert"))).inner;
             let revert = ui.interact(revert.rect, Editor::script_order_revert_id(), Sense::click());
             if dirty && revert.clicked() {
                 self.revert_script_order();
             }
             ui.label(
-                egui::RichText::new(if dirty { "Unsaved changes" } else { "Saved in project.settings" })
+                egui::RichText::new(if dirty { tr_s("Unsaved changes") } else { tr_s("Saved in project.settings") })
                     .size(theme::FONT_CAPTION)
                     .color(if dirty { theme::WARN } else { theme::TEXT_MUTED }),
             );
@@ -308,8 +309,8 @@ pub(crate) fn page(s: &mut crate::settings::SettingsUi<'_>, editor: &mut Editor)
     editor.ensure_script_order_loaded();
     let modified = !editor.project_settings_draft().script_order.is_empty() || editor.script_order_is_dirty();
     let row = s.block(
-        "Execution order",
-        "Lowest number runs first in Start, FixedUpdate, Update and LateUpdate. Unlisted types run at Default Time (0).",
+        tr_s("Execution order"),
+        tr_s("Lowest number runs first in Start, FixedUpdate, Update and LateUpdate. Unlisted types run at Default Time (0)."),
         modified,
         |ui| editor.script_order_ui(ui),
     );
@@ -333,11 +334,11 @@ pub(crate) enum Language {
 impl Language {
     pub fn label(self) -> &'static str {
         match self {
-            Language::Rust => "Rust",
-            Language::Cpp => "C++",
-            Language::Scenario => "Scenario",
-            Language::Engine => "Engine",
-            Language::Missing => "Not registered",
+            Language::Rust => tr_s("Rust"),
+            Language::Cpp => tr_s("C++"),
+            Language::Scenario => tr_s("Scenario"),
+            Language::Engine => tr_s("Engine"),
+            Language::Missing => tr_s("Not registered"),
         }
     }
 
@@ -405,13 +406,13 @@ fn paint_row(ui: &mut egui::Ui, rect: Rect, name: &str, order: i32, info: Option
     ui.painter().rect_stroke(badge_rect, theme::R_S, Stroke::new(1.0_f32, language.color().gamma_multiply(0.7)));
     ui.painter().galley(badge_rect.min + vec2(6.0, 2.0), badge, language.color());
     // Число.
-    let field = Rect::from_center_size(pos2(rect.right() - 74.0, rect.center().y), vec2(78.0, 24.0));
+    let field = Rect::from_center_size(pos2(rect.right() - 74.0, rect.center().y), vec2(78.0, theme::CONTROL_H));
     let mut value = order;
-    let response = ui.put(field, egui::DragValue::new(&mut value).speed(1.0).range(-32_000..=32_000));
+    let response = ui.allocate_new_ui(egui::UiBuilder::new().max_rect(field), |ui| crate::controls::number_field_range(ui, &mut value, -32_000..=32_000, 1.0, "", field.width())).inner;
     let hint = match info {
-        Some((_, code)) if code != order => format!("Order in code: {code}. Remove the row to use it."),
-        Some(_) => "The same as in code".to_string(),
-        None => "This component is not registered in this editor: its order still applies in games that register it".to_string(),
+        Some((_, code)) if code != order => trf!("Order in code: {code}. Remove the row to use it.", code = code),
+        Some(_) => tr_s("The same as in code").to_string(),
+        None => tr_s("This component is not registered in this editor: its order still applies in games that register it").to_string(),
     };
     response.on_hover_text(hint);
     if value != order {
@@ -423,7 +424,7 @@ fn paint_row(ui: &mut egui::Ui, rect: Rect, name: &str, order: i32, info: Option
         ui.painter().rect_filled(remove, theme::R_S, theme::BG_ACTIVE);
     }
     icons::paint(ui.painter(), remove.shrink(6.0), Icon::Close, if remove_response.hovered() { Color32::WHITE } else { theme::TEXT_MUTED });
-    if remove_response.on_hover_text("Remove from the list: the component goes back to the order from its code").clicked() {
+    if remove_response.on_hover_text(tr_s("Remove from the list: the component goes back to the order from its code")).clicked() {
         outcome.remove = true;
     }
     outcome
@@ -432,7 +433,7 @@ fn paint_row(ui: &mut egui::Ui, rect: Rect, name: &str, order: i32, info: Option
 fn paint_marker(ui: &mut egui::Ui, rect: Rect, alone: bool) {
     let y = rect.center().y;
     ui.painter().hline(rect.x_range().shrink(8.0), y, Stroke::new(1.0_f32, theme::accent()));
-    let text = if alone { "Default Time  \u{b7}  0  \u{b7}  add a script to run before or after everything else" } else { "Default Time  \u{b7}  0" };
+    let text = if alone { tr_s("Default Time  \u{b7}  0  \u{b7}  add a script to run before or after everything else") } else { tr_s("Default Time  \u{b7}  0") };
     let galley = ui.painter().layout_no_wrap(text.to_string(), theme::strong(11.5), theme::accent());
     let pill = Rect::from_center_size(rect.center(), galley.size() + vec2(20.0, 6.0));
     ui.painter().rect_filled(pill, theme::R_S, theme::BG_INSET);

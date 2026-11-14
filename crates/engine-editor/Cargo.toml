@@ -9,6 +9,17 @@ license.workspace = true
 engine-core.workspace = true
 engine-assets = { workspace = true, features = ["gltf"] }
 engine-render.workspace = true
+# Перевод интерфейса (язык, `tr`, каталог ru.po); общий для редактора, хаба и редактора моделей.
+engine-i18n.workspace = true
+# Дочерние процессы без окна консоли (engine_build::host::command).
+engine-build.workspace = true
+# Файл с исходниками проекта: File -> Export Project File... (project_file.rs).
+engine-project.workspace = true
+# Звук игры в редакторе: кнопка-динамик и громкость прослушивания (editor_audio.rs).
+engine-audio.workspace = true
+# Отчёт `piska-export doctor --json` в окне Tools → Check Build Tools… (build_tools.rs).
+serde.workspace = true
+serde_json = "1"
 egui.workspace = true
 egui-wgpu.workspace = true
 egui-winit.workspace = true
@@ -25,3 +36,11 @@ log.workspace = true
 # не трогая остальной текст и комментарии. Та же версия, что уже есть в Cargo.lock
 # (её тянет `toml` 0.8) — новых загрузок нет.
 toml_edit = "=0.22.27"
+# Проверка синтаксиса во вкладке Code (code_check_*.rs). Всё — версии, которые уже есть
+# в Cargo.lock: компилятор Scenario, RON сцен и материалов, WGSL через naga (её тянет
+# wgpu), разбор Rust через syn (позиции ошибок — `span-locations` у proc-macro2).
+engine-scenario.workspace = true
+ron.workspace = true
+naga = { version = "23.1.0", default-features = false, features = ["wgsl-in"] }
+syn = { version = "2.0.119", default-features = false, features = ["full", "parsing"] }
+proc-macro2 = { version = "1.0.107", default-features = false, features = ["span-locations"] }

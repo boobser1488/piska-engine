@@ -1,0 +1,31 @@
+(
+    name: "Pillar",
+    id: 273079434791026,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (5.0, 60.0, 5.0),
+    ),
+    components: [
+        (
+            kind: "MeshRenderer",
+            fields: {
+                "cast_shadows": Bool(true),
+                "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                "grid": Bool(false),
+                "materials": List([
+                    Asset("a5719af2801376f8fb2f448f61ab76f7"),
+                ]),
+                "mesh": Asset(""),
+                "metallic": Float(0.0),
+                "model_materials": Bool(false),
+                "roughness": Float(0.6),
+                "shape": Enum("Cylinder"),
+                "texture": Asset(""),
+                "tiling": Float(0.0),
+                "tint": Color(1.0, 1.0, 1.0, 1.0),
+            },
+        ),
+    ],
+)

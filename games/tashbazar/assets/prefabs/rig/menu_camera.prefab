@@ -1,0 +1,35 @@
+(
+    name: "Menu Camera",
+    id: 159459224079816,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Camera",
+            fields: {
+                "background": Enum("Sky"),
+                "clear_color": Color(0.010960094, 0.017641952, 0.033104762, 1.0),
+                "culling_mask": Int(4294967295),
+                "far": Float(900.0),
+                "fov_deg": Float(52.0),
+                "near": Float(0.1),
+                "ortho_size": Float(5.0),
+                "priority": Int(10),
+                "projection": Enum("Perspective"),
+            },
+        ),
+        (
+            kind: "MenuCamera",
+            fields: {
+                "angle_deg": Float(200.0),
+                "center": Vec3(0.0, 0.0, 0.0),
+                "height": Float(30.0),
+                "radius": Float(55.0),
+                "speed_deg": Float(3.0),
+            },
+        ),
+    ],
+)

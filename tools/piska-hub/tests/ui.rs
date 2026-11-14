@@ -94,9 +94,14 @@ fn temp(name: &str) -> PathBuf {
 }
 
 fn hub(config_dir: &Path) -> Hub {
+    // Свой пустой каталог программ движка: piska-editor «не собран» — проверки не зависят
+    // от того, что лежит в общем каталоге сборки.
+    let tools = config_dir.join("tools");
+    let _ = std::fs::create_dir_all(&tools);
     Hub::new(HubOptions {
         config_dir: Some(config_dir.to_path_buf()),
         dry_run: true,
+        tools_dir: Some(tools),
         ..HubOptions::default()
     })
 }
@@ -143,6 +148,13 @@ fn a_click_selects_a_project_and_a_double_click_opens_it_with_build_progress() {
     assert!(hub.job().is_none());
 
     hands.double_click(&mut hub, row);
+    // Свежая программа редактора в общем каталоге сборки открывается сразу (без cargo);
+    // тогда дальше проверяем ход сборки через «Rebuild and Open».
+    if hub.job().is_none() {
+        assert!(hub.dry_log.last().unwrap().starts_with("launch "), "{:?}", hub.dry_log);
+        hub.apply(HubAction::RebuildAndOpen(template.clone()));
+        hands.frames(&mut hub, 2);
+    }
     let job = hub.job().expect("double-click starts the editor build");
     assert_eq!(job.state, JobState::Building);
     assert!(hub.dry_log.last().unwrap().ends_with("build -p template --features editor --bin template-editor --message-format=json"));
@@ -161,6 +173,9 @@ fn a_click_selects_a_project_and_a_double_click_opens_it_with_build_progress() {
     let progress = &hub.job().unwrap().progress;
     assert_eq!(progress.errors.len(), 1);
     assert_eq!(progress.errors[0].location(), "games/template/src/lib.rs:3:9");
+    // Сборка идёт в фоне; подробности открываются из полосы задач.
+    assert!(hands.center(egui::Id::new("hub-error").with(0)).is_none(), "the details are not forced on the user");
+    hands.click_id(&mut hub, egui::Id::new(Hub::TASK_DETAILS_ID));
     assert!(hands.center(egui::Id::new("hub-error").with(0)).is_some(), "errors are listed with their location");
 
     // Отмена и возврат к списку.
@@ -208,7 +223,9 @@ fn the_wizard_creates_a_project_that_appears_in_the_list() {
 
     // «Open Now» — сборка редактора нового проекта.
     hands.click_id(&mut hub, egui::Id::new("hub-open-now"));
-    assert!(hub.dry_log.last().unwrap().contains("build -p hub_ui_probe --features editor --bin hub_ui_probe-editor"));
+    // Без своего кода — общий редактор; он ещё не собран, поэтому одна сборка piska-editor.
+    assert!(hub.dry_log.last().unwrap().contains("build -p piska-editor --bin piska-editor"), "{:?}", hub.dry_log);
+    assert_eq!(hub.job().unwrap().command.launch_args, ["--project".to_string(), created.display().to_string()]);
     hub.apply(HubAction::CancelJob);
     hub.apply(HubAction::CloseJob);
 
@@ -268,12 +285,131 @@ fn remove_pin_and_missing_projects_survive_a_restart() {
 }
 
 #[test]
+fn the_hub_stays_usable_while_a_build_runs() {
+    let config = temp("busy");
+    let mut hub = hub(&config);
+    let mut hands = Hands::new(&mut hub);
+    let template = root().join("games").join("template");
+    // Медленная («вечная») сборка в фоне.
+    hub.apply(HubAction::RebuildAndOpen(template.clone()));
+    assert!(hub.job().is_some_and(|j| j.is_building()));
+    hands.frames(&mut hub, 2);
+    assert!(hands.center(egui::Id::new(Hub::TASK_DETAILS_ID)).is_some(), "the task bar shows the build");
+
+    // Список, поиск и выбор работают как обычно.
+    let search = hub.search_field_id().expect("the projects page is shown, not a progress screen");
+    hands.click_id(&mut hub, search);
+    hands.type_text(&mut hub, "templ");
+    assert_eq!(hub.search(), "templ");
+    hub.set_search("");
+    hands.frames(&mut hub, 2);
+    if let Some(other) = hub.projects().iter().find(|l| l.folder() == "swarm").map(|l| l.path.clone()) {
+        hands.click_id(&mut hub, Hub::row_id(&other));
+        assert!(hub.selected().is_some_and(|s| paths::same(s, &other)));
+        // Второй проект в очередь, а не «подождите».
+        hub.apply(HubAction::RebuildAndOpen(other.clone()));
+        assert_eq!(hub.queued().count(), 1);
+        assert!(hub.job().is_some_and(|j| paths::same(&j.project, &template)), "the running build is not replaced");
+    }
+    // Настройки, мастер — тоже.
+    hands.click_id(&mut hub, Hub::nav_id(Page::Settings));
+    assert_eq!(hub.page(), Page::Settings);
+    hands.click_id(&mut hub, Hub::nav_id(Page::NewProject));
+    assert_eq!(hub.page(), Page::NewProject);
+    assert!(hub.job().is_some_and(|j| j.is_building()), "the build goes on in the background");
+
+    // Подробности — по кнопке, и из них назад, не останавливая сборку.
+    hands.click_id(&mut hub, egui::Id::new(Hub::TASK_DETAILS_ID));
+    hands.click_id(&mut hub, egui::Id::new("hub-job-hide"));
+    assert!(hub.job().is_some_and(|j| j.is_building()));
+    assert!(hub.search_field_id().is_some() || hub.page() == Page::NewProject);
+
+    // Сборка кончилась неудачей — следующая из очереди начинается сама.
+    if hub.queued().count() == 1 {
+        let job = hub.job_mut().unwrap();
+        job.feed_stdout(r#"{"reason":"build-finished","success":false}"#);
+        job.simulate_exit(false);
+        hands.frames(&mut hub, 2);
+        assert_eq!(hub.queued().count(), 0);
+        assert!(hub.job().is_some_and(|j| j.is_building() && j.title != "template"));
+    }
+    std::fs::remove_dir_all(&config).unwrap();
+}
+
+#[test]
+fn the_wizard_works_from_the_keyboard() {
+    let config = temp("keys");
+    let location = temp("keys-location");
+    let mut hub = hub(&config);
+    let mut hands = Hands::new(&mut hub);
+    hands.click_id(&mut hub, Hub::nav_id(Page::NewProject));
+    hands.frames(&mut hub, 2);
+    let focused = hands.ctx.memory(|m| m.focused());
+    assert_eq!(focused, Some(egui::Id::new(Hub::WIZARD_NAME_ID)), "the name field has focus when the page opens");
+    // Esc — назад к списку.
+    hands.frame(&mut hub, vec![key(egui::Key::Escape)]);
+    hands.frames(&mut hub, 2);
+    assert_eq!(hub.page(), Page::Projects);
+
+    hands.click_id(&mut hub, Hub::nav_id(Page::NewProject));
+    hands.frames(&mut hub, 2);
+    hub.wizard_mut().location = location.display().to_string();
+    hands.type_text(&mut hub, "keyboard_game");
+    assert_eq!(hub.wizard().name, "keyboard_game", "typing goes into the focused name field");
+    let started = std::time::Instant::now();
+    hands.frame(&mut hub, vec![key(egui::Key::Enter)]);
+    hands.frames(&mut hub, 2);
+    let created = location.join("keyboard_game");
+    assert!(created.join("Cargo.toml").is_file(), "Enter creates the project");
+    eprintln!("create + open request took {:.0} ms", started.elapsed().as_secs_f64() * 1000.0);
+    assert!(hub.dry_log.iter().any(|l| l.contains("piska-editor")), "…and opens it in the generic editor: {:?}", hub.dry_log);
+    assert_eq!(hub.page(), Page::Projects);
+    // Мастер помнит место и шаблон.
+    let again = Hub::new(HubOptions {
+        config_dir: Some(config.clone()),
+        dry_run: true,
+        ..HubOptions::default()
+    });
+    assert!(paths::same(std::path::Path::new(&again.wizard().location), &location));
+    assert_eq!(again.wizard().template, hub.wizard().template);
+    std::fs::remove_dir_all(&config).unwrap();
+    std::fs::remove_dir_all(&location).unwrap();
+}
+
+#[test]
+fn the_tools_page_starts_the_model_editor() {
+    let config = temp("tools");
+    let mut hub = hub(&config);
+    let mut hands = Hands::new(&mut hub);
+    hands.click_id(&mut hub, Hub::nav_id(Page::Tools));
+    assert_eq!(hub.page(), Page::Tools);
+    hands.click_id(&mut hub, egui::Id::new("hub-tool").with(0).with("open"));
+    // Modeler живёт в своём рабочем пространстве `modeler/`: его собирают по манифесту оттуда.
+    let command = hub.dry_log.last().unwrap();
+    assert!(command.contains("-p piska-modeler --bin piska-modeler"), "{:?}", hub.dry_log);
+    assert!(command.contains("build --manifest-path") && command.contains("modeler"), "{:?}", hub.dry_log);
+    std::fs::remove_dir_all(&config).unwrap();
+}
+
+fn key(key: egui::Key) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    }
+}
+
+#[test]
 fn add_existing_validates_the_folder() {
     let config = temp("add");
     let mut hub = hub(&config);
     let mut hands = Hands::new(&mut hub);
-    hands.click_id(&mut hub, egui::Id::new("hub-add-existing"));
-    assert!(matches!(hub.dialog(), Some(piska_hub::Dialog::Add { locate: None, .. })));
+    // «Add Existing…» стало страницей «Import Project» (docs/api/hub.md); диалог остался только для Locate.
+    hands.click_id(&mut hub, egui::Id::new("hub-import"));
+    assert_eq!(hub.page(), Page::Import);
+    assert!(hub.dialog().is_none());
     // Не проект — объяснение и ничего не добавлено.
     let not_project = temp("add-empty");
     hub.apply(HubAction::Add(not_project.clone()));

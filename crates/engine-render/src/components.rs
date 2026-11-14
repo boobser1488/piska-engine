@@ -166,9 +166,10 @@ impl Camera {
                 let half_h = self.ortho_size.max(1e-4);
                 let half_w = half_h * aspect;
                 // Симметричный диапазон глубины: 2D-камера может стоять в z = 0.
-                Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, -self.far, self.far)
+                // Обратная глубина (depth.rs): ближняя плоскость → 1.
+                crate::depth::orthographic(-half_w, half_w, -half_h, half_h, -self.far, self.far)
             }
-            Projection::Perspective => Mat4::perspective_rh(
+            Projection::Perspective => crate::depth::perspective(
                 self.fov_deg.to_radians(),
                 aspect,
                 self.near.max(1e-4),
@@ -383,8 +384,9 @@ component! {
     pub struct Environment {
         /// Сила рассеянного света от неба.
         pub ambient: f32 = 0.35,
-        /// Плотность тумана: даль растворяется в цвет неба у горизонта. 0 — без тумана.
-        pub fog_density: f32 = 0.004,
+        /// Плотность тумана (на метр): даль растворяется в цвет неба у горизонта.
+        /// 0 — без тумана. Начало и спад с высотой — компонент `Fog`.
+        pub fog_density: f32 = 0.0008,
         pub exposure: f32 = 1.0,
         /// Сила свечения вокруг ярких участков. 0 — без блума.
         pub bloom: f32 = 0.06,

@@ -201,6 +201,79 @@ pub struct RaycastHit3D {
     pub distance: f32,
 }
 
+// ----------------------------------------------------------------------
+// Запросы формой (cast / overlap / penetration): контроллер от первого лица и любой
+// свой персонаж, которому нужны «трассы корпуса», как в классических движках.
+// ----------------------------------------------------------------------
+
+/// Что учитывают запросы формой ([`Physics3D::cast_shape`], [`Physics3D::cast_box`],
+/// [`Physics3D::overlap_box`], [`Physics3D::compute_penetration_box`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct QueryFilter3D {
+    /// Не видеть этот объект (обычно — себя).
+    pub ignore: Option<GameObjectId>,
+    /// Учитывать триггеры. По умолчанию — нет: запросы ищут твёрдую геометрию.
+    pub include_triggers: bool,
+    /// Маска слоёв объектов, которые видит запрос (бит `1 << layer`).
+    pub layer_mask: u32,
+}
+
+impl Default for QueryFilter3D {
+    fn default() -> Self {
+        Self { ignore: None, include_triggers: false, layer_mask: u32::MAX }
+    }
+}
+
+impl QueryFilter3D {
+    /// Только твёрдая геометрия, все слои.
+    pub fn solid() -> Self {
+        Self::default()
+    }
+
+    /// Твёрдая геометрия без объекта `id`.
+    pub fn ignoring(id: GameObjectId) -> Self {
+        Self { ignore: Some(id), ..Self::default() }
+    }
+
+    /// То же, но и с триггерами.
+    pub fn with_triggers(mut self) -> Self {
+        self.include_triggers = true;
+        self
+    }
+
+    /// Только объекты слоёв из маски.
+    pub fn with_layers(mut self, mask: u32) -> Self {
+        self.layer_mask = mask;
+        self
+    }
+}
+
+/// Форма для [`Physics3D::cast_shape`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CastShape3D {
+    /// Прямоугольный ящик с половинами размеров.
+    Box { half_extents: Vec3 },
+    Sphere { radius: f32 },
+    /// Капсула вдоль локальной оси Y: радиус и половина высоты цилиндрической части.
+    Capsule { radius: f32, half_height: f32 },
+}
+
+/// Результат [`Physics3D::cast_shape`] / [`Physics3D::cast_box`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShapeHit3D {
+    pub object: GameObjectId,
+    /// Доля пути `motion`, пройденная до касания: 0..=1.
+    pub fraction: f32,
+    /// Пройденное расстояние до касания, м.
+    pub distance: f32,
+    /// Точка касания на поверхности задетого коллайдера (мировые координаты).
+    pub point: Vec3,
+    /// Нормаль поверхности задетого коллайдера в точке касания — смотрит на форму.
+    pub normal: Vec3,
+    /// Форма уже касалась коллайдера или была в нём в начале пути (`fraction == 0`).
+    pub started_inside: bool,
+}
+
 /// Сустав между телами, см. методы `*_joint` у [`Physics3D`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct JointId(u32);
@@ -522,6 +595,236 @@ impl Physics3D {
             },
         );
         found
+    }
+
+    /// Фильтр Rapier из [`QueryFilter3D`].
+    fn shape_query_filter(&self, filter: &QueryFilter3D) -> rp::QueryFilter<'static> {
+        let mut query = rp::QueryFilter::default();
+        if !filter.include_triggers {
+            query = query.exclude_sensors();
+        }
+        if let Some(entry) = filter.ignore.and_then(|id| self.entries.get(&id)) {
+            query = query.exclude_rigid_body(entry.body);
+        }
+        if filter.layer_mask != u32::MAX {
+            query = query.groups(rp::InteractionGroups::new(
+                rp::Group::ALL,
+                rp::Group::from_bits_truncate(filter.layer_mask),
+            ));
+        }
+        query
+    }
+
+    /// Unity: `Physics.BoxCast` / `SphereCast` / `CapsuleCast` — протащить форму из
+    /// `position` (с поворотом `rotation`) на вектор `motion` и вернуть первое касание.
+    ///
+    /// Коллайдеры, в которых форма уже стоит, но из которых она выходит (движение от
+    /// поверхности), не останавливают её — по полу можно скользить, стоя на нём. Если
+    /// же движение направлено внутрь, касание будет с `fraction == 0` и
+    /// `started_inside == true`. Видит мир на момент последнего шага физики. Нулевой
+    /// `motion` — `None` (для проверки «стою ли я в чём-то» есть [`Self::overlap_box`]).
+    pub fn cast_shape(
+        &self,
+        shape: CastShape3D,
+        position: Vec3,
+        rotation: Quat,
+        motion: Vec3,
+        filter: QueryFilter3D,
+    ) -> Option<ShapeHit3D> {
+        let length = motion.length();
+        if length.is_nan() || length <= 1e-9 || !position.is_finite() || !motion.is_finite() {
+            return None;
+        }
+        let pose = Pose { position, rotation: rotation.normalize() }.isometry();
+        let query = self.shape_query_filter(&filter);
+        let options = rapier3d::parry::query::ShapeCastOptions {
+            max_time_of_impact: 1.0,
+            target_distance: 0.0,
+            stop_at_penetration: false,
+            compute_impact_geometry_on_penetration: true,
+        };
+        let velocity = vector(motion);
+        let (collider, hit) = match shape {
+            CastShape3D::Box { half_extents } => return self.cast_cuboid(position, rotation.normalize(), half_extents, motion, query),
+            CastShape3D::Sphere { radius } => {
+                let ball = rp::Ball::new(radius.abs().max(1e-4));
+                self.query.cast_shape(&self.bodies, &self.colliders, &pose, &velocity, &ball, options, query)?
+            }
+            CastShape3D::Capsule { radius, half_height } => {
+                let capsule = rp::Capsule::new_y(half_height.abs(), radius.abs().max(1e-4));
+                self.query.cast_shape(&self.bodies, &self.colliders, &pose, &velocity, &capsule, options, query)?
+            }
+        };
+        let fraction = hit.time_of_impact.clamp(0.0, 1.0);
+        Some(ShapeHit3D {
+            object: *self.by_collider.get(&collider)?,
+            fraction,
+            distance: fraction * length,
+            point: Vec3::new(hit.witness1.x, hit.witness1.y, hit.witness1.z),
+            normal: vec3(&hit.normal1),
+            started_inside: hit.status == rapier3d::parry::query::ShapeCastStatus::PenetratingOrWithinTargetDist,
+        })
+    }
+
+    /// Ящик против мира: с коллайдерами-ящиками — точный расчёт по разделяющим осям
+    /// (у общего GJK относительная погрешность ~0.1 % от размеров: на полу в десятки метров
+    /// это миллиметры и сантиметры, а персонажу нужна точность до долей миллиметра),
+    /// с остальными формами — GJK parry.
+    fn cast_cuboid(
+        &self,
+        position: Vec3,
+        rotation: Quat,
+        half_extents: Vec3,
+        motion: Vec3,
+        query: rp::QueryFilter,
+    ) -> Option<ShapeHit3D> {
+        let half = half_extents.abs().max(Vec3::splat(1e-4));
+        let axes = [rotation * Vec3::X, rotation * Vec3::Y, rotation * Vec3::Z];
+        let reach = Vec3::new(
+            half.x * axes[0].x.abs() + half.y * axes[1].x.abs() + half.z * axes[2].x.abs(),
+            half.x * axes[0].y.abs() + half.y * axes[1].y.abs() + half.z * axes[2].y.abs(),
+            half.x * axes[0].z.abs() + half.y * axes[1].z.abs() + half.z * axes[2].z.abs(),
+        );
+        let end = position + motion;
+        let swept = rp::Aabb::new(
+            point(position.min(end) - reach - Vec3::splat(0.01)),
+            point(position.max(end) + reach + Vec3::splat(0.01)),
+        );
+        let pose = Pose { position, rotation }.isometry();
+        let cuboid = rp::Cuboid::new(vector(half));
+        let options = rapier3d::parry::query::ShapeCastOptions {
+            max_time_of_impact: 1.0,
+            target_distance: 0.0,
+            stop_at_penetration: false,
+            compute_impact_geometry_on_penetration: true,
+        };
+        // (доля пути, нормаль, точка, внутри с начала, коллайдер)
+        let mut best: Option<(f32, Vec3, Vec3, bool, rp::ColliderHandle)> = None;
+        self.query.colliders_with_aabb_intersecting_aabb(&swept, |handle| {
+            let Some(collider) = self.colliders.get(*handle) else {
+                return true;
+            };
+            if !query.test(&self.bodies, *handle, collider) {
+                return true;
+            }
+            let other = Pose::of(collider.position());
+            let found = if let Some(target) = collider.shape().as_cuboid() {
+                let target_axes = [other.rotation * Vec3::X, other.rotation * Vec3::Y, other.rotation * Vec3::Z];
+                sweep_boxes(position, axes, half, motion, other.position, target_axes, vec3(&target.half_extents)).map(
+                    |(t, normal, inside)| {
+                        let at = position + motion * t;
+                        let point = at - normal * (half.x * axes[0].dot(normal).abs() + half.y * axes[1].dot(normal).abs() + half.z * axes[2].dot(normal).abs());
+                        (t, normal, point, inside)
+                    },
+                )
+            } else {
+                rapier3d::parry::query::cast_shapes(
+                    collider.position(),
+                    &na::Vector3::zeros(),
+                    collider.shape(),
+                    &pose,
+                    &vector(motion),
+                    &cuboid,
+                    options,
+                )
+                .ok()
+                .flatten()
+                .map(|hit| {
+                    let normal = other.rotation * vec3(&hit.normal1);
+                    let point = other.position + other.rotation * Vec3::new(hit.witness1.x, hit.witness1.y, hit.witness1.z);
+                    let inside = hit.status == rapier3d::parry::query::ShapeCastStatus::PenetratingOrWithinTargetDist;
+                    (hit.time_of_impact.clamp(0.0, 1.0), normal, point, inside)
+                })
+            };
+            if let Some((t, normal, point, inside)) = found {
+                if best.is_none_or(|(b, ..)| t < b) {
+                    best = Some((t, normal, point, inside, *handle));
+                }
+            }
+            true
+        });
+        let (fraction, normal, point, started_inside, collider) = best?;
+        Some(ShapeHit3D {
+            object: *self.by_collider.get(&collider)?,
+            fraction,
+            distance: fraction * motion.length(),
+            point,
+            normal,
+            started_inside,
+        })
+    }
+
+    /// Протащить ящик, выровненный по осям мира (центр, половины размеров), на `motion`.
+    /// То же, что [`Self::cast_shape`] с `CastShape3D::Box` без поворота.
+    pub fn cast_box(&self, center: Vec3, half_extents: Vec3, motion: Vec3, filter: QueryFilter3D) -> Option<ShapeHit3D> {
+        self.cast_shape(CastShape3D::Box { half_extents }, center, Quat::IDENTITY, motion, filter)
+    }
+
+    /// Unity: `Physics.OverlapBox` — объекты, чьи коллайдеры пересекают ящик, выровненный
+    /// по осям (касание без пересечения не считается). Триггеры — по фильтру.
+    pub fn overlap_box(&self, center: Vec3, half_extents: Vec3, filter: QueryFilter3D) -> Vec<GameObjectId> {
+        let mut found = Vec::new();
+        if !center.is_finite() {
+            return found;
+        }
+        let cuboid = rp::Cuboid::new(vector(half_extents.abs().max(Vec3::splat(1e-4))));
+        let position = na::Isometry3::translation(center.x, center.y, center.z);
+        self.query.intersections_with_shape(
+            &self.bodies,
+            &self.colliders,
+            &position,
+            &cuboid,
+            self.shape_query_filter(&filter),
+            |collider| {
+                if let Some(id) = self.by_collider.get(&collider) {
+                    if !found.contains(id) {
+                        found.push(*id);
+                    }
+                }
+                true
+            },
+        );
+        found
+    }
+
+    /// Unity: `Physics.ComputePenetration` для ящика, выровненного по осям: на какой
+    /// вектор его сдвинуть, чтобы он не пересекал твёрдую геометрию (`None` — уже не
+    /// пересекает). Несколько пересечений разбираются по очереди, от самого глубокого.
+    pub fn compute_penetration_box(&self, center: Vec3, half_extents: Vec3, filter: QueryFilter3D) -> Option<Vec3> {
+        let cuboid = rp::Cuboid::new(vector(half_extents.abs().max(Vec3::splat(1e-4))));
+        let query = self.shape_query_filter(&filter);
+        let mut push = Vec3::ZERO;
+        for _ in 0..6 {
+            let at = center + push;
+            let position = na::Isometry3::translation(at.x, at.y, at.z);
+            let mut deepest: Option<(f32, Vec3)> = None;
+            self.query.intersections_with_shape(&self.bodies, &self.colliders, &position, &cuboid, query, |handle| {
+                let Some(collider) = self.colliders.get(handle) else {
+                    return true;
+                };
+                if let Ok(Some(contact)) =
+                    rapier3d::parry::query::contact(collider.position(), collider.shape(), &position, &cuboid, 0.0)
+                {
+                    let depth = -contact.dist;
+                    if depth > 0.0 && deepest.is_none_or(|(d, _)| depth > d) {
+                        deepest = Some((depth, vec3(&contact.normal1)));
+                    }
+                }
+                true
+            });
+            match deepest {
+                Some((depth, normal)) if depth > 1e-6 => push += normal * (depth + 1e-4),
+                _ => break,
+            }
+        }
+        (push != Vec3::ZERO).then_some(push)
+    }
+
+    /// Поза тела объекта такой, какой её видят запросы (после последнего шага физики):
+    /// позиция и поворот. Сравнивая её между шагами, персонаж «едет» на подвижной опоре.
+    pub fn collider_pose(&self, id: GameObjectId) -> Option<(Vec3, Quat)> {
+        let pose = Pose::of(self.body(id)?.position());
+        Some((pose.position, pose.rotation))
     }
 
     pub fn is_sleeping(&self, id: GameObjectId) -> bool {
@@ -1234,6 +1537,91 @@ impl Physics3D {
         }
         contacts
     }
+}
+
+/// Точное время касания движущегося ящика A (центр, оси, половины; путь `motion` за
+/// t ∈ [0, 1]) с неподвижным ящиком B по разделяющим осям (3 + 3 оси граней и 9 рёбер).
+/// Касание — пересечение объёмов: ящики, разделённые даже микронным зазором и
+/// движущиеся параллельно, не касаются. Возвращает (t, нормаль от B к A, A уже был в B).
+/// Если A с самого начала в B и уходит из него (или скользит вдоль) — `None`.
+fn sweep_boxes(
+    a_center: Vec3,
+    a_axes: [Vec3; 3],
+    a_half: Vec3,
+    motion: Vec3,
+    b_center: Vec3,
+    b_axes: [Vec3; 3],
+    b_half: Vec3,
+) -> Option<(f32, Vec3, bool)> {
+    let delta = b_center - a_center;
+    let mut enter = f32::NEG_INFINITY;
+    let mut enter_normal = Vec3::ZERO;
+    let mut exit = f32::INFINITY;
+    let mut shallowest = f32::INFINITY;
+    let mut shallow_normal = Vec3::ZERO;
+    let mut axes: [Vec3; 15] = [Vec3::ZERO; 15];
+    axes[..3].copy_from_slice(&b_axes);
+    axes[3..6].copy_from_slice(&a_axes);
+    for (i, a) in a_axes.iter().enumerate() {
+        for (j, b) in b_axes.iter().enumerate() {
+            axes[6 + i * 3 + j] = a.cross(*b);
+        }
+    }
+    for (index, axis) in axes.iter().enumerate() {
+        let length = axis.length();
+        if length < 1e-5 {
+            continue; // рёбра параллельны: ось повторяет ось грани
+        }
+        let l = *axis / length;
+        let radius = a_half.x * a_axes[0].dot(l).abs()
+            + a_half.y * a_axes[1].dot(l).abs()
+            + a_half.z * a_axes[2].dot(l).abs()
+            + b_half.x * b_axes[0].dot(l).abs()
+            + b_half.y * b_axes[1].dot(l).abs()
+            + b_half.z * b_axes[2].dot(l).abs();
+        let s = delta.dot(l);
+        let v = motion.dot(l);
+        let depth = radius - s.abs();
+        // Нормаль от B к A на этой оси.
+        let toward_a = if s > 0.0 { -l } else { l };
+        if depth < shallowest {
+            shallowest = depth;
+            shallow_normal = toward_a;
+        }
+        if v.abs() < 1e-9 {
+            if s.abs() >= radius {
+                return None; // разделены и не сближаются по этой оси
+            }
+            continue;
+        }
+        let t0 = (s - radius) / v;
+        let t1 = (s + radius) / v;
+        let (t_in, t_out) = if t0 < t1 { (t0, t1) } else { (t1, t0) };
+        // Оси рёбер берём, только если они явно позже граней: на стыке ящиков
+        // численная ничья иначе дала бы косую нормаль.
+        let bias = if index < 6 { 0.0 } else { 1e-4 };
+        if t_in > enter + bias {
+            enter = t_in;
+            // Нормаль на входе: с какой стороны A подошёл к B.
+            let s_at = s - v * t_in;
+            enter_normal = if s_at > 0.0 { -l } else { l };
+        }
+        exit = exit.min(t_out);
+        if enter > exit || enter > 1.0 || exit < 0.0 {
+            return None;
+        }
+    }
+    if enter > exit || enter > 1.0 || exit < 0.0 {
+        return None;
+    }
+    if enter >= 0.0 {
+        return Some((enter, enter_normal, false));
+    }
+    // С самого начала внутри: выход — по самой мелкой оси; уходим по ней — не касание.
+    if shallowest <= 0.0 || motion.dot(shallow_normal) >= 0.0 {
+        return None;
+    }
+    Some((0.0, shallow_normal, true))
 }
 
 fn set_sleep_thresholds(body: &mut rp::RigidBody, linear: f32, angular: f32) {

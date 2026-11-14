@@ -157,7 +157,7 @@ fn the_shipped_scene_loads_and_its_ball_lands_on_the_plaza() {
 /// Вид прямо сверху на точку `at` с высоты `height`.
 fn top_view(at: Vec3, height: f32, clear: Color) -> CameraView {
     let eye = at + Vec3::Y * height;
-    let projection = Mat4::perspective_rh(50f32.to_radians(), 1.0, 1.0, 5000.0);
+    let projection = engine_render::perspective(50f32.to_radians(), 1.0, 1.0, 5000.0);
     let view = Mat4::look_at_rh(eye, at, Vec3::NEG_Z);
     CameraView {
         view_proj: projection * view,
@@ -168,6 +168,7 @@ fn top_view(at: Vec3, height: f32, clear: Color) -> CameraView {
         culling_mask: u32::MAX,
         overlay: false,
         grid: None,
+        fog: true,
     }
 }
 
@@ -316,7 +317,7 @@ fn perf_terrain() {
     };
     let frame = |renderer: &mut Renderer, t: f32| {
         let mut view = view_at(t);
-        view.view_proj = Mat4::perspective_rh(60f32.to_radians(), w as f32 / h as f32, 0.1, 4000.0)
+        view.view_proj = engine_render::perspective(60f32.to_radians(), w as f32 / h as f32, 0.1, 4000.0)
             * Mat4::look_at_rh(view.position, view.position + Vec3::new(0.62, -0.12, -0.78), Vec3::Y);
         let clock = std::time::Instant::now();
         let stats = renderer.render_with(&app.world, &target, w, h, &view);
@@ -367,4 +368,92 @@ fn perf_terrain() {
         end.chunks_loaded,
         end.gpu_bytes as f64 / 1048576.0
     );
+}
+
+#[test]
+fn fog_spares_near_objects_fades_far_ones_and_switches_off() {
+    let _gpu = gpu_lock();
+    let mut renderer = Renderer::headless().expect("GPU");
+    let mut app = engine::app();
+    app.spawn("Sun").rotation(Quat::from_euler(EulerRot::YXZ, 0.4, -0.9, 0.0)).with(Light::default());
+    app.spawn("Near").at3(-1.5, 2.0, -10.0).with(MeshRenderer::cube().with_color(Color::rgb(0.8, 0.2, 0.1)));
+    app.spawn("Far").at3(150.0, 2.0, -900.0).scale(60.0, 60.0, 60.0).with(MeshRenderer::cube().with_color(Color::rgb(0.8, 0.2, 0.1)));
+    let (w, h) = (160u32, 90u32);
+    let eye = Vec3::new(0.0, 2.0, 0.0);
+    let mut view = CameraView::look_at(eye, Vec3::new(0.0, 2.0, -1.0), 60.0, w as f32 / h as f32, Color::BLACK, true);
+    view.view_proj = engine_render::perspective(60f32.to_radians(), w as f32 / h as f32, 0.1, 4000.0) * Mat4::look_at_rh(eye, Vec3::new(0.0, 2.0, -1.0), Vec3::Y);
+    let pixel = |image: &image::RgbaImage, p: Vec3| {
+        let clip = view.view_proj * p.extend(1.0);
+        let ndc = clip.truncate() / clip.w;
+        let (x, y) = (((ndc.x * 0.5 + 0.5) * w as f32) as u32, ((0.5 - ndc.y * 0.5) * h as f32) as u32);
+        image.get_pixel(x.min(w - 1), y.min(h - 1)).0
+    };
+    let near_point = Vec3::new(-1.5, 2.0, -9.5);
+    let far_point = Vec3::new(150.0, 2.0, -870.0);
+    let diff = |a: [u8; 4], b: [u8; 4]| (0..3).map(|k| a[k].abs_diff(b[k]) as u32).sum::<u32>();
+
+    // Без компонента Environment — туман по умолчанию.
+    let (default_fog, _) = renderer.capture_view(&app.world, w, h, Some(&view)).unwrap();
+    let off_id = app.spawn("Fog").with(Fog::off()).id();
+    let (off, _) = renderer.capture_view(&app.world, w, h, Some(&view)).unwrap();
+    app.world.scene.destroy(off_id);
+    app.world.flush_destroyed();
+    app.spawn("Environment").with(Environment { fog_density: 0.0, ..Environment::default() });
+    let (zero, _) = renderer.capture_view(&app.world, w, h, Some(&view)).unwrap();
+
+    assert!(diff(pixel(&default_fog, near_point), pixel(&off, near_point)) <= 6, "a cube 10 m away is not bleached");
+    let fogged = diff(pixel(&default_fog, far_point), pixel(&off, far_point));
+    assert!(fogged > 40, "a cube 900 m away fades into the horizon colour ({fogged})");
+    assert!(diff(pixel(&default_fog, far_point), pixel(&off, far_point)) > diff(pixel(&default_fog, near_point), pixel(&off, near_point)));
+    assert_eq!(off.as_raw(), zero.as_raw(), "Fog::off() and fog_density 0 are the same switch");
+}
+
+/// Снимки для разбора артефактов рельефа и тумана: одна и та же точка зрения до и
+/// после правок. Каталог — `TERRAIN_SHOTS`, приставка имён — `TERRAIN_SHOTS_TAG`. Запуск:
+/// `cargo test -p engine --test terrain terrain_views -- --ignored`.
+#[test]
+#[ignore]
+fn terrain_views() {
+    let Ok(dir) = std::env::var("TERRAIN_SHOTS") else { return };
+    let tag = std::env::var("TERRAIN_SHOTS_TAG").unwrap_or_else(|_| "shot".into());
+    let _gpu = gpu_lock();
+    let mut renderer = Renderer::headless().expect("GPU");
+    let (w, h) = (960u32, 540u32);
+    let look = |eye: Vec3, target: Vec3| {
+        let mut view = CameraView::look_at(eye, target, 50.0, w as f32 / h as f32, Color::BLACK, true);
+        view.view_proj = engine_render::perspective(50f32.to_radians(), w as f32 / h as f32, 0.1, 4000.0) * Mat4::look_at_rh(eye, target, Vec3::Y);
+        view
+    };
+    let mut save = |world: &World, name: &str, view: Option<&CameraView>| {
+        let (image, _) = renderer.capture_view(world, w, h, view).unwrap();
+        image.save(format!("{dir}/{tag}_{name}.png")).unwrap();
+    };
+
+    // 1. Сцена из assets/scenes — камерой сцены.
+    let mut app = engine::app();
+    app.world.load_scene_str(include_str!("../../../assets/scenes/terrain.scene"), "scenes/terrain.scene").unwrap();
+    save(&app.world, "scene_camera", None);
+    let g = |app: &App, x: f32, z: f32| terrain_height(&app.world, x, z).unwrap();
+    // Низкий полёт вдоль склона на площадку и горы.
+    let eye = Vec3::new(-120.0, g(&app, -120.0, 160.0) + 6.0, 160.0);
+    save(&app.world, "scene_low", Some(&look(eye, eye + Vec3::new(1.0, -0.12, -0.8))));
+
+    // 2. Рельеф из меню редактора (без Environment и света — как в новой сцене).
+    let mut app = engine::app();
+    let terrain = Terrain { size: 512.0, land_bias: 0.6, ..Terrain::default() };
+    app.spawn("Terrain").at3(-256.0, 0.0, -256.0).with(terrain);
+    let centre = Vec3::new(0.0, g(&app, 0.0, 0.0), 0.0);
+    let orbit = |distance: f32, pitch: f32| {
+        let yaw = 0.6f32;
+        centre + Vec3::new(yaw.sin() * pitch.cos(), pitch.sin(), yaw.cos() * pitch.cos()) * distance
+    };
+    save(&app.world, "editor_near", Some(&look(orbit(12.0, 0.42), centre)));
+    save(&app.world, "editor_mid", Some(&look(orbit(60.0, 0.42), centre)));
+    save(&app.world, "editor_far", Some(&look(orbit(250.0, 0.42), centre)));
+    save(&app.world, "editor_grazing", Some(&look(orbit(80.0, 0.08), centre)));
+    // То же без тумана и без теней.
+    app.spawn("Environment").with(Environment { fog_density: 0.0, ..Environment::default() });
+    save(&app.world, "editor_mid_nofog", Some(&look(orbit(60.0, 0.42), centre)));
+    app.spawn("Sun").rotation(Quat::from_euler(EulerRot::YXZ, 0.6, -0.35, 0.0)).with(Light { shadows: false, ..Light::default() });
+    save(&app.world, "editor_mid_nofog_noshadow_lowsun", Some(&look(orbit(60.0, 0.42), centre)));
 }

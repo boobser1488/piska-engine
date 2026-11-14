@@ -12,8 +12,11 @@ title = "Рой"
 [dependencies]
 # Редактор в игру не входит: экспорт собирает только рантайм. Подсистемы — только те,
 # что игра использует (docs/design/engine-features.md): остальные не попадают в exe.
-engine = { path = "../../crates/engine", default-features = false, features = ["audio", "ui", "gamepad"] }
+engine = { path = "../../crates/engine", default-features = false, features = ["audio", "audio-wav", "ui", "gamepad"] }
 log.workspace = true
+# Таблицы данных игры (assets/data/*.ron) читаются serde + ron.
+serde.workspace = true
+ron.workspace = true
 
 [build-dependencies]
 # Значок приложения в exe на Windows (см. build.rs).

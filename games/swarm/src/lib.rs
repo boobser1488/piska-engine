@@ -1,18 +1,24 @@
 //! «Рой» — аркадный шутер на выживание в круглой арене на Piska Engine.
 //!
 //! Одинокий дрон-ремонтник защищает реактор от волн взбесившихся машин: 20 волн,
-//! 4 босса, 18 улучшений, бесконечный режим. Логика — в [`sim`] (без сцены и рендера),
-//! отображение — в [`view`], интерфейс — в [`ui`], ход игры — в [`flow`].
+//! 4 босса, 18 улучшений, бесконечный режим.
 //!
-//! Управление: WASD / левый стик — движение; мышь / правый стик / стрелки — прицел и
-//! огонь; Пробел / RB — рывок; Esc / Start — пауза; на тачскрине — два экранных стика.
+//! Игра — проект, который можно читать и править в редакторе:
+//! * `assets/scenes/arena.scene` — арена, реактор, дрон, камера, менеджер игры и экраны
+//!   интерфейса (экземпляры префабов из `assets/ui`);
+//! * `assets/prefabs/` — дрон, враги, боссы, снаряды, обломки, эффекты;
+//! * `assets/data/*.ron` — враги, улучшения, баланс, таблица волн;
+//! * `assets/audio/*.wav` — звуки и музыка; `assets/project.settings` — управление;
+//! * `src/scripts/` — скрипты (по файлу на поведение), `src/sim.rs` — пул врагов и пуль с
+//!   сеткой столкновений, `src/view.rs` — спрайты пулов из префабов.
+//!
+//! Здесь только сборка игры: подключить ассеты, зарегистрировать скрипты, загрузить сцену.
 
 pub mod atlas;
-pub mod boss;
 pub mod bot;
 pub mod data;
 pub mod debug;
-pub mod flow;
+pub mod defs;
 pub mod grid;
 pub mod profile;
 pub mod rng;
@@ -21,7 +27,7 @@ pub mod sound;
 pub mod ui;
 pub mod view;
 
-/// Скрипты на Rust, созданные в редакторе (New Rust Script).
+/// Скрипты на Rust (по файлу на поведение); `mod.rs` пишет редактор.
 pub mod scripts;
 
 use engine::prelude::*;
@@ -29,37 +35,26 @@ use engine::prelude::*;
 /// Имя игры: каталог сохранений на десктопе, ключ `localStorage` в браузере.
 pub const GAME_NAME: &str = "Piska Swarm";
 
-/// Зарегистрировать компоненты игры (сцена ссылается на них по имени).
+/// Зарегистрировать компоненты игры (сцена и префабы ссылаются на них по имени).
 pub fn register(app: &mut App) {
     scripts::register(app);
-    app.register::<flow::Director>();
-}
-
-/// Привязки ввода: движение WASD / левый стик, прицел стрелками / правый стик, рывок, огонь.
-fn bind_input(input: &mut Input) {
-    input.set_axis_bindings(
-        "Horizontal",
-        AxisBindings::pair(Key::A, Key::D).also(GamepadButton::DPadLeft, GamepadButton::DPadRight).with_analog(GamepadAxis::LeftStickX),
-    );
-    input.set_axis_bindings(
-        "Vertical",
-        AxisBindings::pair(Key::S, Key::W).also(GamepadButton::DPadDown, GamepadButton::DPadUp).with_analog(GamepadAxis::LeftStickY),
-    );
-    input.set_axis_bindings("AimX", AxisBindings::pair(Key::Left, Key::Right).with_analog(GamepadAxis::RightStickX));
-    input.set_axis_bindings("AimY", AxisBindings::pair(Key::Down, Key::Up).with_analog(GamepadAxis::RightStickY));
-    input.set_button_bindings("Dash", vec![Key::Space.into(), Key::LShift.into(), GamepadButton::RightBumper.into(), GamepadButton::LeftBumper.into(), GamepadButton::South.into()]);
-    input.set_button_bindings("Fire", vec![Binding::Mouse(MouseButton::Left), GamepadButton::RightTrigger.into(), GamepadButton::LeftTrigger.into()]);
 }
 
 /// Собрать игру с заданным хранилищем сохранений (тесты передают `SaveData::in_memory()`).
+/// Управление берётся из `assets/project.settings`, звуки — из `assets/audio`.
 pub fn build_with(save: SaveData) -> Result<App, EngineError> {
+    build_from(save, engine::assets_dir!())
+}
+
+/// То же, но с каталогом ассетов `assets` (тесты проверяют копию проекта после правок в редакторе).
+pub fn build_from(save: SaveData, assets: impl AsRef<std::path::Path>) -> Result<App, EngineError> {
     let mut app = engine::app();
     register(&mut app);
     app.world.resources.insert(save);
-    bind_input(&mut app.world.input);
-    engine::mount_assets(&mut app, engine::assets_dir!())?;
+    engine::mount_assets(&mut app, assets)?;
+    let db = app.world.resources.get::<AssetDatabase>().cloned().expect("mount_assets inserted the database");
     if let Some(audio) = app.world.resources.get_mut::<Audio>() {
-        sound::register(audio);
+        sound::register(audio, &db);
     }
     engine::load_scene(&mut app, "scenes/arena.scene")?;
     Ok(app)

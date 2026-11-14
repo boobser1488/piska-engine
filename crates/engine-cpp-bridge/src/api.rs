@@ -796,6 +796,13 @@ extern "C" fn api_get_field(
             });
             return 0;
         };
+        // Поле-ссылка на объект: C++ получает сам объект (0 — не назначено или уничтожен).
+        if let Value::Object(uid) = value {
+            let mut object = nil_value();
+            object.kind = ENGINE_VALUE_OBJECT;
+            object.i = world.scene.find_by_uid(uid).map_or(0, |target| target.to_bits() as i64);
+            return put(out, object) as i32;
+        }
         put(out, to_engine_value(&value)) as i32
     })
     .unwrap_or(0)
@@ -811,6 +818,15 @@ extern "C" fn api_set_field(
         return 0;
     };
     with_object("set_field", object, |world, id| {
+        // Объект из C++ приходит числом (`ENGINE_VALUE_OBJECT` → `Int`): для поля-ссылки
+        // это стабильный номер объекта (0 — очистить).
+        let as_reference = match new {
+            Value::Int(bits) => Some(Value::Object(
+                world.scene.get(GameObjectId::from_bits(bits as u64)).map_or(0, |o| o.uid()),
+            )),
+            Value::Nil => Some(Value::Object(0)),
+            _ => None,
+        };
         let Some(o) = world.scene.get_mut(id) else {
             return 0;
         };
@@ -823,6 +839,7 @@ extern "C" fn api_set_field(
             return 0;
         };
         let new = match target.get_field(field) {
+            Some(Value::Object(_)) => as_reference.unwrap_or(new),
             Some(current) => coerce_like(&current, new),
             None => new,
         };

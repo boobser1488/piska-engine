@@ -1,0 +1,101 @@
+(
+    name: "Golden Gear",
+    id: 97517822437032,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Collider",
+            fields: {
+                "collides_with": Int(4294967295),
+                "density": Float(1.0),
+                "friction": Float(0.5),
+                "is_trigger": Bool(true),
+                "mesh": Asset(""),
+                "offset": Vec3(0.0, 0.0, 0.0),
+                "radius": Float(0.8),
+                "restitution": Float(0.0),
+                "shape": Enum("Sphere"),
+                "size": Vec3(1.0, 1.0, 1.0),
+            },
+        ),
+        (
+            kind: "GearPickup",
+            fields: {
+                "bob_height": Float(0.12),
+                "clock": Float(0.0),
+                "golden": Bool(true),
+                "origin": Vec3(0.0, 0.0, 0.0),
+                "spin_deg": Float(120.0),
+                "taken": Bool(false),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Model",
+            id: 95000396795472,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.35, 1.35, 1.35),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("2a8ef771fbdc3f8228a82a2fb194d445"),
+                        ]),
+                        "mesh": Asset("419478c7934a26b66f73232f4a233d8e"),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cube"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Hub",
+            id: 276291077812651,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (90.0, 0.0, 0.0),
+                scale: (0.324, 0.27, 0.324),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(true),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("1019426dc141204324ea67c5ae3910d1"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

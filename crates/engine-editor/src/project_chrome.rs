@@ -2,6 +2,7 @@
 //! поиск с областью, вид, строка состояния, всплывающие сообщения, подтверждение удаления,
 //! подсказка при перетаскивании файлов из ОС и встроенный браузер файлов для импорта.
 
+use crate::i18n::{tr_s, trf, trn};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -52,23 +53,31 @@ pub(crate) fn top_bar(editor: &mut Editor, ui: &mut egui::Ui) {
     let can_forward = editor.project.history.can_forward();
     let can_up = editor.project.place == Place::Code || !editor.project.folder.is_empty();
     let ctx = ui.ctx().clone();
+    let cx = crate::project_menus::MenuCx::new(editor);
+    let create_folder = cx.folder.clone();
     theme::toolbar_strip(ui, |ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
-        if nav_button(ui, Nav::Back, can_back, "Back (Alt+Left, mouse button 4)").clicked() && can_back {
+        // Создать: каталог, сцену, материал, модель, скрипты — то же, что Create ▸ в меню.
+        theme::dropdown_button(ui, tr_s("Create"), tr_s("Create a folder, scene, material, model or script here"), |ui| {
+            crate::project_menus::create_items(ui, &mut editor.project.cmds, &cx, &create_folder);
+        });
+        theme::toolbar_separator(ui);
+        if nav_button(ui, Nav::Back, can_back, tr_s("Back (Alt+Left, mouse button 4)")).clicked() && can_back {
             editor.project.cmds.push(Cmd::Back);
         }
-        if nav_button(ui, Nav::Forward, can_forward, "Forward (Alt+Right, mouse button 5)").clicked() && can_forward {
+        if nav_button(ui, Nav::Forward, can_forward, tr_s("Forward (Alt+Right, mouse button 5)")).clicked() && can_forward {
             editor.project.cmds.push(Cmd::Forward);
         }
-        if nav_button(ui, Nav::Up, can_up, "Up one folder (Alt+Up, Backspace)").clicked() && can_up {
+        if nav_button(ui, Nav::Up, can_up, tr_s("Up one folder (Alt+Up, Backspace)")).clicked() && can_up {
             editor.project.cmds.push(Cmd::Up);
         }
         ui.add_space(theme::SP_S);
         if compact {
             // Дерево каталогов свёрнуто в выпадающий список.
-            let response = egui::menu::menu_custom_button(
+            let response = crate::controls::menu_anchor(
                 ui,
-                egui::Button::new("").min_size(vec2(theme::CONTROL_H, theme::CONTROL_H)),
+                vec2(theme::CONTROL_H, theme::CONTROL_H),
+                true,
                 |ui| {
                     theme::menu_body(ui);
                     ui.set_min_size(vec2(220.0, 260.0));
@@ -83,7 +92,7 @@ pub(crate) fn top_bar(editor: &mut Editor, ui: &mut egui::Ui) {
                 Icon::Folder,
                 theme::FOLDER,
             );
-            response.on_hover_text("Folders");
+            response.on_hover_text(tr_s("Folders"));
         }
 
         // Правая часть занимает, сколько нужно; путь — всё, что осталось.
@@ -108,18 +117,18 @@ pub(crate) fn top_bar(editor: &mut Editor, ui: &mut egui::Ui) {
 }
 
 fn view_controls(editor: &mut Editor, ui: &mut egui::Ui, slider: bool, scope: bool, search_width: f32) {
-    if icons::button(ui, Icon::Refresh, false, None, "Rescan the assets directory (Ctrl+R)").clicked() {
+    if icons::button(ui, Icon::Refresh, false, None, tr_s("Rescan the assets directory (Ctrl+R)")).clicked() {
         editor.project.cmds.push(Cmd::Refresh);
     }
     let details = editor.prefs.project_ui.details;
-    if icons::button(ui, Icon::Inspector, details, None, "Show or hide the details pane").clicked() {
+    if icons::button(ui, Icon::Inspector, details, None, tr_s("Show or hide the details pane")).clicked() {
         editor.prefs.project_ui.details = !details;
     }
     let grid = editor.prefs.project_ui.grid;
-    if icons::button(ui, Icon::List, !grid, None, "Show as a list with columns").clicked() {
+    if icons::button(ui, Icon::List, !grid, None, tr_s("Show as a list with columns")).clicked() {
         editor.prefs.project_ui.grid = false;
     }
-    if icons::button(ui, Icon::Tiles, grid, None, "Show as tiles with previews").clicked() {
+    if icons::button(ui, Icon::Tiles, grid, None, tr_s("Show as tiles with previews")).clicked() {
         editor.prefs.project_ui.grid = true;
     }
     if slider {
@@ -127,7 +136,7 @@ fn view_controls(editor: &mut Editor, ui: &mut egui::Ui, slider: bool, scope: bo
         let mut value = if grid { editor.prefs.project_ui.tile } else { 40.0 };
         let changed = ui
             .add(egui::Slider::new(&mut value, 40.0..=160.0).show_value(false))
-            .on_hover_text("Item size: drag to the left end for a compact list")
+            .on_hover_text(tr_s("Item size: drag to the left end for a compact list"))
             .changed();
         if changed {
             if value <= 44.0 {
@@ -144,20 +153,19 @@ fn view_controls(editor: &mut Editor, ui: &mut egui::Ui, slider: bool, scope: bo
     let query = editor.project.filter.trim().to_string();
     let known = crate::project_nav::DEFAULT_SEARCHES.iter().any(|(_, q)| *q == query)
         || editor.prefs.project_ui.searches.iter().any(|(_, q)| *q == query);
-    if !query.is_empty() && !known && icons::small_button(ui, Icon::Star, "Save this search to Favorites").clicked() {
+    if !query.is_empty() && !known && icons::small_button(ui, Icon::Star, tr_s("Save this search to Favorites")).clicked() {
         editor.project.cmds.push(Cmd::SaveSearch);
     }
     if scope {
         let current = editor.prefs.project_ui.scope();
         let mut chosen = None;
-        let response = egui::menu::menu_custom_button(
+        let response = crate::controls::menu_button(
             ui,
-            egui::Button::new(egui::RichText::new(current.label()).size(theme::FONT_CAPTION).color(theme::TEXT))
-                .fill(theme::BG_FIELD)
-                .min_size(vec2(92.0, theme::CONTROL_H)),
+            egui::RichText::new(current.label()).size(theme::FONT_CAPTION).color(theme::TEXT),
+            92.0,
             |ui| {
                 theme::menu_body(ui);
-                theme::menu_section(ui, "Search in");
+                theme::menu_section(ui, tr_s("Search in"));
                 for option in [Scope::ThisFolder, Scope::AllAssets] {
                     if item(option.label()).checked(current == option).show(ui) {
                         chosen = Some(option);
@@ -166,7 +174,7 @@ fn view_controls(editor: &mut Editor, ui: &mut egui::Ui, slider: bool, scope: bo
             },
         )
         .response;
-        response.on_hover_text("Where the search looks");
+        response.on_hover_text(tr_s("Where the search looks"));
         if let Some(option) = chosen {
             editor.prefs.project_ui.scope = option.id().to_string();
         }
@@ -179,14 +187,14 @@ fn view_controls(editor: &mut Editor, ui: &mut egui::Ui, slider: bool, scope: bo
             editor.project.focus_search = false;
         }
     }
-    let response = theme::search_field(ui, &mut editor.project.filter, "Search  (t:scene  t:material …)", search_width);
+    let response = theme::search_field(ui, &mut editor.project.filter, tr_s("Search  (t:scene  t:material …)"), search_width);
     editor.project.search_id = Some(response.id);
 }
 
 /// Хлебные крошки; щелчок по пустому месту превращает их в поле пути.
 fn path_bar(editor: &mut Editor, ui: &mut egui::Ui, width: f32, ctx: &egui::Context) {
     let (rect, _) = ui.allocate_exact_size(vec2(width, theme::CONTROL_H), Sense::hover());
-    ui.painter().rect(rect, theme::R_S, theme::BG_INSET, Stroke::new(1.0_f32, theme::LINE_STRONG));
+    crate::controls::paint_frame(ui.painter(), rect, theme::R_S, theme::BG_INSET, theme::LINE_STRONG);
     if let Some(text) = editor.project.path_edit.clone() {
         let mut text = text;
         let id = egui::Id::new("project_path_field");
@@ -242,7 +250,7 @@ fn path_bar(editor: &mut Editor, ui: &mut egui::Ui, width: f32, ctx: &egui::Cont
     let background = ui.interact(rect, egui::Id::new("project_path_background"), Sense::click());
     let mut crumbs: Vec<(String, String)> = Vec::new();
     let in_code = editor.project.place == Place::Code;
-    crumbs.push((if in_code { "Code" } else { "Assets" }.to_string(), if in_code { crate::project_nav::CODE_LOC.to_string() } else { String::new() }));
+    crumbs.push((if in_code { tr_s("Code") } else { tr_s("Assets") }.to_string(), if in_code { crate::project_nav::CODE_LOC.to_string() } else { String::new() }));
     if !in_code {
         let mut path = String::new();
         for part in editor.project.folder.split('/').filter(|p| !p.is_empty()) {
@@ -309,14 +317,14 @@ fn path_bar(editor: &mut Editor, ui: &mut egui::Ui, width: f32, ctx: &egui::Cont
         }
     }
     if searching {
-        child.label(egui::RichText::new("Search results").color(theme::TEXT).size(theme::FONT_BODY));
+        child.label(egui::RichText::new(tr_s("Search results")).color(theme::TEXT).size(theme::FONT_BODY));
     }
     if background.clicked() && !in_code {
-        let text = if editor.project.folder.is_empty() { "Assets".to_string() } else { format!("Assets/{}", editor.project.folder) };
+        let text = if editor.project.folder.is_empty() { tr_s("Assets").to_string() } else { format!("Assets/{}", editor.project.folder) };
         editor.project.path_edit = Some(text);
         editor.project.path_error = None;
     }
-    background.on_hover_text("Click to type a path");
+    background.on_hover_text(tr_s("Click to type a path"));
 }
 
 /// Строка состояния окна: выделение, число элементов.
@@ -351,18 +359,17 @@ pub(crate) fn status_line(editor: &mut Editor, ui: &mut egui::Ui) {
 pub(crate) fn status_text(editor: &Editor) -> (String, String) {
     let project = &editor.project;
     let total = project.last_total;
-    let noun = |n: usize| if n == 1 { "item" } else { "items" };
     let right = if project.filter.trim().is_empty() {
-        format!("{total} {}", noun(total))
+        trn!("{n} item", "{n} items", total)
     } else {
-        format!("{total} {}", if total == 1 { "result" } else { "results" })
+        trn!("{n} result", "{n} results", total)
     };
     let left = match project.selection.len() {
         0 => {
             if project.place == Place::Code {
-                "Code".to_string()
+                tr_s("Code").to_string()
             } else if project.folder.is_empty() {
-                "Assets".to_string()
+                tr_s("Assets").to_string()
             } else {
                 format!("Assets/{}", project.folder)
             }
@@ -373,7 +380,7 @@ pub(crate) fn status_text(editor: &Editor) -> (String, String) {
         }
         n => {
             let summary = project.summary.as_ref().map(|(_, s)| s.clone()).unwrap_or_default();
-            format!("{n} items selected · {}", crate::sorting::size_label(summary.bytes))
+            trn!("{n} item selected · {size}", "{n} items selected · {size}", n, size = crate::sorting::size_label(summary.bytes))
         }
     };
     (left, right)
@@ -389,18 +396,18 @@ pub(crate) fn overlays(editor: &mut Editor, ui: &mut egui::Ui) {
     let hovered = ctx.input(|i| !i.raw.hovered_files.is_empty());
     let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
     if hovered && editor.project.place == Place::Assets {
-        let dest = if editor.project.folder.is_empty() { "Assets".to_string() } else { format!("Assets/{}", editor.project.folder) };
+        let dest = if editor.project.folder.is_empty() { tr_s("Assets").to_string() } else { format!("Assets/{}", editor.project.folder) };
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("project_drop_hint")));
         painter.rect_filled(panel, 0.0, theme::BG_APP.gamma_multiply(0.6));
         painter.rect_stroke(panel.shrink(4.0), theme::R_M, Stroke::new(1.5_f32, theme::accent()));
-        painter.text(panel.center(), Align2::CENTER_CENTER, format!("Drop files to import them into {dest}"), theme::body(), theme::TEXT_STRONG);
+        painter.text(panel.center(), Align2::CENTER_CENTER, trf!("Drop files to import them into {dest}", dest = dest), theme::body(), theme::TEXT_STRONG);
     }
     if !dropped.is_empty() {
         if editor.project.place == Place::Assets {
             let dest = editor.project.folder.clone();
             editor.project.cmds.push(Cmd::Import { dest, files: dropped });
         } else {
-            editor.project_toast(&ctx, ToastKind::Warn, "Open an asset folder first: files are imported into the open folder");
+            editor.project_toast(&ctx, ToastKind::Warn, tr_s("Open an asset folder first: files are imported into the open folder"));
         }
     }
 
@@ -433,7 +440,7 @@ pub(crate) fn overlays(editor: &mut Editor, ui: &mut egui::Ui) {
                                     ui.label(egui::RichText::new(&toast.text).size(theme::FONT_BODY).color(theme::TEXT));
                                     if let Some((done, total)) = toast.progress {
                                         let fraction = (total > 0).then(|| done as f32 / total as f32);
-                                        theme::progress_bar(ui, fraction, &if total > 0 { format!("{done} of {total} files") } else { "Counting files…".to_string() });
+                                        theme::progress_bar(ui, fraction, &if total > 0 { trf!("{done} of {total} files", done = done, total = total) } else { tr_s("Counting files…").to_string() });
                                     }
                                 });
                             });
@@ -459,24 +466,23 @@ fn confirm_dialog(editor: &mut Editor, ctx: &egui::Context, panel: Rect) {
         .show(ctx, |ui| {
             theme::dialog_frame(ui.style()).show(ui, |ui| {
                 ui.set_max_width(380.0);
-                theme::dialog_title(ui, Icon::Trash, theme::ERROR, "Delete permanently?");
+                theme::dialog_title(ui, Icon::Trash, theme::ERROR, tr_s("Delete permanently?"));
                 ui.add_space(theme::SP_S);
                 let names: Vec<&str> = paths.iter().take(5).map(|p| file_name(p)).collect();
-                let more = if paths.len() > 5 { format!(" and {} more", paths.len() - 5) } else { String::new() };
+                let more = if paths.len() > 5 { trf!(" and {} more", paths.len() - 5) } else { String::new() };
                 ui.label(
-                    egui::RichText::new(format!(
-                        "This system has no Recycle Bin, so {} will be deleted PERMANENTLY from disk together with their .meta files. This cannot be undone.\n\n{}{more}",
-                        if paths.len() == 1 { "this item".to_string() } else { format!("these {} items", paths.len()) },
-                        names.join(", ")
-                    ))
+                    egui::RichText::new(trf!(
+                        "This system has no Recycle Bin, so {p0} will be deleted PERMANENTLY from disk together with their .meta files. This cannot be undone.\n\n{p1}{more}",
+                        p0 = if paths.len() == 1 { "this item".to_string() } else { trf!("these {} items", paths.len()) },
+                        p1 = names.join(", ")
+                    , more = more))
                     .color(theme::TEXT),
                 );
-                ui.add_space(theme::SP_L);
-                ui.horizontal(|ui| {
-                    if theme::danger_button(ui, "Delete Permanently").clicked() {
+                crate::window_kit::dialog_actions(ui, |ui| {
+                    if theme::danger_button(ui, tr_s("Delete Permanently")).clicked() {
                         decision = Some(true);
                     }
-                    if theme::secondary_button(ui, "Cancel").clicked() {
+                    if theme::secondary_button(ui, tr_s("Cancel")).clicked() {
                         decision = Some(false);
                     }
                 });
@@ -552,7 +558,7 @@ impl Browser {
                 self.anchor = None;
                 self.error = None;
             }
-            Err(err) => self.error = Some(format!("Cannot open `{}`: {err}", dir.display())),
+            Err(err) => self.error = Some(trf!("Cannot open `{p0}`: {err}", p0 = dir.display(), err = err)),
         }
     }
 
@@ -565,23 +571,21 @@ fn browser_window(editor: &mut Editor, ctx: &egui::Context) {
     let Some(mut browser) = editor.project.browser.take() else { return };
     let mut keep = true;
     let mut import: Option<Vec<PathBuf>> = None;
-    let title = if browser.dest.is_empty() { "Assets".to_string() } else { format!("Assets/{}", browser.dest) };
-    egui::Window::new("Import New Asset")
-        .id(egui::Id::new("project_import_browser"))
-        .collapsible(false)
-        .resizable(true)
+    let title = if browser.dest.is_empty() { tr_s("Assets").to_string() } else { format!("Assets/{}", browser.dest) };
+    // Заголовок рисует `dialog_title` внутри (в нём папка назначения).
+    let mut open = true;
+    crate::window_kit::tool_window(egui::Id::new("project_import_browser"), "")
         .default_size(vec2(520.0, 420.0))
-        .frame(theme::window_frame(&ctx.style()))
-        .show(ctx, |ui| {
-            theme::dialog_title(ui, Icon::ArrowDown, theme::accent(), &format!("Import into {title}"));
+        .show(ctx, &mut open, |ui| {
+            theme::dialog_title(ui, Icon::ArrowDown, theme::accent(), &trf!("Import into {title}", title = title));
             ui.add_space(theme::SP_S);
             ui.horizontal(|ui| {
-                if icons::button(ui, Icon::ArrowUp, false, None, "Parent folder").clicked() {
+                if icons::button(ui, Icon::ArrowUp, false, None, tr_s("Parent folder")).clicked() {
                     if let Some(parent) = browser.dir.parent().map(|p| p.to_path_buf()) {
                         browser.enter(parent);
                     }
                 }
-                let response = ui.add(egui::TextEdit::singleline(&mut browser.path_text).desired_width(ui.available_width() - 4.0));
+                let response = crate::controls::text_field(ui, &mut browser.path_text, "", f32::INFINITY);
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     let target = PathBuf::from(browser.path_text.trim());
                     browser.enter(target);
@@ -646,22 +650,23 @@ fn browser_window(editor: &mut Editor, ctx: &egui::Context) {
             if let Some(dir) = entered {
                 browser.enter(dir);
             }
-            ui.add_space(theme::SP_S);
-            ui.horizontal(|ui| {
+            crate::window_kit::dialog_actions(ui, |ui| {
                 let count = browser.selected.len();
                 ui.add_enabled_ui(count > 0, |ui| {
-                    let label = if count == 0 { "Import".to_string() } else { format!("Import {count} {}", if count == 1 { "item" } else { "items" }) };
+                    let label = if count == 0 { tr_s("Import").to_string() } else { trn!("Import {n} item", "Import {n} items", count) };
                     if theme::primary_button(ui, &label).clicked() {
                         import = Some(browser.paths());
                     }
                 });
-                if theme::secondary_button(ui, "Cancel").clicked() {
+                if theme::secondary_button(ui, tr_s("Cancel")).clicked() {
                     keep = false;
                 }
-                ui.label(egui::RichText::new("Ctrl-click selects several. Double-click opens a folder.").size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new(tr_s("Ctrl-click selects several. Double-click opens a folder.")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
+                });
             });
         });
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         keep = false;
     }
     if let Some(files) = import {

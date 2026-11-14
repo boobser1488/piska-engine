@@ -1,0 +1,84 @@
+(
+    name: "checkpoint",
+    id: 83945241609210,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "Checkpoint",
+            fields: {
+                "beacon": Object(39053349098580),
+                "respawn_yaw_deg": Float(0.0),
+                "size": Vec3(3.0, 2.5, 3.0),
+                "title": Str(""),
+            },
+        ),
+    ],
+    children: [
+        (
+            name: "Beacon",
+            id: 39053349098580,
+            transform: (
+                position: (0.0, 1.1, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (0.18, 2.2, 0.18),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(false),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("3f8e3c105e0a06fe66970019e8328f28"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+        (
+            name: "Ring",
+            id: 123834240017742,
+            transform: (
+                position: (0.0, 0.02, 0.0),
+                rotation: (0.0, 0.0, 0.0),
+                scale: (1.4, 0.03, 1.4),
+            ),
+            components: [
+                (
+                    kind: "MeshRenderer",
+                    fields: {
+                        "cast_shadows": Bool(false),
+                        "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                        "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                        "grid": Bool(false),
+                        "materials": List([
+                            Asset("3f8e3c105e0a06fe66970019e8328f28"),
+                        ]),
+                        "mesh": Asset(""),
+                        "metallic": Float(0.0),
+                        "model_materials": Bool(false),
+                        "roughness": Float(0.6),
+                        "shape": Enum("Cylinder"),
+                        "texture": Asset(""),
+                        "tiling": Float(0.0),
+                        "tint": Color(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+            ],
+        ),
+    ],
+)

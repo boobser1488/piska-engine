@@ -97,6 +97,10 @@ fn shoot(hub: &mut Hub, frames: u32, input: impl FnMut(u32, &mut Hub) -> Vec<egu
 #[test]
 fn hub_screens_render() {
     let _gpu = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    // PISKA_HUB_LANG=ru — те же снимки на русском (английский — по умолчанию).
+    if let Some(language) = std::env::var("PISKA_HUB_LANG").ok().and_then(|code| engine_editor::kit::i18n::Language::from_code(&code)) {
+        engine_editor::kit::i18n::set(language);
+    }
     let config = temp("config");
     let outside = temp("outside");
     let mut hub = staged_hub(&config, &outside);
@@ -162,6 +166,7 @@ fn hub_screens_render() {
     hub.apply(HubAction::Navigate(Page::Projects));
     let lantern = paths::find_engine_root().unwrap().join("games").join("lantern");
     hub.apply(HubAction::RebuildAndOpen(lantern.clone()));
+    hub.apply(HubAction::ShowJob(true));
     hub.job_mut().expect("Rebuild and Open starts a build").feed_stderr("    Blocking waiting for file lock on build directory");
     let waiting = shoot(&mut hub, 6, |_, _| vec![]);
     save(&waiting, "06a_build_waiting_for_lock");
@@ -179,6 +184,11 @@ fn hub_screens_render() {
     }
     let progress = shoot(&mut hub, 6, |_, _| vec![]);
     save(&progress, "06_build_progress");
+    // Та же сборка в фоне: список работает, полоса задач внизу.
+    hub.apply(HubAction::ShowJob(false));
+    let background = shoot(&mut hub, 6, |_, _| vec![]);
+    save(&background, "06b_build_in_background");
+    hub.apply(HubAction::ShowJob(true));
     {
         let job = hub.job_mut().unwrap();
         job.feed_stdout(r#"{"reason":"compiler-message","package_id":"path+file:///e/games/lantern#0.0.1","message":{"level":"error","message":"cannot find value `jump_heigth` in this scope","rendered":"error[E0425]: cannot find value `jump_heigth` in this scope\n  --> games/lantern/src/player.rs:142:27\n    |\n142 |         body.velocity.y = jump_heigth;\n    |                           ^^^^^^^^^^^ help: a field with a similar name exists: `jump_height`\n","spans":[{"file_name":"games/lantern/src/player.rs","line_start":142,"column_start":27,"is_primary":true}]}}"#);
@@ -191,6 +201,7 @@ fn hub_screens_render() {
 
     // 4b. Движок сейчас не собирается — ошибка не в проекте.
     hub.apply(HubAction::RetryJob);
+    hub.apply(HubAction::ShowJob(true));
     {
         let job = hub.job_mut().expect("Try Again rebuilds");
         job.feed_stderr("   Compiling engine-render v0.0.1 (crates/engine-render)");
@@ -204,6 +215,7 @@ fn hub_screens_render() {
 
     // 4c. Prebuild all: общий ход, затем итог.
     hub.apply(HubAction::PrebuildAll);
+    hub.apply(HubAction::ShowJob(true));
     if hub.prebuild().is_some() {
         if let Some(job) = hub.job_mut() {
             job.feed_stderr("   Compiling engine-core v0.0.1 (crates/engine-core)\r    Building [=======>       ] 120/320: engine-core, rapier2d");
@@ -222,6 +234,7 @@ fn hub_screens_render() {
             job.simulate_exit(ok);
             hub.update();
         }
+        hub.apply(HubAction::ShowJob(true));
         let done = shoot(&mut hub, 6, |_, _| vec![]);
         save(&done, "13_prebuild_done");
         hub.apply(HubAction::CloseJob);
@@ -231,6 +244,9 @@ fn hub_screens_render() {
     hub.apply(HubAction::Navigate(Page::Samples));
     let samples = shoot(&mut hub, 6, |_, _| vec![]);
     save(&samples, "08_samples");
+    hub.apply(HubAction::Navigate(Page::Tools));
+    let tools = shoot(&mut hub, 6, |_, _| vec![]);
+    save(&tools, "14_tools");
     assert!(colors(&samples) > 1000, "sample pictures are drawn");
 
     // 6. Настройки и диалог «Add Existing».

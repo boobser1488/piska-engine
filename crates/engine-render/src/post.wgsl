@@ -11,6 +11,11 @@ struct PostParams {
     pad0: f32,
     pad1: f32,
     pad2: f32,
+    // Цветокоррекция (grading.rs). balance.w = 0 — выключена.
+    balance: vec4<f32>,  // rgb — множитель баланса белого
+    tone: vec4<f32>,     // x — контраст, y — насыщенность
+    lift: vec4<f32>,     // rgb — цвет теней
+    gain: vec4<f32>,     // rgb — множитель светов
 };
 
 @group(0) @binding(0) var source_texture: texture_2d<f32>;
@@ -82,11 +87,27 @@ fn aces(color: vec3<f32>) -> vec3<f32> {
     return clamp(numerator / denominator, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+// Контраст, насыщенность и тонирование — в гамма-пространстве (≈ как видит глаз),
+// результат возвращается в линейное.
+fn color_grade(linear: vec3<f32>) -> vec3<f32> {
+    var c = pow(max(linear, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
+    c = (c - 0.5) * params.tone.x + 0.5;
+    let luma = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    c = mix(vec3<f32>(luma), c, params.tone.y);
+    let shade = clamp(1.0 - luma, 0.0, 1.0);
+    c += params.lift.rgb * shade * shade * 0.25;
+    c *= mix(vec3<f32>(1.0), params.gain.rgb, clamp(luma, 0.0, 1.0));
+    return pow(clamp(c, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(2.2));
+}
+
 @fragment
 fn fs_composite(in: VertexOutput) -> @location(0) vec4<f32> {
     let hdr = textureSample(source_texture, source_sampler, in.uv);
     let bloom = textureSample(bloom_texture, source_sampler, in.uv).rgb;
-    var graded = aces((hdr.rgb + bloom * params.bloom_strength) * params.exposure);
+    let grading = params.balance.w > 0.5;
+    let balance = select(vec3<f32>(1.0), params.balance.rgb, grading);
+    var graded = aces((hdr.rgb + bloom * params.bloom_strength) * params.exposure * balance);
+    graded = select(graded, color_grade(graded), grading);
     let from_center = distance(in.uv, vec2<f32>(0.5));
     graded *= 1.0 - params.vignette * smoothstep(0.35, 0.85, from_center);
     return vec4<f32>(mix(hdr.rgb, graded, params.enabled), 1.0);

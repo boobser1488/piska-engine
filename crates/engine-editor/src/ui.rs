@@ -1,6 +1,7 @@
 //! Кадр интерфейса: меню, панель инструментов, раскладка окон, диалоги,
 //! окно Preferences, горячие клавиши и ввод для игры в режиме Play.
 
+use crate::i18n::{tr_ctx_s, tr_s, trf};
 use egui::{pos2, vec2, Color32, Key as EguiKey, Rect, Sense, Stroke};
 use engine_core::input::{Key, MouseButton, TouchPhase};
 use engine_core::logging::Level;
@@ -34,6 +35,8 @@ impl Editor {
             ctx.request_repaint();
             return;
         }
+        self.themed_frames += 1;
+        self.restore_window_places(ctx);
         let new_records = self.console.poll();
         // Error Pause (Console): новая ошибка в режиме Play — пауза.
         if new_records && self.console.take_new_errors() && self.console.error_pause && self.mode == Mode::Playing {
@@ -64,12 +67,21 @@ impl Editor {
             .show(ctx, |ui| self.dock_ui(ui));
 
         self.dialogs(ctx);
+        self.scene_picker_window(ctx);
+        self.undo_history_window(ctx);
+        self.new_scene_window(ctx);
         self.save_layout_dialog(ctx);
         crate::rust_scripts::script_file_dialog(self, ctx);
         self.preferences_window(ctx);
         self.project_settings_window(ctx);
         self.export_window(ctx);
+        self.project_file_window(ctx);
+        self.help_windows(ctx);
+        self.build_tools_window(ctx);
+        self.splash_ui(ctx);
         self.apply_queued();
+        crate::editor_audio::apply(self);
+        self.remember_window_places(ctx);
 
         // Никто ничего не тянет и не печатает — правка закончена, это шаг Undo.
         if !ctx.input(|i| i.pointer.any_down()) && !ctx.wants_keyboard_input() {
@@ -129,6 +141,10 @@ impl Editor {
 
     /// Горячие клавиши: все команды — в реестре `shortcuts.rs` (Preferences → Shortcuts).
     fn shortcuts(&mut self, ctx: &egui::Context) {
+        // Полёт по виду Scene кончается, как только отпустили правую кнопку.
+        if !ctx.input(|i| i.pointer.secondary_down()) {
+            self.viewport.flying = false;
+        }
         self.dispatch_shortcuts(ctx);
     }
 
@@ -150,29 +166,37 @@ impl Editor {
             ui.spacing_mut().button_padding = vec2(theme::SP_M, 2.0);
             ui.spacing_mut().interact_size.y = theme::MENU_BAR - 2.0;
             ui.spacing_mut().item_spacing.x = 0.0;
-            ui.menu_button("File", |ui| {
+            ui.menu_button(tr_s("File"), |ui| {
                 theme::menu_body(ui);
                 self.file_menu(ui);
             });
-            ui.menu_button("Edit", |ui| {
+            ui.menu_button(tr_ctx_s("menu", "Edit"), |ui| {
                 theme::menu_body(ui);
                 self.edit_menu(ui);
             });
-            ui.menu_button("GameObject", |ui| {
+            ui.menu_button(tr_s("GameObject"), |ui| {
                 theme::menu_body(ui);
                 self.gameobject_menu(ui, None);
             });
-            ui.menu_button("View", |ui| {
+            ui.menu_button(tr_s("View"), |ui| {
                 theme::menu_body(ui);
                 self.view_menu(ui);
             });
-            ui.menu_button("Assets", |ui| {
+            ui.menu_button(tr_s("Assets"), |ui| {
                 theme::menu_body(ui);
                 self.assets_menu(ui);
             });
-            ui.menu_button("Window", |ui| {
+            ui.menu_button(tr_s("Tools"), |ui| {
+                theme::menu_body(ui);
+                self.tools_menu(ui);
+            });
+            ui.menu_button(tr_s("Window"), |ui| {
                 theme::menu_body(ui);
                 self.window_menu(ui);
+            });
+            ui.menu_button(tr_s("Help"), |ui| {
+                theme::menu_body(ui);
+                self.help_menu(ui);
             });
         });
     }
@@ -180,7 +204,7 @@ impl Editor {
     /// Меню Window: окна (открыть / показать), раскладки.
     fn window_menu(&mut self, ui: &mut egui::Ui) {
         let k = self.prefs.shortcuts.clone();
-        theme::menu_section(ui, "Windows");
+        theme::menu_section(ui, tr_ctx_s("menu", "Windows"));
         for panel in Panel::ALL {
             let open = self.is_panel_open(panel);
             if item(panel.title())
@@ -194,7 +218,7 @@ impl Editor {
         }
         theme::menu_separator(ui);
         let saved = self.saved_layouts();
-        theme::submenu(ui, Icon::Tiles, "Layouts", |ui| {
+        theme::submenu(ui, Icon::Tiles, tr_s("Layouts"), |ui| {
             for preset in LayoutPreset::ALL {
                 if item(preset.name()).show(ui) {
                     self.actions.push(Action::Layout(LayoutAction::Preset(preset)));
@@ -209,16 +233,16 @@ impl Editor {
                 }
             }
             theme::menu_separator(ui);
-            if item("Save Layout…").icon(Icon::Save).show(ui) {
+            if item(tr_s("Save Layout…")).icon(Icon::Save).show(ui) {
                 self.dock.save_dialog = Some(String::new());
             }
             if saved.is_empty() {
-                item("Delete Layout")
+                item(tr_s("Delete Layout"))
                     .icon(Icon::Trash)
-                    .enabled_if(false, "No saved layouts yet: save one with Save Layout…")
+                    .enabled_if(false, tr_s("No saved layouts yet: save one with Save Layout…"))
                     .show(ui);
             } else {
-                theme::submenu(ui, Icon::Trash, "Delete Layout", |ui| {
+                theme::submenu(ui, Icon::Trash, tr_s("Delete Layout"), |ui| {
                     for name in &saved {
                         if item(name).show(ui) {
                             self.actions.push(Action::Layout(LayoutAction::Delete(name.clone())));
@@ -227,13 +251,13 @@ impl Editor {
                 });
             }
             theme::menu_separator(ui);
-            if item("Reset Layout").icon(Icon::Reset).show(ui) {
+            if item(tr_s("Reset Layout")).icon(Icon::Reset).show(ui) {
                 self.actions.push(Action::Layout(LayoutAction::Reset));
             }
         });
         if let Some(panel) = self.maximized_panel() {
             theme::menu_separator(ui);
-            if item(&format!("Restore {}", panel.title())).icon(Icon::Collapse).shortcut(&k.text("maximize-panel")).show(ui) {
+            if item(&trf!("Restore {}", panel.title())).icon(Icon::Collapse).shortcut(&k.text("maximize-panel")).show(ui) {
                 self.actions.push(Action::Layout(LayoutAction::ToggleMaximize(panel)));
             }
         }
@@ -242,33 +266,14 @@ impl Editor {
     fn file_menu(&mut self, ui: &mut egui::Ui) {
         let editing = self.mode == Mode::Edit;
         let k = self.prefs.shortcuts.clone();
-        let stop_first = k.tip("Stop the game first", "play");
-        if item("New Scene").icon(Icon::Scene).shortcut(&k.text("new-scene")).show(ui) {
-            self.actions.push(Action::NewScene);
+        let stop_first = k.tip(tr_s("Stop the game first"), "play");
+        if item(tr_s("New Scene…")).icon(Icon::Scene).shortcut(&k.text("new-scene")).show(ui) {
+            self.show_new_scene_dialog(true);
         }
-        let scenes: Vec<String> = self
-            .assets
-            .iter()
-            .filter(|asset| asset.importer == "Scene")
-            .map(|asset| asset.path.clone())
-            .collect();
-        if scenes.is_empty() {
-            item("Open Scene")
-                .icon(Icon::FolderOpen)
-                .enabled_if(false, "There are no .scene files in the assets directory yet")
-                .show(ui);
-        } else {
-            theme::submenu(ui, Icon::FolderOpen, "Open Scene", |ui| {
-                for scene in &scenes {
-                    let current = self.scene_path.as_deref() == Some(scene.as_str());
-                    if item(scene).icon(Icon::Scene).checked(current).show(ui) {
-                        self.actions.push(Action::OpenScene(scene.clone()));
-                    }
-                }
-            });
-        }
+        // Open Scene… (окно со списком и поиском) и Open Recent Scene ▸ — scene_picker.rs.
+        self.scene_menu_items(ui);
         theme::menu_separator(ui);
-        if item("Save")
+        if item(tr_s("Save"))
             .icon(Icon::Save)
             .shortcut(&k.text("save"))
             .enabled_if(editing, &stop_first)
@@ -276,7 +281,7 @@ impl Editor {
         {
             self.actions.push(Action::Save);
         }
-        if item("Save As…")
+        if item(tr_s("Save As…"))
             .shortcut(&k.text("save-as"))
             .enabled_if(editing, &stop_first)
             .show(ui)
@@ -284,7 +289,7 @@ impl Editor {
             self.open_save_as();
         }
         theme::menu_separator(ui);
-        if item("Build…")
+        if item(tr_s("Build…"))
             .icon(Icon::Build)
             .enabled_if(
                 self.config.game_crate.is_some(),
@@ -294,13 +299,14 @@ impl Editor {
         {
             self.actions.push(Action::ShowBuildDialog(true));
         }
+        self.project_file_menu_item(ui);
         theme::menu_separator(ui);
-        if item("Project Hub…").icon(Icon::Folder).show(ui) {
+        if item(tr_s("Project Hub…")).icon(Icon::Folder).show(ui) {
             self.actions.push(Action::ProjectHub);
         }
         let recent = crate::hub_link::recent_projects();
         if !recent.is_empty() {
-            theme::submenu(ui, Icon::FolderOpen, "Open Recent", |ui| {
+            theme::submenu(ui, Icon::FolderOpen, tr_s("Open Recent"), |ui| {
                 for (name, dir) in &recent {
                     if item(name).icon(Icon::Folder).show(ui) {
                         self.actions.push(Action::OpenProject(dir.clone()));
@@ -309,11 +315,11 @@ impl Editor {
             });
         }
         theme::menu_separator(ui);
-        if item("Preferences…").icon(Icon::Gear).shortcut(&k.text("preferences")).show(ui) {
+        if item(tr_s("Preferences…")).icon(Icon::Gear).shortcut(&k.text("preferences")).show(ui) {
             self.preferences_open = true;
         }
         theme::menu_separator(ui);
-        if item("Quit").icon(Icon::Close).shortcut(&k.text("quit")).show(ui) {
+        if item(tr_s("Quit")).icon(Icon::Close).shortcut(&k.text("quit")).show(ui) {
             self.actions.push(Action::Quit);
         }
     }
@@ -322,8 +328,8 @@ impl Editor {
         let k = self.prefs.shortcuts.clone();
         let editing = self.mode == Mode::Edit;
         let selection = self.selection;
-        let history_reason = if editing { "Nothing to undo" } else { "Undo is not available in Play mode" };
-        if item("Undo")
+        let history_reason = if editing { tr_s("Nothing to undo") } else { tr_s("Undo is not available in Play mode") };
+        if item(tr_s("Undo"))
             .icon(Icon::Undo)
             .shortcut(&k.text("undo"))
             .enabled_if(self.can_undo(), history_reason)
@@ -331,8 +337,8 @@ impl Editor {
         {
             self.actions.push(Action::Undo);
         }
-        let redo_reason = if editing { "Nothing to redo" } else { "Redo is not available in Play mode" };
-        if item("Redo")
+        let redo_reason = if editing { tr_s("Nothing to redo") } else { tr_s("Redo is not available in Play mode") };
+        if item(tr_s("Redo"))
             .icon(Icon::Redo)
             .shortcut(&k.text("redo"))
             .enabled_if(self.can_redo(), redo_reason)
@@ -340,9 +346,12 @@ impl Editor {
         {
             self.actions.push(Action::Redo);
         }
+        if item(tr_s("Undo History")).icon(Icon::Clock).checked(self.undo_history_open).show(ui) {
+            self.undo_history_open = !self.undo_history_open;
+        }
         theme::menu_separator(ui);
-        let nothing = "Select an object first";
-        if item("Duplicate")
+        let nothing = tr_s("Select an object first");
+        if item(tr_s("Duplicate"))
             .icon(Icon::Copy)
             .shortcut(&k.text("duplicate"))
             .enabled_if(selection.is_some(), nothing)
@@ -350,7 +359,7 @@ impl Editor {
         {
             self.actions.extend(selection.map(Action::Duplicate));
         }
-        if item("Rename")
+        if item(tr_s("Rename"))
             .icon(Icon::Text)
             .shortcut(&k.text("rename"))
             .enabled_if(selection.is_some(), nothing)
@@ -361,7 +370,7 @@ impl Editor {
                 self.hierarchy.begin_rename(id, &name);
             }
         }
-        if item("Delete")
+        if item(tr_s("Delete"))
             .icon(Icon::Trash)
             .shortcut(&k.text("delete"))
             .enabled_if(selection.is_some(), nothing)
@@ -370,34 +379,34 @@ impl Editor {
             self.actions.extend(selection.map(Action::Delete));
         }
         theme::menu_separator(ui);
-        if item("Frame Selected").icon(Icon::Search).shortcut(&k.text("frame-selected")).show(ui) {
+        if item(tr_s("Frame Selected")).icon(Icon::Search).shortcut(&k.text("frame-selected")).show(ui) {
             self.actions.push(Action::FrameSelected);
         }
-        if item("Select None")
+        if item(tr_s("Select None"))
             .shortcut(&k.text("select-none"))
-            .enabled_if(selection.is_some(), "Nothing is selected")
+            .enabled_if(selection.is_some(), tr_s("Nothing is selected"))
             .show(ui)
         {
             self.actions.push(Action::Select(None));
         }
         theme::menu_separator(ui);
-        let (play_label, play_icon) = if editing { ("Play", Icon::Play) } else { ("Stop", Icon::Stop) };
+        let (play_label, play_icon) = if editing { (tr_s("Play"), Icon::Play) } else { (tr_s("Stop"), Icon::Stop) };
         if item(play_label).icon(play_icon).shortcut(&k.text("play")).show(ui) {
             self.actions.push(if editing { Action::Play } else { Action::Stop });
         }
-        if item(if self.mode == Mode::Paused { "Resume" } else { "Pause" })
+        if item(if self.mode == Mode::Paused { tr_s("Resume") } else { tr_s("Pause") })
             .icon(Icon::Pause)
             .shortcut(&k.text("pause"))
-            .enabled_if(!editing, "The game is not running")
+            .enabled_if(!editing, tr_s("The game is not running"))
             .show(ui)
         {
             self.actions.push(Action::Pause);
         }
-        if item("Step").icon(Icon::Step).shortcut(&k.text("step")).show(ui) {
+        if item(tr_s("Step")).icon(Icon::Step).shortcut(&k.text("step")).show(ui) {
             self.actions.push(Action::Step);
         }
         theme::menu_separator(ui);
-        if item("Project Settings…").icon(Icon::Gear).shortcut(&k.text("project-settings")).show(ui) {
+        if item(tr_s("Project Settings…")).icon(Icon::Gear).shortcut(&k.text("project-settings")).show(ui) {
             self.script_order.open = true;
         }
     }
@@ -406,7 +415,7 @@ impl Editor {
     pub(crate) fn gameobject_menu(&mut self, ui: &mut egui::Ui, parent: Option<engine_core::prelude::GameObjectId>) {
         let k = self.prefs.shortcuts.clone();
         let child = parent.is_some();
-        if item(if child { "Create Empty Child" } else { "Create Empty" })
+        if item(if child { tr_s("Create Empty Child") } else { tr_s("Create Empty") })
             .icon(Icon::Object)
             .shortcut(&k.text(if child { "create-empty-child" } else { "create-empty" }))
             .show(ui)
@@ -414,23 +423,23 @@ impl Editor {
             self.actions.push(Action::CreateEmpty { parent });
         }
         if !child
-            && item("Create Empty Child")
+            && item(tr_s("Create Empty Child"))
                 .icon(Icon::Object)
                 .shortcut(&k.text("create-empty-child"))
-                .enabled_if(self.selection.is_some(), "Select the parent object first")
+                .enabled_if(self.selection.is_some(), tr_s("Select the parent object first"))
                 .show(ui)
         {
             self.actions.push(Action::CreateEmpty { parent: self.selection });
         }
         theme::menu_separator(ui);
-        theme::submenu(ui, Icon::Cube, "3D Object", |ui| {
-            for (shape, icon) in [
-                (MeshShape::Cube, Icon::Cube),
-                (MeshShape::Sphere, Icon::Sphere),
-                (MeshShape::Cylinder, Icon::Cylinder),
-                (MeshShape::Plane, Icon::Plane),
+        theme::submenu(ui, Icon::Cube, tr_s("3D Object"), |ui| {
+            for (shape, icon, label) in [
+                (MeshShape::Cube, Icon::Cube, tr_s("Cube")),
+                (MeshShape::Sphere, Icon::Sphere, tr_s("Sphere")),
+                (MeshShape::Cylinder, Icon::Cylinder, tr_s("Cylinder")),
+                (MeshShape::Plane, Icon::Plane, tr_s("Plane")),
             ] {
-                if item(&format!("{shape:?}")).icon(icon).show(ui) {
+                if item(label).icon(icon).show(ui) {
                     self.actions.push(Action::CreateMesh(shape));
                 }
             }
@@ -441,20 +450,20 @@ impl Editor {
             .filter(|preset| preset.available(&self.app.world.registry))
             .collect();
         theme::submenu(ui, Icon::Sprite, "2D", |ui| {
-            if item(if child { "Sprite (child)" } else { "Sprite" }).icon(Icon::Sprite).show(ui) {
+            if item(if child { tr_s("Sprite (child)") } else { tr_s("Sprite") }).icon(Icon::Sprite).show(ui) {
                 self.actions.push(Action::CreateSprite { parent });
             }
             for preset in available.iter().filter(|p| p.menu() == "2D") {
-                if item(preset.label).icon(preset.icon).show(ui) {
+                if item(tr_s(preset.label)).icon(preset.icon).show(ui) {
                     self.actions.push(Action::Create { preset: preset.id.to_string(), parent });
                 }
             }
         });
-        theme::submenu(ui, Icon::Bulb, "Light", |ui| {
-            if item("Directional Light").icon(Icon::Sun).show(ui) {
+        theme::submenu(ui, Icon::Bulb, tr_s("Light"), |ui| {
+            if item(tr_s("Directional Light")).icon(Icon::Sun).show(ui) {
                 self.actions.push(Action::CreateLight(LightKind::Directional));
             }
-            if item("Point Light").icon(Icon::Bulb).show(ui) {
+            if item(tr_s("Point Light")).icon(Icon::Bulb).show(ui) {
                 self.actions.push(Action::CreateLight(LightKind::Point));
             }
         });
@@ -463,9 +472,9 @@ impl Editor {
             if entries.is_empty() {
                 continue; // крейт с этими компонентами не подключён — пункта нет
             }
-            theme::submenu(ui, *icon, menu, |ui| {
+            theme::submenu(ui, *icon, tr_s(menu), |ui| {
                 for preset in entries {
-                    if item(preset.label).icon(preset.icon).show(ui) {
+                    if item(tr_s(preset.label)).icon(preset.icon).show(ui) {
                         self.actions.push(Action::Create { preset: preset.id.to_string(), parent });
                     }
                 }
@@ -474,29 +483,29 @@ impl Editor {
         if !child {
             crate::terrain_tools::snap_menu_item(self, ui);
         }
-        if !child && item("Camera").icon(Icon::Camera).show(ui) {
+        if !child && item(tr_s("Camera")).icon(Icon::Camera).show(ui) {
             self.actions.push(Action::CreateCamera);
         }
     }
 
     fn view_menu(&mut self, ui: &mut egui::Ui) {
         let k = self.prefs.shortcuts.clone();
-        theme::menu_section(ui, "Scene view");
-        if item("3D View").icon(Icon::Cube).shortcut(&k.text("view-3d")).checked(self.scene_3d).show(ui) {
+        theme::menu_section(ui, tr_s("Scene view"));
+        if item(tr_s("3D View")).icon(Icon::Cube).shortcut(&k.text("view-3d")).checked(self.scene_3d).show(ui) {
             let enabled = !self.scene_3d;
             self.set_scene_3d(enabled);
         }
-        if item("Grid").icon(Icon::Grid).shortcut(&k.text("view-grid")).checked(self.show_grid).show(ui) {
+        if item(tr_s("Grid")).icon(Icon::Grid).shortcut(&k.text("view-grid")).checked(self.show_grid).show(ui) {
             self.show_grid = !self.show_grid;
         }
-        if item("Gizmos").icon(Icon::Gizmo).shortcut(&k.text("view-gizmos")).checked(self.show_gizmos).show(ui) {
+        if item(tr_s("Gizmos")).icon(Icon::Gizmo).shortcut(&k.text("view-gizmos")).checked(self.show_gizmos).show(ui) {
             self.show_gizmos = !self.show_gizmos;
         }
-        if item("Snap to Grid").icon(Icon::Magnet).shortcut(&k.text("toggle-snap")).checked(self.snap).show(ui) {
+        if item(tr_s("Snap to Grid")).icon(Icon::Magnet).shortcut(&k.text("toggle-snap")).checked(self.snap).show(ui) {
             self.snap = !self.snap;
         }
         theme::menu_separator(ui);
-        theme::submenu(ui, Icon::Search, "UI Scale", |ui| {
+        theme::submenu(ui, Icon::Search, tr_s("UI Scale"), |ui| {
             for percent in UI_SCALES {
                 let scale = percent as f32 / 100.0;
                 let chosen = (self.prefs.ui_scale - scale).abs() < 0.02;
@@ -512,7 +521,7 @@ impl Editor {
         let k = self.prefs.shortcuts.clone();
         let mounted = self.assets_root().is_some();
         let no_assets = "No assets directory is mounted: call `engine::mount_assets` before starting the editor";
-        if item("Refresh")
+        if item(tr_s("Refresh"))
             .icon(Icon::Refresh)
             .shortcut(&k.text("refresh"))
             .enabled_if(mounted, no_assets)
@@ -520,42 +529,42 @@ impl Editor {
         {
             self.actions.push(Action::RefreshAssets);
         }
-        if item("New Folder…").icon(Icon::Folder).enabled_if(mounted, no_assets).show(ui) {
+        if item(tr_s("New Folder…")).icon(Icon::Folder).enabled_if(mounted, no_assets).show(ui) {
             self.dialog = Some(Dialog::NewFolder {
                 parent: self.project.folder.clone(),
                 name: String::new(),
             });
         }
-        if item("Import New Asset…").icon(Icon::ArrowDown).enabled_if(mounted, no_assets).show(ui) {
+        if item(tr_s("Import New Asset…")).icon(Icon::ArrowDown).enabled_if(mounted, no_assets).show(ui) {
             self.show_import_browser();
         }
-        if item("Reveal in File Manager")
+        if item(tr_s("Reveal in File Manager"))
             .icon(Icon::External)
             .enabled_if(mounted, no_assets)
             .show(ui)
         {
             self.actions.push(Action::RevealAsset(self.project.folder.clone()));
         }
-        if item("New Model (Piska Modeler)").icon(Icon::Cube).enabled_if(mounted, no_assets).show(ui) {
+        if item(tr_s("New Model (Piska Modeler)")).icon(Icon::Cube).enabled_if(mounted, no_assets).show(ui) {
             self.actions.push(Action::CreateModel { folder: self.project.folder.clone() });
         }
         theme::menu_separator(ui);
         let scripts = self.config.script_dir.is_some();
-        if item("New Rust Script…").icon(Icon::Script).show(ui) {
+        if item(tr_s("New Rust Script…")).icon(Icon::Script).show(ui) {
             self.open_script_dialog(true, String::new(), self.selection);
         }
-        if item("New C++ Script…")
+        if item(tr_s("New C++ Script…"))
             .icon(Icon::Script)
             .enabled_if(scripts, "Start the editor with `EditorConfig::cpp_scripts(dir)` to create scripts")
             .show(ui)
         {
             self.open_new_script();
         }
-        if item("New Scenario Script…").icon(Icon::Script).show(ui) {
+        if item(tr_s("New Scenario Script…")).icon(Icon::Script).show(ui) {
             self.open_scenario_dialog("", self.selection);
         }
         let buildable = self.can_build();
-        if item("Build Code")
+        if item(tr_s("Build Code"))
             .icon(Icon::Build)
             .shortcut(&k.text("build-code"))
             .enabled_if(buildable, "No build commands: add them with `EditorConfig::build_command`")
@@ -593,13 +602,17 @@ impl Editor {
         self.toolbar_left(&mut left);
 
         // Play / Pause / Step — по центру окна.
-        let transport = Rect::from_center_size(bar.center(), vec2(3.0 * 30.0 + 2.0, theme::MAIN_TOOLBAR));
+        // Ширина группы — по её содержимому прошлого кадра: группа ровно по центру окна.
+        let width = if self.chrome.transport.width() > 1.0 { self.chrome.transport.width() } else { 3.0 * 26.0 + 2.0 };
+        let transport = Rect::from_center_size(bar.center(), vec2(width, theme::MAIN_TOOLBAR));
         let mut center = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(transport)
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
         self.transport(&mut center);
+        self.chrome.toolbar = bar;
+        self.chrome.transport = center.min_rect();
 
         let mut right = ui.new_child(
             egui::UiBuilder::new()
@@ -607,24 +620,25 @@ impl Editor {
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
         );
         right.spacing_mut().item_spacing.x = 1.0;
-        if icons::button(&mut right, Icon::Gear, self.preferences_open, None, &self.prefs.shortcuts.tip("Preferences", "preferences")).clicked() {
+        if icons::button(&mut right, Icon::Gear, self.preferences_open, None, &self.prefs.shortcuts.tip(tr_s("Preferences"), "preferences")).clicked() {
             self.preferences_open = !self.preferences_open;
         }
-        if icons::button(&mut right, Icon::Folder, false, None, "Project Hub: open or create another project").clicked() {
+        if icons::button(&mut right, Icon::Folder, false, None, tr_s("Project Hub: open or create another project")).clicked() {
             self.actions.push(Action::ProjectHub);
         }
         theme::toolbar_separator(&mut right);
         self.layout_selector(&mut right);
-        theme::toolbar_separator(&mut right);
-        self.stats_readout(&mut right);
     }
 
+    /// Левая часть главной панели — по задачам, слева направо: инструмент → его
+    /// параметры (точка вращения, оси, привязка). Параметры вида (2D / 3D, сетка, значки,
+    /// туман) — на полосе самого вида Scene, а не здесь.
     fn toolbar_left(&mut self, ui: &mut egui::Ui) {
         group(ui, |ui| {
             for (tool, icon, tooltip, command) in [
-                (Tool::Move, Icon::Move, "Move tool", "tool-move"),
-                (Tool::Rotate, Icon::Rotate, "Rotate tool", "tool-rotate"),
-                (Tool::Scale, Icon::Scale, "Scale tool", "tool-scale"),
+                (Tool::Move, Icon::Move, tr_s("Move tool"), "tool-move"),
+                (Tool::Rotate, Icon::Rotate, tr_s("Rotate tool"), "tool-rotate"),
+                (Tool::Scale, Icon::Scale, tr_s("Scale tool"), "tool-scale"),
             ] {
                 let tooltip = self.prefs.shortcuts.tip(tooltip, command);
                 if icons::button(ui, icon, self.tool == tool, None, &tooltip).clicked() {
@@ -633,45 +647,29 @@ impl Editor {
             }
         });
         theme::toolbar_separator(ui);
-        group(ui, |ui| {
-            let (icon, tooltip) = if self.gizmo_local {
-                (Icon::Local, "Move along the object's own axes (click for world axes)")
-            } else {
-                (Icon::Globe, "Move along world axes (click for the object's own axes)")
-            };
-            if icons::button(ui, icon, false, None, tooltip).clicked() {
-                self.gizmo_local = !self.gizmo_local;
-            }
-            let snap_tip = format!(
-                "Snap: {} m steps, {}° turns, ×{} scale (Preferences → Scene View). Hold Ctrl to invert",
-                self.prefs.snap_move, self.prefs.snap_rotate, self.prefs.snap_scale
-            );
-            if icons::button(ui, Icon::Magnet, self.snap, None, &snap_tip)
-            .clicked()
-            {
-                self.snap = !self.snap;
-            }
-        });
-        theme::toolbar_separator(ui);
-        let mut three_d = self.scene_3d;
-        if theme::segmented(
-            ui,
-            &mut three_d,
-            &[(false, "2D", "Flat XY view of the scene"), (true, "3D", "Perspective view with an orbit camera")],
-        ) {
-            self.set_scene_3d(three_d);
+        // Подписанные переключатели вместо значков, смысл которых надо угадывать.
+        let pivot_tip = self.prefs.shortcuts.tip(
+            tr_s("Where the gizmo rotates and scales the selection: the active object's pivot or the centre of the selection"),
+            "toggle-pivot",
+        );
+        let mut center = self.pivot_center;
+        if theme::segmented(ui, &mut center, &[(false, tr_s("Pivot"), pivot_tip.as_str()), (true, tr_s("Center"), pivot_tip.as_str())]) {
+            self.pivot_center = center;
         }
-        theme::toolbar_separator(ui);
-        group(ui, |ui| {
-            if icons::button(ui, Icon::Grid, self.show_grid, None, "Show the grid").clicked() {
-                self.show_grid = !self.show_grid;
-            }
-            if icons::button(ui, Icon::Gizmo, self.show_gizmos, None, "Show object icons, colliders and light directions")
-                .clicked()
-            {
-                self.show_gizmos = !self.show_gizmos;
-            }
-        });
+        ui.add_space(theme::SP_S);
+        let space_tip = self.prefs.shortcuts.tip(tr_s("Gizmo axes: world (Global) or the object's own (Local)"), "toggle-local");
+        let mut local = self.gizmo_local;
+        if theme::segmented(ui, &mut local, &[(false, tr_s("Global"), space_tip.as_str()), (true, tr_s("Local"), space_tip.as_str())]) {
+            self.gizmo_local = local;
+        }
+        ui.add_space(theme::SP_S);
+        let snap_tip = trf!(
+            "Snap: {} m steps, {}° turns, ×{} scale (Preferences → Scene View). Hold Ctrl to invert",
+            self.prefs.snap_move, self.prefs.snap_rotate, self.prefs.snap_scale
+        );
+        let mut snap = self.snap;
+        theme::toggle_button(ui, &mut snap, Icon::Magnet, tr_s("Snap"), &snap_tip);
+        self.snap = snap;
     }
 
     fn transport(&mut self, ui: &mut egui::Ui) {
@@ -679,7 +677,7 @@ impl Editor {
         group(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 1.0;
             // Play: в режиме игры кнопка «нажата» (акцент), значок — Stop.
-            let (rect, response) = ui.allocate_exact_size(vec2(30.0, theme::CONTROL_H + 2.0), Sense::click());
+            let (rect, response) = ui.allocate_exact_size(vec2(theme::CONTROL_H + theme::SP_3, theme::CONTROL_H), Sense::click());
             let fill = if playing {
                 theme::accent()
             } else if response.hovered() {
@@ -689,21 +687,21 @@ impl Editor {
             };
             ui.painter().rect_filled(rect, theme::R_S, fill);
             let (icon, color, tooltip) = if playing {
-                (Icon::Stop, theme::TEXT_STRONG, self.prefs.shortcuts.tip("Stop and restore the scene", "play"))
+                (Icon::Stop, theme::TEXT_STRONG, self.prefs.shortcuts.tip(tr_s("Stop and restore the scene"), "play"))
             } else {
-                (Icon::Play, theme::TEXT, self.prefs.shortcuts.tip("Play", "play"))
+                (Icon::Play, theme::TEXT, self.prefs.shortcuts.tip(tr_s("Play"), "play"))
             };
             icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(13.0, 13.0)), icon, color);
             if response.on_hover_text(tooltip).clicked() {
                 self.actions.push(if playing { Action::Stop } else { Action::Play });
             }
             ui.add_enabled_ui(playing, |ui| {
-                let tooltip = self.prefs.shortcuts.tip(if self.mode == Mode::Paused { "Resume" } else { "Pause" }, "pause");
+                let tooltip = self.prefs.shortcuts.tip(if self.mode == Mode::Paused { tr_s("Resume") } else { tr_s("Pause") }, "pause");
                 if icons::button(ui, Icon::Pause, self.mode == Mode::Paused, None, &tooltip).clicked() {
                     self.actions.push(Action::Pause);
                 }
             });
-            if icons::button(ui, Icon::Step, false, None, &self.prefs.shortcuts.tip("Advance one frame and pause", "step")).clicked() {
+            if icons::button(ui, Icon::Step, false, None, &self.prefs.shortcuts.tip(tr_s("Advance one frame and pause"), "step")).clicked() {
                 self.actions.push(Action::Step);
             }
         });
@@ -712,9 +710,9 @@ impl Editor {
     fn stats_readout(&mut self, ui: &mut egui::Ui) {
         let fps = self.profiler.fps();
         let text = if !self.wants_continuous_redraw() {
-            format!("idle  {:>5.2} ms", self.profiler.recent_work_ms())
+            trf!("idle  {} ms", format!("{:>5.2}", self.profiler.recent_work_ms()))
         } else if fps > 0.0 {
-            format!("{fps:>4.0} fps  {:>5.2} ms", self.profiler.recent_frame_ms())
+            trf!("{fps} fps  {p0} ms", p0 = format!("{:>5.2}", self.profiler.recent_frame_ms()), fps = format!("{:>4.0}", fps))
         } else {
             "-- fps".to_string()
         };
@@ -731,9 +729,9 @@ impl Editor {
             "only when something changes"
         };
         if response
-            .on_hover_text(format!(
+            .on_hover_text(trf!(
                 "Editor frame rate. The window redraws {redraw}. Click to open the Profiler"
-            ))
+            , redraw = redraw))
             .clicked()
         {
             self.actions.push(Action::Layout(LayoutAction::Focus(Panel::Profiler)));
@@ -744,8 +742,8 @@ impl Editor {
     fn layout_selector(&mut self, ui: &mut egui::Ui) {
         let saved = self.saved_layouts();
         let popup = egui::Id::new("toolbar_layouts");
-        let galley = ui.painter().layout_no_wrap("Layout".to_string(), theme::body(), theme::TEXT);
-        let size = vec2(galley.size().x + theme::SP_M * 2.0 + theme::ICON_S, theme::CONTROL_H + 2.0);
+        let galley = ui.painter().layout_no_wrap(tr_s("Layout").to_string(), theme::body(), theme::TEXT);
+        let size = vec2(galley.size().x + theme::SP_M * 2.0 + theme::ICON_S, theme::CONTROL_H);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         let open = ui.memory(|m| m.is_popup_open(popup));
         if response.hovered() || open {
@@ -762,7 +760,7 @@ impl Editor {
             Icon::ChevronDown,
             theme::TEXT_MUTED,
         );
-        let response = response.on_hover_text("Window layouts");
+        let response = response.on_hover_text(tr_s("Window layouts"));
         if response.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
         }
@@ -782,10 +780,10 @@ impl Editor {
                 }
             }
             theme::menu_separator(ui);
-            if item("Save Layout…").icon(Icon::Save).show(ui) {
+            if item(tr_s("Save Layout…")).icon(Icon::Save).show(ui) {
                 self.dock.save_dialog = Some(String::new());
             }
-            if item("Reset Layout").icon(Icon::Reset).show(ui) {
+            if item(tr_s("Reset Layout")).icon(Icon::Reset).show(ui) {
                 self.actions.push(Action::Layout(LayoutAction::Reset));
             }
         });
@@ -809,15 +807,22 @@ impl Editor {
 
         // Справа налево: режим, FPS в Play, выделение, сцена, фоновая задача.
         let (mode, mode_color) = match self.mode {
-            Mode::Edit => ("Edit", theme::TEXT_DISABLED),
-            Mode::Playing => ("Playing", theme::mix(theme::accent(), Color32::WHITE, 0.45)),
-            Mode::Paused => ("Paused", theme::WARN),
+            Mode::Edit => (tr_ctx_s("state", "Edit"), theme::TEXT_DISABLED),
+            Mode::Playing => (tr_s("Playing"), theme::mix(theme::accent(), Color32::WHITE, 0.45)),
+            Mode::Paused => (tr_s("Paused"), theme::WARN),
         };
         ui.label(small(mode.to_string(), mode_color));
-        if self.mode != Mode::Edit {
-            let fps = self.profiler.fps();
-            ui.label(egui::RichText::new(format!("{fps:.0} fps")).font(theme::mono()).color(theme::TEXT_MUTED));
+        // У кого ввод в Play: у игры (окно Game в фокусе) или у редактора.
+        if self.mode == Mode::Playing {
+            let (text, tip) = if self.game_has_input_focus() {
+                (tr_s("Game input"), tr_s("Keys, mouse and gamepads go to the game. Shift+Esc or a click on another window gives them back to the editor."))
+            } else {
+                (tr_s("Editor input"), tr_s("The game gets no input now. Click the Game view to give it keys, mouse and gamepads."))
+            };
+            ui.label(small(text.to_string(), theme::TEXT_MUTED)).on_hover_text(tip);
         }
+        // Частота кадров редактора (щелчок — Profiler): с главной панели переехала сюда.
+        self.stats_readout(ui);
         status_divider(ui);
         if let Some(object) = self.selection.and_then(|id| self.app.world.scene.get(id)) {
             let (icon, _) = catalog::object_icon(object);
@@ -828,17 +833,17 @@ impl Editor {
         let file = self
             .scene_path
             .as_deref()
-            .map_or("not saved yet".to_string(), |path| format!("Assets/{path}"));
+            .map_or(tr_s("not saved yet").to_string(), |path| format!("Assets/{path}"));
         ui.label(small(file, theme::TEXT_DISABLED));
         let scene = format!("{}{}", self.app.world.scene.name, if self.dirty { "*" } else { "" });
         ui.label(small(scene, theme::TEXT_MUTED)).on_hover_text(if self.dirty {
-            self.prefs.shortcuts.tip("The scene has unsaved changes", "save")
+            self.prefs.shortcuts.tip(tr_s("The scene has unsaved changes"), "save")
         } else {
-            "The scene is saved".to_string()
+            tr_s("The scene is saved").to_string()
         });
         if self.build_status() == crate::code::BuildStatus::Running {
             status_divider(ui);
-            let step = Self::export_step().unwrap_or_else(|| "Building…".to_string());
+            let step = Self::export_step().unwrap_or_else(|| tr_s("Building…").to_string());
             ui.allocate_ui(vec2(220.0, theme::STATUS_BAR), |ui| {
                 theme::progress_bar(ui, None, &step);
             });
@@ -861,7 +866,7 @@ impl Editor {
                     .truncate()
                     .sense(Sense::click()),
             );
-            if response.on_hover_text("Open the Console").clicked() {
+            if response.on_hover_text(tr_s("Open the Console")).clicked() {
                 self.actions.push(Action::Layout(LayoutAction::Focus(Panel::Console)));
             }
         });
@@ -884,20 +889,13 @@ impl Editor {
         let mut outcome = Outcome::None;
         let scene_name = self.app.world.scene.name.clone();
 
-        let frame = theme::dialog_frame(&ctx.style());
-        let response = egui::Modal::new(egui::Id::new("editor_dialog"))
-            .frame(frame)
+        let response = crate::window_kit::dialog(egui::Id::new("editor_dialog"), "")
+            .width(0.0)
             .show(ctx, |ui| {
                 ui.set_width(400.0);
                 let enter = ui.input(|i| i.key_pressed(EguiKey::Enter));
                 let field = |ui: &mut egui::Ui, text: &mut String, hint: &str| {
-                    let edit = ui.add(
-                        egui::TextEdit::singleline(text)
-                            .hint_text(hint)
-                            .min_size(vec2(0.0, theme::FIELD_H + 2.0))
-                            .vertical_align(egui::Align::Center)
-                            .desired_width(f32::INFINITY),
-                    );
+                    let edit = crate::controls::text_field(ui, text, hint, f32::INFINITY);
                     if !edit.has_focus() && !edit.lost_focus() {
                         edit.request_focus();
                     }
@@ -905,71 +903,73 @@ impl Editor {
                 };
                 let (title, confirm, danger) = match dialog {
                     Dialog::Unsaved { .. } => {
-                        dialog_title(ui, Icon::Warn, theme::WARN, "Save changes before closing?");
-                        dialog_text(ui, &format!("Scene “{scene_name}” has changes that are not saved. If you don't save, they are lost."));
-                        ("Save", "Save", false)
+                        dialog_title(ui, Icon::Warn, theme::WARN, tr_s("Save changes before closing?"));
+                        dialog_text(ui, &trf!("Scene “{scene_name}” has changes that are not saved. If you don't save, they are lost.", scene_name = scene_name));
+                        (tr_s("Save"), tr_s("Save"), false)
                     }
                     Dialog::NewScript { name, .. } => {
                         let rust = &mut self.script_rust;
-                        dialog_title(ui, Icon::Script, theme::TEXT_MUTED, if *rust { "New Rust Script" } else { "New C++ Script" });
+                        dialog_title(ui, Icon::Script, theme::TEXT_MUTED, if *rust { tr_s("New Rust Script") } else { tr_s("New C++ Script") });
                         crate::rust_scripts::language_switch(ui, rust);
                         dialog_text(ui, &crate::rust_scripts::script_dialog_text(*rust, &self.config));
                         if field(ui, name, "EnemyPatrol") {
                             outcome = Outcome::Confirm;
                         }
-                        ("", "Create and Build", false)
+                        ("", tr_s("Create and Build"), false)
                     }
                     Dialog::NewScenario { name, folder, .. } => {
-                        dialog_title(ui, Icon::Script, theme::TEXT_MUTED, "New Scenario Script");
+                        dialog_title(ui, Icon::Script, theme::TEXT_MUTED, tr_s("New Scenario Script"));
                         let place = if folder.is_empty() { crate::scenarios::SCENARIO_DIR } else { folder.as_str() };
                         dialog_text(
                             ui,
-                            &format!(
+                            &trf!(
                                 "Creates “Assets/{place}/<name>.scenario” from a short template and opens it. \
                                  Scenarios need no build: saving the file restarts them, even in Play."
-                            ),
+                            , place = place),
                         );
                         if field(ui, name, "intro") {
                             outcome = Outcome::Confirm;
                         }
-                        ("", "Create", false)
+                        ("", tr_s("Create"), false)
                     }
                     Dialog::SaveAs { path, .. } => {
-                        dialog_title(ui, Icon::Save, theme::TEXT_MUTED, "Save Scene As");
-                        dialog_text(ui, "Path inside the assets directory. `.scene` is added if missing.");
+                        dialog_title(ui, Icon::Save, theme::TEXT_MUTED, tr_s("Save Scene As"));
+                        dialog_text(ui, tr_s("Path inside the assets directory. `.scene` is added if missing."));
                         if field(ui, path, "scenes/level.scene") {
                             outcome = Outcome::Confirm;
                         }
-                        ("", "Save", false)
+                        ("", tr_s("Save"), false)
                     }
                     Dialog::NewFolder { parent, name } => {
                         dialog_title(ui, Icon::Folder, theme::TEXT_MUTED, "New Folder");
-                        let place = if parent.is_empty() { "Assets".to_string() } else { format!("Assets/{parent}") };
-                        dialog_text(ui, &format!("Created inside “{place}”."));
-                        if field(ui, name, "Folder name") {
+                        let place = if parent.is_empty() { tr_s("Assets").to_string() } else { format!("Assets/{parent}") };
+                        dialog_text(ui, &trf!("Created inside “{place}”.", place = place));
+                        if field(ui, name, tr_s("Folder name")) {
                             outcome = Outcome::Confirm;
                         }
-                        ("", "Create", false)
+                        ("", tr_s("Create"), false)
                     }
                 };
-                ui.add_space(theme::SP_L);
-                ui.horizontal(|ui| {
-                    if !title.is_empty() && theme::secondary_button(ui, "Don't Save").clicked() {
-                        outcome = Outcome::Discard;
+                // Общая строка кнопок: главная справа, Cancel левее, «Don't Save» — у левого края.
+                crate::window_kit::dialog_actions(ui, |ui| {
+                    let confirmed = if danger {
+                        theme::danger_button(ui, confirm)
+                    } else {
+                        crate::window_kit::primary_action(ui, confirm)
+                    };
+                    if confirmed.clicked() {
+                        outcome = Outcome::Confirm;
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let confirmed = if danger {
-                            theme::danger_button(ui, confirm)
-                        } else {
-                            theme::primary_button(ui, confirm)
-                        };
-                        if confirmed.clicked() {
-                            outcome = Outcome::Confirm;
-                        }
-                        if theme::secondary_button(ui, "Cancel").clicked() {
-                            outcome = Outcome::Cancel;
-                        }
-                    });
+                    if crate::window_kit::action_button(ui, tr_s("Cancel")).clicked() {
+                        outcome = Outcome::Cancel;
+                    }
+                    if !title.is_empty() {
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            if crate::window_kit::action_button(ui, tr_s("Don't Save")).clicked() {
+                                outcome = Outcome::Discard;
+                            }
+                        });
+                    }
                 });
             });
         if response.should_close() && matches!(outcome, Outcome::None) {
@@ -1029,15 +1029,134 @@ impl Editor {
     ///
     /// Вызывается в начале кадра, *до* [`Editor::advance`]: игра видит нажатие в том же
     /// кадре, в котором оно пришло от окна, а не кадром позже.
+    ///
+    /// Как в Unity, ввод получает игра, только пока фокус у окна Game (по нему щёлкнули,
+    /// или Play сам дал ему фокус — Preferences → Game View → Focus Game View On Play).
+    /// Щелчок по другому окну, Shift+Esc, потеря фокуса окном редактора, Pause и Stop
+    /// отдают ввод редактору: всё нажатое отпускается, геймпады замолкают
+    /// ([`engine_core::input::Input::set_gamepads_suspended`]) — ничего не «залипает».
     pub fn forward_game_input(&mut self, ctx: &egui::Context, raw: &egui::RawInput) {
-        if self.mode != Mode::Playing {
+        self.route_game_input(ctx, raw);
+        self.sync_cursor_capture(ctx);
+    }
+
+    /// Отпустить всё нажатое у игры, но не её просьбу о захвате курсора: вернув фокус
+    /// виду Game (щелчком), игрок снова получает захваченную мышь.
+    fn release_game_input(&mut self) {
+        let input = &mut self.app.world.input;
+        let requested = input.cursor_capture_requested();
+        input.release_all();
+        input.set_cursor_captured(requested);
+    }
+
+    /// Захват курсора (`Input::set_cursor_captured` — просьба игры): даётся, только пока идёт
+    /// Play, ввод у игры и вид Game не закрыт меню, всплывающим окном или диалогом.
+    /// Итог — в `Input::set_cursor_capture_state`; окно редактора (runner.rs) запирает и
+    /// прячет курсор системы по `take_cursor_request`.
+    fn sync_cursor_capture(&mut self, ctx: &egui::Context) {
+        let covered = ctx.memory(|m| m.any_popup_open())
+            || self.dialog.is_some()
+            || self.scene_picker.open
+            || self.scene_picker.new_scene
+            || self.dock.save_dialog.is_some()
+            || self.project.modal_open()
+            || self.preferences_open
+            || self.settings_modal_open();
+        let input = &mut self.app.world.input;
+        let want = self.mode == Mode::Playing && self.dock.game.input_focus && input.cursor_capture_requested() && !covered;
+        if want != input.is_cursor_captured() {
+            if want {
+                // Движение указателя до захвата (щелчок, который его дал) — не поворот взгляда.
+                let stale = input.mouse_delta();
+                input.add_mouse_delta(-stale);
+            }
+            input.set_cursor_capture_state(want);
+            self.dock.game.cursor_request = Some(want);
+        }
+    }
+
+    /// Курсор захвачен для игры: чем отпустить (подсказка у вида Game).
+    pub fn game_cursor_captured(&self) -> bool {
+        self.mode == Mode::Playing && self.app.world.input.is_cursor_captured()
+    }
+
+    /// Сырое движение мыши от системы (`DeviceEvent::MouseMotion`): игре — только пока
+    /// курсор захвачен (иначе движение приходит позицией курсора).
+    pub fn add_raw_mouse_motion(&mut self, dx: f32, dy: f32) {
+        if self.game_cursor_captured() {
+            self.app.world.input.add_mouse_delta(Vec2::new(dx, dy));
+        }
+    }
+
+    /// Что сделать с курсором системы: `Some(true)` — запереть и спрятать, `Some(false)` —
+    /// вернуть. Забирает окно редактора после кадра.
+    pub(crate) fn take_cursor_request(&mut self) -> Option<bool> {
+        self.dock.game.cursor_request.take()
+    }
+
+    /// Середина вида Game (точки egui): туда окно возвращает запертый курсор, если система
+    /// умеет только «держать в окне» (Windows), чтобы щелчки не уходили в другие окна.
+    pub(crate) fn game_view_center(&self) -> egui::Pos2 {
+        self.dock.game.rect.center()
+    }
+
+    fn route_game_input(&mut self, ctx: &egui::Context, raw: &egui::RawInput) {
+        for event in &raw.events {
+            if let egui::Event::WindowFocused(focused) = event {
+                self.dock.game.window_focused = *focused;
+            }
+        }
+        let rect = self.dock.game.rect;
+        let game_layer = self.dock.game.layer;
+        let visible = self.is_panel_visible(crate::dock::Panel::Game);
+        // Точка над видом Game, и сверху не лежит меню, всплывающее или плавающее окно.
+        let on_game = |position: egui::Pos2| {
+            visible && rect.contains(position) && ctx.layer_id_at(position).is_none_or(|layer| layer == game_layer)
+        };
+        if self.mode == Mode::Playing {
+            // Щелчок по виду Game сразу отдаёт ему фокус: этот же щелчок уже игровой.
+            let grab = raw.events.iter().any(|event| {
+                matches!(event, egui::Event::PointerButton { pos, pressed: true, .. } if on_game(*pos))
+                    || matches!(event, egui::Event::Touch { pos, phase: egui::TouchPhase::Start, .. } if on_game(*pos))
+            });
+            if grab {
+                self.dock.game.released = false;
+                if self.focused_panel() != Some(crate::dock::Panel::Game) {
+                    self.focus_panel(crate::dock::Panel::Game);
+                }
+            }
+        }
+        // Фокус вернулся на Game другим путём (вкладка, Ctrl+2) — Shift+Esc больше не действует.
+        let panel = self.focused_panel();
+        if panel == Some(crate::dock::Panel::Game) && self.dock.game.last_panel != panel {
+            self.dock.game.released = false;
+        }
+        self.dock.game.last_panel = panel;
+        let focus = self.game_input_focus_now();
+        if focus != self.dock.game.input_focus {
+            self.dock.game.input_focus = focus;
+            if !focus {
+                self.release_game_input();
+            }
+        }
+        self.app.world.input.set_gamepads_suspended(!focus);
+        if !focus || self.mode != Mode::Playing {
             return;
         }
         // Состояние на конец прошлого кадра: печатает ли пользователь в поле редактора.
         let typing = ctx.wants_keyboard_input();
-        // Окно Game (оно может стоять рядом со Scene): мышь — только над ним.
-        let rect = self.dock.game.rect;
-        let over_game = self.is_panel_visible(crate::dock::Panel::Game);
+        // Shift+Esc — вернуть клавиатуру и мышь редактору (Esc без Shift остаётся игре).
+        let release = raw.events.iter().any(|event| {
+            matches!(event, egui::Event::Key { key: EguiKey::Escape, pressed: true, modifiers, .. } if modifiers.shift)
+        });
+        if release {
+            self.dock.game.released = true;
+            self.dock.game.input_focus = false;
+            self.release_game_input();
+            self.app.world.input.set_gamepads_suspended(true);
+            return;
+        }
+        let over_game = visible;
         let pixels_per_point = ctx.pixels_per_point();
         let pointer = ctx.pointer_latest_pos();
         let input = &mut self.app.world.input;
@@ -1067,7 +1186,7 @@ impl Editor {
                     }
                 }
                 egui::Event::Text(text) if over_game && !typing => input.add_text(text),
-                egui::Event::PointerMoved(position) if over_game && rect.contains(*position) => {
+                egui::Event::PointerMoved(position) if on_game(*position) => {
                     input.set_mouse_position(to_game(*position));
                 }
                 egui::Event::PointerButton {
@@ -1083,7 +1202,7 @@ impl Editor {
                         _ => continue,
                     };
                     // Отпускание — всегда (кнопку могли отпустить за краем вида).
-                    if !*pressed || (over_game && rect.contains(*pos)) {
+                    if !*pressed || on_game(*pos) {
                         if *pressed {
                             input.set_mouse_position(to_game(*pos));
                         }
@@ -1091,7 +1210,7 @@ impl Editor {
                     }
                 }
                 egui::Event::MouseWheel { unit, delta, .. }
-                    if over_game && pointer.is_some_and(|p| rect.contains(p)) =>
+                    if pointer.is_some_and(on_game) =>
                 {
                     // Игра считает прокрутку в «строках», как Unity.
                     let lines = match unit {
@@ -1107,7 +1226,7 @@ impl Editor {
                         egui::TouchPhase::Move => TouchPhase::Moved,
                         egui::TouchPhase::End | egui::TouchPhase::Cancel => TouchPhase::Ended,
                     };
-                    if phase == TouchPhase::Ended || (over_game && rect.contains(*pos)) {
+                    if phase == TouchPhase::Ended || on_game(*pos) {
                         input.set_touch(id.0, to_game(*pos), phase);
                     }
                 }
@@ -1118,6 +1237,22 @@ impl Editor {
             input.set_key(Key::LShift, raw.modifiers.shift);
             input.set_key(Key::LAlt, raw.modifiers.alt);
         }
+    }
+
+    /// Ввод сейчас у игры: идёт Play (не пауза), фокус у видимого окна Game, окно
+    /// редактора в фокусе системы и ввод не отдан редактору Shift+Esc.
+    fn game_input_focus_now(&self) -> bool {
+        self.mode == Mode::Playing
+            && self.dock.game.window_focused
+            && !self.dock.game.released
+            && self.focused_panel() == Some(crate::dock::Panel::Game)
+            && self.is_panel_visible(crate::dock::Panel::Game)
+    }
+
+    /// Клавиатура, мышь, касания и геймпады идут игре (вид Game в фокусе, режим Play).
+    /// В остальное время игра видит «ничего не нажато», а редактор — свои клавиши.
+    pub fn game_has_input_focus(&self) -> bool {
+        self.dock.game.input_focus
     }
 }
 
@@ -1130,17 +1265,24 @@ fn logo(ui: &mut egui::Ui) {
 /// Значок движка (`assets/branding/icon.svg`, `tools/gen_icon.py`): белая «P» и янтарная
 /// искра на синей плитке. Те же доли, что у файла значка, поэтому узнаётся везде.
 fn paint_mark(painter: &egui::Painter, rect: egui::Rect) {
-    let tile = Color32::from_rgb(47, 84, 235);
+    paint_mark_faded(painter, rect, 1.0);
+}
+
+/// Значок движка с прозрачностью `alpha` (заставка растворяется вместе с ним).
+pub(crate) fn paint_mark_faded(painter: &egui::Painter, rect: egui::Rect, alpha: f32) {
+    let fade = |c: Color32| c.gamma_multiply(alpha);
+    let tile = fade(Color32::from_rgb(47, 84, 235));
     let at = |x: f32, y: f32| rect.min + vec2(x * rect.width(), y * rect.height());
     let block = |x0: f32, y0: f32, x1: f32, y1: f32| egui::Rect::from_min_max(at(x0, y0), at(x1, y1));
     let r = rect.width();
     painter.rect_filled(rect, 0.21 * r, tile);
-    painter.rect_filled(block(0.46, 0.19, 0.52, 0.57), 0.0, Color32::WHITE); // верх чаши
-    painter.rect_filled(block(0.29, 0.19, 0.46, 0.81), 0.0, Color32::WHITE); // ножка
-    painter.circle_filled(at(0.52, 0.38), 0.19 * r, Color32::WHITE); // чаша
+    let white = fade(Color32::WHITE);
+    painter.rect_filled(block(0.46, 0.19, 0.52, 0.57), 0.0, white); // верх чаши
+    painter.rect_filled(block(0.29, 0.19, 0.46, 0.81), 0.0, white); // ножка
+    painter.circle_filled(at(0.52, 0.38), 0.19 * r, white); // чаша
     painter.rect_filled(block(0.46, 0.31, 0.53, 0.45), 0.0, tile); // просвет чаши
     painter.circle_filled(at(0.53, 0.38), 0.07 * r, tile);
-    painter.rect_filled(block(0.58, 0.64, 0.72, 0.78), 0.0, Color32::from_rgb(255, 176, 32));
+    painter.rect_filled(block(0.58, 0.64, 0.72, 0.78), 0.0, fade(Color32::from_rgb(255, 176, 32)));
 }
 
 /// Группа кнопок: стоят встык, без подложки (группы разделяет `toolbar_separator`).

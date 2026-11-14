@@ -505,6 +505,98 @@ let copy = ctx.duplicate(id)?;                                                  
 `ctx.random()`, `ctx.save_data()`, `ctx.time_scale()` / `set_time_scale`.
 Для 2D-поворота: `transform.angle_z()` и `transform.set_angle_z(radians)`.
 
+### 6.5. Ссылки на объекты в полях (`ObjectRef`, `ComponentRef<T>`)
+
+Вместо `ctx.find_by_name("HUD")` (ломается, если объект переименовать) объявите поле-ссылку
+и назначьте его в инспекторе — перетащите строку из Hierarchy или выберите объект кнопкой-
+«мишенью». Ссылка хранит **стабильный номер** объекта, а не имя: переименование,
+перестановка, сохранение и загрузка её не ломают.
+
+```rust
+use engine::prelude::*;
+
+component! {
+    pub struct Door {
+        /// Любой объект сцены.
+        pub lever: ObjectRef = ObjectRef::NONE,
+        /// Только объект с компонентом `Tilemap` (инспектор предлагает только такие).
+        pub walls: ComponentRef<Tilemap> = ComponentRef::NONE,
+        /// Списки тоже можно.
+        pub lamps: Vec<ObjectRef> = Vec::new(),
+    }
+}
+
+impl Component for Door {
+    fn on_update(&mut self, ctx: &mut Ctx, _dt: f32) {
+        if let Some(lever) = ctx.resolve(self.lever) {          // Option<GameObjectId>
+            let _on = ctx.is_active(lever);
+        }
+        if let Some(map) = self.walls.component(ctx.scene()) {   // Option<&Tilemap>
+            let _ = map;
+        }
+        let _id = self.walls.get(ctx.scene());                   // объект, если на нём есть Tilemap
+    }
+}
+```
+
+* Назначить из кода: `ObjectRef::new(scene, id)`, `ctx.object_ref(id)`, `ComponentRef::<T>::new(scene, id)`
+  (`NONE`, если у объекта нет `T`). `r.is_none()`, `r.uid()`.
+* Разрешение — один поиск в таблице сцены (`scene.resolve(r)` / `scene.find_by_uid(uid)`).
+  Уничтоженный объект, объект другой сцены, не назначенное поле — `None`.
+* В файле сцены: у каждого объекта `id: 123…` (выдаётся при создании; в старых файлах его нет —
+  номер выдаётся при загрузке и пишется при следующем сохранении), поле — `"lever": Object(123…)`,
+  `Object(0)` — «не назначено». Ссылка на объект, которого нет в файле, при загрузке становится
+  `None` с предупреждением в логе (какой объект, какое поле).
+* **Копии.** Duplicate / Ctrl+D, вставка, `world.duplicate_many(&ids)`, `world.spawn_copies(&nodes, parent)`
+  и повторная аддитивная загрузка той же сцены перенумеровывают копируемую группу: ссылки внутри
+  группы у копий указывают на копии, ссылки наружу — на те же объекты.
+* **Префабы.** Ссылки внутри префаба (корень → свой ребёнок) у каждого экземпляра указывают на
+  *его* детей. Номера детей экземпляра выводятся из номера экземпляра (`uid ^ номер в префабе`, как
+  `fileID` в Unity) — в сцену их писать не нужно. Ассет префаба не может ссылаться на объекты
+  сцены: при Save as Prefab такие поля становятся `None` (в консоли — предупреждение с их списком,
+  `Prefab::from_object_report` возвращает этот список). Ссылка *экземпляра* на объект сцены —
+  обычное переопределение и сохраняется.
+* C++: `get_field` поля-ссылки отдаёт сам объект (`ENGINE_VALUE_OBJECT`, 0 — нет), `set_field`
+  принимает объект или `nil`. Scenario: `obj.get("Door.lever")` — ручка объекта или `nil`,
+  `obj.set("Door.lever", other)` — назначить. Объявлять поля-ссылки можно только в Rust.
+
+### 6.6. Переопределения в экземплярах префабов
+
+Экземпляр хранит в сцене ссылку на префаб и только отличия от него. Отличия бывают у корня
+и у любого ребёнка (путь — имена *из префаба*: `"Body/Wheel"`):
+
+| что | где в файле сцены |
+|---|---|
+| поле компонента (корня или ребёнка) | `overrides: [(path: "Light", component: "Glow", field: "power", value: Float(5.0))]` |
+| Transform ребёнка | `overrides: [(path: "Body", component: "Transform", field: "position", value: Vec3(..))]` |
+| активность / имя / тег / слой ребёнка | `overrides: [(path: "Body", component: "GameObject", field: "active", value: Bool(false))]` (`name` — `Str`, `layer` — `Int`) |
+| компонент добавлен / удалён у корня | `components: [..]` / `removed: ["Rigidbody"]` |
+| компонент добавлен / удалён у ребёнка | `child_components: [(path: "Body/Tip", added: [(kind: "Health")], removed: ["Marker"])]` |
+| имя экземпляра | `name` узла; пустое — имя корня префаба |
+
+Сохраняет всё это редактор сам (сравнивает экземпляр с префабом); правка префаба доходит до
+полей, которые в экземпляре не переопределены. Переименованный ребёнок экземпляра остаётся тем же
+объектом (не превращается в «добавленного»). `world.instantiate("…")` называет экземпляр именем
+корня префаба (раньше — именем файла). Что переопределено — `serialize::instance_overrides(..)`;
+каким объект был в префабе — `serialize::prefab_source_node(..)`.
+
+### 6.7. Файлы данных (`.ron`, `.json`)
+
+Таблицы уровней, баланса, волн — в `assets/data/`, читаются через базу ассетов (из каталога
+проекта и из пака экспортированной игры одинаково):
+
+```rust
+#[derive(serde::Deserialize)]
+struct LevelInfo { name: String, need: u32 }
+
+let db = ctx.resource::<AssetDatabase>().expect("assets are mounted");
+let levels: Vec<LevelInfo> = db.load_data("data/levels.ron")?;   // или .json
+```
+
+Формат — по расширению. Ошибка (`AssetError::Import`) называет файл, строку и столбец. Каждый вызов
+читает файл заново (кэша и слежения за файлом нет — перечитайте, когда нужно). Разобрать
+готовый текст: `engine::assets::parse_data::<T>("data/x.ron", &text)`.
+
 ---
 
 ## 7. Сохранения

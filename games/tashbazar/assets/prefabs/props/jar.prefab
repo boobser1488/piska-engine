@@ -1,0 +1,31 @@
+(
+    name: "jar",
+    id: 227798866908077,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "MeshRenderer",
+            fields: {
+                "cast_shadows": Bool(true),
+                "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                "grid": Bool(false),
+                "materials": List([
+                    Asset("f7ee8b743d50f74179fc5fadbc71a99b"),
+                ]),
+                "mesh": Asset("0f6319174172cdc40c07b74c5c798c34"),
+                "metallic": Float(0.0),
+                "model_materials": Bool(false),
+                "roughness": Float(0.6),
+                "shape": Enum("Cube"),
+                "texture": Asset(""),
+                "tiling": Float(0.0),
+                "tint": Color(0.5271152, 0.1620294, 0.06847818, 1.0),
+            },
+        ),
+    ],
+)

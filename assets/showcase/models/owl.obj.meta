@@ -1,0 +1,7 @@
+(
+    guid: "21205acebd598d017acaf747a06dfbd8",
+    importer: "Mesh",
+    settings: {
+        "filter": Enum("Nearest"),
+    },
+)

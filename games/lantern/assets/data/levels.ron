@@ -1,0 +1,10 @@
+// Таблица уровней: имя сцены, названия, сколько светлячков нужно для выхода, контрольное
+// время (третья звезда) и музыка. Читается при старте уровня и в меню.
+[
+    (scene: "level1", name: "Тихая пещера", subtitle: "Первые огоньки", blurb: "Первые огоньки", need: 12, par_time: 150.0, music: "music_cave"),
+    (scene: "level2", name: "Грибной грот", subtitle: "Пружины, облачка и хрупкие мосты", blurb: "Пружины и подъёмы", need: 14, par_time: 190.0, music: "music_cave"),
+    (scene: "level3", name: "Кристальные залы", subtitle: "Двойной прыжок", blurb: "Двойной прыжок в деле", need: 16, par_time: 240.0, music: "music_deep"),
+    (scene: "level4", name: "Ржавые шахты", subtitle: "Платформы, шипы и тяжеляки", blurb: "Платформы и шипы", need: 18, par_time: 280.0, music: "music_deep"),
+    (scene: "level5", name: "Ледяной провал", subtitle: "Рывок сквозь тьму", blurb: "Рывок сквозь тьму", need: 20, par_time: 300.0, music: "music_deep"),
+    (scene: "level6", name: "Сердце тьмы", subtitle: "Хозяин пещер", blurb: "Хозяин пещер", need: 18, par_time: 360.0, music: "music_deep"),
+]

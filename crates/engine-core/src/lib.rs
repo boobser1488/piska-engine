@@ -27,6 +27,7 @@ pub mod math;
 pub mod mathf;
 pub mod missing;
 pub mod object;
+pub mod objref;
 pub mod profile;
 pub mod random;
 pub mod reflect;
@@ -69,6 +70,7 @@ pub mod prelude {
     pub use crate::timer::{Cooldown, Timer};
     pub use crate::tween::{Ease, Sequence, Tween, TweenFinished, TweenId, Tweens};
     pub use crate::object::{GameObject, GameObjectId};
+    pub use crate::objref::{ComponentRef, ObjectRef};
     pub use crate::reflect::{FieldMeta, FieldValue, Reflect, TypeName, TypeRegistry, Value};
     pub use crate::scene::{ObjectBuilder, Scene};
     pub use crate::settings::ProjectSettings;

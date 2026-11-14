@@ -846,8 +846,8 @@ def write_scene():
     atlas_guid = guid_of("sprites/atlas.png")
     space_guid = guid_of("sprites/space.png")
     arena_guid = guid_of("sprites/arena.png")
-    text = f"""// Единственная сцена «Роя»: камера со свечением, звёздный фон, пол арены и менеджер игры.
-// Всё остальное (спрайты врагов и снарядов, частицы, интерфейс) создаёт Director при старте.
+    text = f"""// Базовая сцена «Роя»: камера со свечением, звёздный фон, пол арены. Остальное (дрон, реактор,
+// менеджер игры, экраны интерфейса) добавляет запекатель `examples/bake_assets`.
 (
     name: "Arena",
     objects: [
@@ -896,12 +896,6 @@ def write_scene():
                     "size": Vec2(20.0, 20.0),
                     "sorting_layer": Int(-10),
                 }}),
-            ],
-        ),
-        (
-            name: "Director",
-            components: [
-                (kind: "Director", fields: {{}}),
             ],
         ),
     ],

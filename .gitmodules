@@ -1,0 +1,3 @@
+[submodule "modeler"]
+	path = modeler
+	url = https://github.com/boobser1488/piska-modeler.git

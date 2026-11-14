@@ -7,6 +7,8 @@
 //! cargo run -p piska-export -- linux   --game template [--release] [--tar]
 //! cargo run -p piska-export -- serve   [DIR] [--port 8080] [--open]
 //! cargo run -p piska-export -- pack    --game template --out assets.pak
+//! cargo run -p piska-export -- doctor  [--json]    (диагностика окружения, см. `doctor.rs`)
+//! cargo run -p piska-export -- project-pack|project-unpack|project-info …   (файл с исходниками проекта, см. `project_file.rs`)
 //! ```
 //!
 //! Игра — крейт `games/<name>/` рабочего пространства (см. `docs/api/export.md`).
@@ -16,10 +18,12 @@
 mod android;
 mod archive;
 mod cargo;
+mod doctor;
 mod elf;
 mod icon;
 mod linux;
 mod project;
+mod project_file;
 mod serve;
 mod web;
 mod windows;
@@ -126,6 +130,8 @@ usage:
   piska-export serve   [<dir>] [--port <port>] [--open]
   piska-export pack    --game <name> --out <file.pak> [--root <workspace>]
   piska-export list    [--json] [--root <workspace>]
+  piska-export doctor  [--json] [--components core,cpp,web,android,linux-cross] [--strict]
+  piska-export project-pack | project-unpack | project-info   (a project's source as one file; add --help)
 
 The game is a crate in `games/<name>/` of the engine workspace (see docs/api/export.md).
 Output goes to `dist/<name>/<platform>/` unless --out is given.";
@@ -136,6 +142,26 @@ fn main() -> ExitCode {
         return code;
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Файл с исходниками проекта: свои параметры, общий разбор их не знает.
+    if let Some(command) = args.first().filter(|c| project_file::is_command(c)) {
+        return match project_file::run(command, &args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("error: {err}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    // `doctor` сам решает код выхода: 1 — не хватает нужного, 2 — ошибка запуска.
+    if args.first().map(String::as_str) == Some("doctor") {
+        return match parse(&args).and_then(|a| doctor::run(a.json, a.components.as_deref(), a.strict)) {
+            Ok(code) => ExitCode::from(code),
+            Err(err) => {
+                eprintln!("error: {err}");
+                ExitCode::from(2)
+            }
+        };
+    }
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
@@ -160,6 +186,8 @@ struct Args {
     tar: bool,
     no_webgl: bool,
     json: bool,
+    components: Option<String>,
+    strict: bool,
     glibc: Option<String>,
     zig: Option<PathBuf>,
 }
@@ -180,6 +208,8 @@ fn parse(args: &[String]) -> Result<Args> {
         tar: false,
         no_webgl: false,
         json: false,
+        components: None,
+        strict: false,
         glibc: None,
         zig: None,
     };
@@ -207,6 +237,8 @@ fn parse(args: &[String]) -> Result<Args> {
             "--tar" => parsed.tar = true,
             "--no-webgl" => parsed.no_webgl = true,
             "--json" => parsed.json = true,
+            "--components" => parsed.components = Some(value(arg)?),
+            "--strict" => parsed.strict = true,
             "--release" | "-r" => parsed.release = true,
             "--open" => parsed.open = true,
             "--help" | "-h" => return Err(Error(USAGE.to_string())),

@@ -1,0 +1,39 @@
+(
+    name: "Lamp",
+    id: 205414429461914,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (0.4, 0.4, 0.4),
+    ),
+    components: [
+        (
+            kind: "MeshRenderer",
+            fields: {
+                "cast_shadows": Bool(true),
+                "color": Color(0.0074990317, 0.010329823, 0.015996292, 1.0),
+                "emissive": Color(3.0, 1.2, 0.2, 1.0),
+                "grid": Bool(false),
+                "materials": List([]),
+                "mesh": Asset(""),
+                "metallic": Float(0.0),
+                "model_materials": Bool(false),
+                "roughness": Float(0.6),
+                "shape": Enum("Sphere"),
+                "texture": Asset(""),
+                "tiling": Float(0.0),
+                "tint": Color(1.0, 1.0, 1.0, 1.0),
+            },
+        ),
+        (
+            kind: "Blinker",
+            fields: {
+                "clock": Float(0.0),
+                "color": Color(3.0, 1.2, 0.2, 1.0),
+                "low": Float(0.15),
+                "phase": Float(0.0),
+                "rate": Float(0.8),
+            },
+        ),
+    ],
+)

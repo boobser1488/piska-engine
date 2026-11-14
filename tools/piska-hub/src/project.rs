@@ -1,6 +1,7 @@
 //! Что такое проект Piska и как его узнать: крейт игры с `Cargo.toml`, `src/lib.rs`,
 //! зависимостью `engine` и (для открытия в редакторе) программой `<имя>-editor`.
 
+use engine_editor::kit::i18n::{n_};
 use std::path::{Path, PathBuf};
 
 use crate::config::HubConfig;
@@ -47,6 +48,10 @@ pub struct ProjectInfo {
     pub icon: Option<PathBuf>,
     /// Свой `[workspace]`: проект вне рабочего пространства движка.
     pub standalone: bool,
+    /// Свой код, которого нет в движке: скрипты на Rust (`src/scripts/*.rs` кроме `mod.rs`,
+    /// компоненты в `src/`) или C++ (`cpp/`). Без него проект открывает общий редактор
+    /// без компиляции.
+    pub native: bool,
 }
 
 /// Почему каталог — не проект Piska. Сообщения объясняют, что сделать.
@@ -181,7 +186,9 @@ pub fn inspect(dir: &Path) -> Result<ProjectInfo, ProjectError> {
         .or_else(|| Some(dir.join("assets").join("icon.png")).filter(|path| path.is_file()))
         .or_else(|| Some(dir.join("icon.png")).filter(|path| path.is_file()));
 
+    let native = has_native_code(&dir);
     Ok(ProjectInfo {
+        native,
         standalone: manifest.contains_key("workspace"),
         package: name,
         title,
@@ -194,6 +201,60 @@ pub fn inspect(dir: &Path) -> Result<ProjectInfo, ProjectError> {
         icon,
         dir,
     })
+}
+
+/// Есть ли у проекта свой код, который надо компилировать: C++ в `cpp/`, файлы скриптов
+/// на Rust в `src/scripts/` (кроме `mod.rs`, его пишет редактор) или компоненты /
+/// C++-скрипты, объявленные в остальных файлах `src/` (кроме `main.rs` и `bin/`).
+pub fn has_native_code(dir: &Path) -> bool {
+    if has_file_with(&dir.join("cpp"), &["cpp", "cc", "cxx"], 4) {
+        return true;
+    }
+    let scripts = dir.join("src").join("scripts");
+    let script_files = std::fs::read_dir(&scripts)
+        .map(|entries| {
+            entries.flatten().any(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                name.ends_with(".rs") && name != "mod.rs"
+            })
+        })
+        .unwrap_or(false);
+    if script_files {
+        return true;
+    }
+    let mut found = false;
+    let src = dir.join("src");
+    let mut budget: usize = 2_000_000;
+    scan_native(&src, &src, 6, &mut budget, &mut found);
+    found
+}
+
+fn scan_native(root: &Path, dir: &Path, depth: usize, budget: &mut usize, found: &mut bool) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if *found || *budget == 0 {
+            return;
+        }
+        let path = entry.path();
+        let relative = path.strip_prefix(root).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+        if path.is_dir() {
+            if depth > 0 && relative != "bin" && relative != "scripts" {
+                scan_native(root, &path, depth - 1, budget, found);
+            }
+            continue;
+        }
+        if relative == "main.rs" || !relative.ends_with(".rs") {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            *budget = budget.saturating_sub(text.len());
+            if text.contains("component!") || text.contains("impl Component for") || text.contains("cpp_scripts!") {
+                *found = true;
+            }
+        }
+    }
 }
 
 /// Есть ли в каталоге (до глубины `depth`) файл с одним из расширений.
@@ -220,8 +281,8 @@ fn has_file_with(dir: &Path, extensions: &[&str], depth: usize) -> bool {
 
 /// 2D или 3D по тому, какие компоненты встречаются в коде и сценах.
 fn guess_dimension(dir: &Path) -> Dimension {
-    const THREE: [&str; 5] = ["MeshRenderer", "Rigidbody3D", "Collider3D", "Perspective", "CharacterController3D"];
-    const TWO: [&str; 5] = ["SpriteRenderer", "Rigidbody2D", "Collider2D", "Tilemap", "SpriteSheet"];
+    const THREE: [&str; 5] = ["MeshRenderer", "Rigidbody3D", "Collider3D", n_("Perspective"), "CharacterController3D"];
+    const TWO: [&str; 5] = ["SpriteRenderer", "Rigidbody2D", "Collider2D", n_("Tilemap"), "SpriteSheet"];
     let mut budget: usize = 3_000_000;
     let mut score = (0usize, 0usize);
     for root in [dir.join("src"), dir.join("assets")] {

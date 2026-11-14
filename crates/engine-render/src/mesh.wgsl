@@ -25,13 +25,19 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) world_position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
+    // centroid: со сглаживанием (MSAA) пиксель на ребре треугольника берёт UV внутри него, а
+    // не продолжает их за край, где в атласе лежит соседняя грань (цветные точки на швах).
+    @location(2) @interpolate(perspective, centroid) uv: vec2<f32>,
     // Материал экземпляра: одинаков для всех вершин, поэтому без интерполяции.
     @location(3) @interpolate(flat) base_color: vec4<f32>,
     @location(4) @interpolate(flat) emissive: vec4<f32>,
     @location(5) @interpolate(flat) params: vec4<f32>,
     // Касательная в мире (xyz) и знак битангенса (w).
     @location(6) tangent: vec4<f32>,
+    // Для текстуры «в метрах» (world_tiling): точка и нормаль в осях объекта (повёрнутых
+    // вместе с ним; длины — мировые, с масштабом объекта), см. material_color.
+    @location(7) tile_position: vec3<f32>,
+    @location(8) tile_normal: vec3<f32>,
 };
 
 @vertex
@@ -54,6 +60,17 @@ fn vs_main(
     out.emissive = instance.emissive;
     out.params = instance.params;
     out.tangent = vec4<f32>((model * vec4<f32>(tangent.xyz, 0.0)).xyz, tangent.w);
+    // Оси объекта без масштаба (столбцы матрицы, нормированные): проекция «в метрах»
+    // поворачивается вместе с объектом, а масштаб остаётся в метрах.
+    let ax = model[0].xyz / max(length(model[0].xyz), 1e-8);
+    let ay = model[1].xyz / max(length(model[1].xyz), 1e-8);
+    let az = model[2].xyz / max(length(model[2].xyz), 1e-8);
+    let origin = model[3].xyz;
+    let from_origin = world.xyz - origin;
+    // Без поворота это ровно мировые координаты: соседние неподвижные плиты
+    // продолжают узор друг друга; при вращении вокруг своей точки узор едет с объектом.
+    out.tile_position = vec3<f32>(dot(ax, from_origin), dot(ay, from_origin), dot(az, from_origin)) + origin;
+    out.tile_normal = vec3<f32>(dot(ax, out.normal), dot(ay, out.normal), dot(az, out.normal));
     return out;
 }
 
@@ -108,7 +125,7 @@ fn geometry_schlick(n_dot_x: f32, k: f32) -> f32 {
 
 // Отражённый свет от одного источника (уже умножен на косинус угла падения).
 fn brdf(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, albedo: vec3<f32>, metallic: f32, roughness: f32) -> vec3<f32> {
-    let h = normalize(v + l);
+    let h = safe_half(v, l);
     let n_dot_l = max(dot(n, l), 0.0);
     let n_dot_v = max(dot(n, v), 1e-4);
     let n_dot_h = max(dot(n, h), 0.0);
@@ -145,13 +162,16 @@ fn sun_visibility(world_position: vec3<f32>, n: vec3<f32>) -> f32 {
     return mix(sum / 9.0, 1.0, smoothstep(0.85, 1.0, edge));
 }
 
-// Цвет материала: UV меша или проекция текстуры по трём осям в мировых координатах
-// с шагом `tile` метров — стены любого размера получают одинаковый масштаб кладки.
+// Цвет материала: UV меша или проекция текстуры по трём осям объекта с шагом `tile`
+// метров — стены любого размера получают одинаковый масштаб кладки. Оси — объекта
+// (повёрнутые вместе с ним), длины — мировые: у повёрнутого бруса полосы идут вдоль
+// граней, а не смешиваются из двух проекций, у вращающейся метлы узор не «плывёт».
 // Обе выборки делаются всегда, чтобы производные считались в едином потоке управления.
-fn material_color(in: VertexOutput, n: vec3<f32>, uv: vec2<f32>) -> vec4<f32> {
+fn material_color(in: VertexOutput, side: f32, uv: vec2<f32>) -> vec4<f32> {
     let by_uv = textureSample(base_texture, material_sampler, uv);
     let tile = in.params.z;
-    let p = in.world_position / max(tile, 1e-3);
+    let n = normalize(in.tile_normal) * side;
+    let p = in.tile_position / max(tile, 1e-3);
     var weight = pow(abs(n), vec3<f32>(4.0));
     weight /= (weight.x + weight.y + weight.z);
     // Ось V в текстурах смотрит вниз: на вертикальных плоскостях переворачиваем.
@@ -187,7 +207,7 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0)
     let side = select(-1.0, 1.0, front);
     let geometric = normalize(in.normal) * side;
     let uv = in.uv * material.uv.xy + material.uv.zw;
-    let texel = material_color(in, geometric, uv);
+    let texel = material_color(in, side, uv);
     let n = mapped_normal(in, geometric, uv, side);
     let surface = textureSample(metallic_roughness_texture, material_sampler, uv);
     let glow = textureSample(emissive_texture, material_sampler, uv);

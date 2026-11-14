@@ -35,11 +35,11 @@ fn grid_matches_brute_force() {
     for seed in 0..25u64 {
         let mut rng = Rng::new(seed);
         let n = rng.int(2, 220) as usize;
-        let mut grid = Grid::new(ARENA_R + 3.0, 1.5);
+        let mut grid = Grid::new(arena_r() + 3.0, 1.5);
         let mut items = Vec::new();
         for i in 0..n {
             // Часть объектов далеко за краем сетки, радиусы от мелких до боссовых.
-            let spread = if i % 17 == 0 { 40.0 } else { ARENA_R };
+            let spread = if i % 17 == 0 { 40.0 } else { arena_r() };
             let pos = Vec2::new(rng.range(-spread, spread), rng.range(-spread, spread));
             let r = if i % 9 == 0 { rng.range(1.5, 2.3) } else { rng.range(0.2, 0.9) };
             items.push((pos, r));

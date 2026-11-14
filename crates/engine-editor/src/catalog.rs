@@ -7,6 +7,7 @@
 use egui::Color32;
 use engine_core::prelude::*;
 
+use crate::i18n::n_;
 use crate::icons::Icon;
 use crate::theme;
 
@@ -16,7 +17,7 @@ pub(crate) fn category(type_name: &str) -> &'static str {
     match type_name {
         "MeshRenderer" | "Light" | "Environment" | "Terrain" | "Water" => "Rendering",
         "SpriteRenderer" | "Tilemap" => "2D",
-        "Rigidbody" | "Collider" | "CharacterController" | "Rigidbody2D" | "Collider2D" => "Physics",
+        "Rigidbody" | "Collider" | "CharacterController" | "FpsController" | "Rigidbody2D" | "Collider2D" => "Physics",
         "AudioSource" | "AudioListener" => "Audio",
         "Canvas" | "RectTransform" | "LayoutGroup" | "RectMask" | "CanvasGroup" | "Image" | "Text"
         | "Button" | "Toggle" | "Slider" | "ProgressBar" | "InputField" => "UI",
@@ -39,6 +40,8 @@ pub(crate) fn component_icon(type_name: &str) -> Icon {
         "Tilemap" => Icon::Tilemap,
         "Rigidbody" | "Rigidbody2D" => Icon::Physics,
         "Collider" | "Collider2D" | "CharacterController" => Icon::Collider,
+        // Контроллер от первого лица — перекрестие прицела.
+        "FpsController" => Icon::Target,
         "AudioSource" | "AudioListener" => Icon::Audio,
         "Text" | "InputField" => Icon::Text,
         "Image" => Icon::Image,
@@ -59,7 +62,10 @@ pub(crate) fn object_icon(object: &GameObject) -> (Icon, Color32) {
     }
     let names: Vec<&'static str> = object.components().map(|c| c.type_name()).collect();
     let has = |name: &str| names.contains(&name);
-    let icon = if has("Camera") {
+    let icon = if has("FpsController") {
+        // Игрок от первого лица (его камера — дочерний объект).
+        Icon::Target
+    } else if has("Camera") {
         Icon::Camera
     } else if has("Light") {
         match object.components().find(|c| c.type_name() == "Light").and_then(|c| c.get_field("kind")) {
@@ -85,6 +91,24 @@ pub(crate) fn object_icon(object: &GameObject) -> (Icon, Color32) {
     };
     let color = if icon == Icon::Object { theme::TEXT_MUTED } else { theme::TEXT };
     (icon, color)
+}
+
+/// Подзаголовки полей в инспекторе для компонентов с длинным списком полей: (тип,
+/// первое поле группы, заголовок). Reflection не хранит групп, поэтому таблица — здесь.
+const FIELD_GROUPS: &[(&str, &str, &str)] = &[
+    ("FpsController", "gravity", n_("Movement")),
+    ("FpsController", "hull_width", n_("Body")),
+    ("FpsController", "duck_speed_scale", n_("Speed Modifiers")),
+    ("FpsController", "auto_hop", n_("Jumping and Noclip")),
+    ("FpsController", "input_enabled", n_("Input")),
+    ("FpsController", "look_enabled", n_("Look")),
+    ("FpsController", "fov_deg", n_("Camera")),
+    ("FpsController", "yaw_deg", n_("State During Play")),
+];
+
+/// Подзаголовок, который инспектор ставит перед полем `field` компонента `type_name`.
+pub(crate) fn field_group(type_name: &str, field: &str) -> Option<&'static str> {
+    FIELD_GROUPS.iter().find(|(kind, first, _)| *kind == type_name && *first == field).map(|(_, _, title)| *title)
 }
 
 /// Заготовка объекта: имя, компоненты и дети (кнопке нужна подпись).
@@ -122,20 +146,20 @@ impl Preset {
 /// Подменю GameObject и их иконки — в этом порядке.
 pub(crate) const PRESET_MENUS: [(&str, Icon); 6] = [
     ("2D", Icon::Sprite),
-    ("Audio", Icon::Audio),
-    ("UI", Icon::Ui),
-    ("Effects", Icon::Particles),
-    ("Physics", Icon::Physics),
-    ("Animation", Icon::Animation),
+    (n_("Audio"), Icon::Audio),
+    (n_("UI"), Icon::Ui),
+    (n_("Effects"), Icon::Particles),
+    (n_("Physics"), Icon::Physics),
+    (n_("Animation"), Icon::Animation),
 ];
 
 /// Заготовки компонентов других крейтов. Встроенные (меши, свет, спрайт, камера)
 /// создаются своими действиями, потому что им нужна особая начальная поза.
 pub(crate) const PRESETS: &[Preset] = &[
-    Preset { id: "2D/Tilemap", label: "Tilemap", icon: Icon::Tilemap, name: "Tilemap", components: &["Tilemap"], children: &[] },
+    Preset { id: "2D/Tilemap", label: n_("Tilemap"), icon: Icon::Tilemap, name: "Tilemap", components: &["Tilemap"], children: &[] },
     Preset {
         id: "2D/Animated Sprite",
-        label: "Animated Sprite",
+        label: n_("Animated Sprite"),
         icon: Icon::Animation,
         name: "Animated Sprite",
         components: &["SpriteRenderer", "SpriteAnimator"],
@@ -143,20 +167,20 @@ pub(crate) const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "2D/Sprite with Physics",
-        label: "Sprite with Physics",
+        label: n_("Sprite with Physics"),
         icon: Icon::Physics,
         name: "Body",
         components: &["SpriteRenderer", "Rigidbody2D", "Collider2D"],
         children: &[],
     },
-    Preset { id: "Audio/Audio Source", label: "Audio Source", icon: Icon::Audio, name: "Audio Source", components: &["AudioSource"], children: &[] },
-    Preset { id: "Audio/Audio Listener", label: "Audio Listener", icon: Icon::Audio, name: "Audio Listener", components: &["AudioListener"], children: &[] },
-    Preset { id: "UI/Canvas", label: "Canvas", icon: Icon::Ui, name: "Canvas", components: &["Canvas"], children: &[] },
-    Preset { id: "UI/Text", label: "Text", icon: Icon::Text, name: "Text", components: &["RectTransform", "Text"], children: &[] },
-    Preset { id: "UI/Image", label: "Image", icon: Icon::Image, name: "Image", components: &["RectTransform", "Image"], children: &[] },
+    Preset { id: "Audio/Audio Source", label: n_("Audio Source"), icon: Icon::Audio, name: "Audio Source", components: &["AudioSource"], children: &[] },
+    Preset { id: "Audio/Audio Listener", label: n_("Audio Listener"), icon: Icon::Audio, name: "Audio Listener", components: &["AudioListener"], children: &[] },
+    Preset { id: "UI/Canvas", label: n_("Canvas"), icon: Icon::Ui, name: "Canvas", components: &["Canvas"], children: &[] },
+    Preset { id: "UI/Text", label: n_("Text"), icon: Icon::Text, name: "Text", components: &["RectTransform", "Text"], children: &[] },
+    Preset { id: "UI/Image", label: n_("Image"), icon: Icon::Image, name: "Image", components: &["RectTransform", "Image"], children: &[] },
     Preset {
         id: "UI/Button",
-        label: "Button",
+        label: n_("Button"),
         icon: Icon::Ui,
         name: "Button",
         components: &["RectTransform", "Image", "Button"],
@@ -164,20 +188,20 @@ pub(crate) const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "UI/Toggle",
-        label: "Toggle",
+        label: n_("Toggle"),
         icon: Icon::Check,
         name: "Toggle",
         components: &["RectTransform", "Toggle"],
         children: &[("Label", &["RectTransform", "Text"], "Toggle")],
     },
-    Preset { id: "UI/Slider", label: "Slider", icon: Icon::Inspector, name: "Slider", components: &["RectTransform", "Slider"], children: &[] },
-    Preset { id: "UI/Progress Bar", label: "Progress Bar", icon: Icon::Chart, name: "Progress Bar", components: &["RectTransform", "ProgressBar"], children: &[] },
-    Preset { id: "UI/Input Field", label: "Input Field", icon: Icon::Text, name: "Input Field", components: &["RectTransform", "InputField"], children: &[] },
-    Preset { id: "Effects/Particle System", label: "Particle System", icon: Icon::Particles, name: "Particle System", components: &["ParticleSystem"], children: &[] },
-    Preset { id: "Effects/Trail", label: "Trail", icon: Icon::Tween, name: "Trail", components: &["TrailRenderer"], children: &[] },
+    Preset { id: "UI/Slider", label: n_("Slider"), icon: Icon::Inspector, name: "Slider", components: &["RectTransform", "Slider"], children: &[] },
+    Preset { id: "UI/Progress Bar", label: n_("Progress Bar"), icon: Icon::Chart, name: "Progress Bar", components: &["RectTransform", "ProgressBar"], children: &[] },
+    Preset { id: "UI/Input Field", label: n_("Input Field"), icon: Icon::Text, name: "Input Field", components: &["RectTransform", "InputField"], children: &[] },
+    Preset { id: "Effects/Particle System", label: n_("Particle System"), icon: Icon::Particles, name: "Particle System", components: &["ParticleSystem"], children: &[] },
+    Preset { id: "Effects/Trail", label: n_("Trail"), icon: Icon::Tween, name: "Trail", components: &["TrailRenderer"], children: &[] },
     Preset {
         id: "Physics/Rigidbody Cube",
-        label: "Rigidbody Cube",
+        label: n_("Rigidbody Cube"),
         icon: Icon::Physics,
         name: "Rigidbody Cube",
         components: &["MeshRenderer", "Rigidbody", "Collider"],
@@ -185,7 +209,7 @@ pub(crate) const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "Physics/Character",
-        label: "Character Controller",
+        label: n_("Character Controller"),
         icon: Icon::Collider,
         name: "Character",
         components: &["CharacterController"],

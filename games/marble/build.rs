@@ -1,8 +1,9 @@
-//! Сборка C++-механизмов уровней: все `cpp/*.cpp` линкуются в крейт статически.
-//! На wasm32 (веб) C++ не собирается — игра рассчитана на Windows, Linux и Android.
+//! Сборка игры: значок приложения в exe на Windows и (только с возможностью
+//! `cpp-example`) один необязательный C++-скрипт из `cpp/`.
 
 fn main() {
+    #[cfg(feature = "cpp-example")]
     engine_cpp_build::compile("cpp");
-    // Значок приложения в exe на Windows (`assets/icon.png` игры или значок движка).
-    engine_build::windows_icon();
+    // Значок и подсистема «окно» (без консоли и в отладочной сборке; `PISKA_CONSOLE=1` — с ней).
+    engine_build::windows_app();
 }

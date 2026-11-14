@@ -4,6 +4,7 @@
 //! Щелчок по строке показывает сообщение целиком; если в нём есть `файл:строка`
 //! (ошибка компилятора), файл открывается во вкладке Code на этой строке.
 
+use crate::i18n::{tr_s, trf};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -33,6 +34,27 @@ pub(crate) struct ConsoleState {
     errors_seen: usize,
     /// Сколько последних записей держать (Preferences → Console & Diagnostics).
     max: usize,
+    /// Когда запись пришла в окно: секунды с запуска редактора (`seq` → время). Лог
+    /// движка времени не хранит, а часового пояса без сторонних крейтов не узнать —
+    /// поэтому время монотонное, от запуска, а не часы.
+    times: HashMap<u64, f64>,
+}
+
+/// Начало отсчёта времени Console (первое обращение — запуск редактора).
+fn since_start() -> f64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
+}
+
+/// `83.4` с → `01:23.4`; больше часа — `1:01:23`.
+pub(crate) fn time_label(seconds: f64) -> String {
+    let total = seconds.max(0.0);
+    let whole = total as u64;
+    if whole >= 3600 {
+        format!("{}:{:02}:{:02}", whole / 3600, whole / 60 % 60, whole % 60)
+    } else {
+        format!("{:02}:{:04.1}", whole / 60, total % 60.0)
+    }
 }
 
 impl Default for ConsoleState {
@@ -50,6 +72,7 @@ impl Default for ConsoleState {
             error_pause: false,
             errors_seen: 0,
             max: logging::CAPACITY,
+            times: HashMap::new(),
         }
     }
 }
@@ -70,6 +93,10 @@ impl ConsoleState {
             return false;
         };
         self.next_seq = last.seq + 1;
+        let now = since_start();
+        for record in &fresh {
+            self.times.insert(record.seq, now);
+        }
         self.records.extend(fresh);
         self.trim();
         true
@@ -88,7 +115,9 @@ impl ConsoleState {
 
     fn trim(&mut self) {
         let overflow = self.records.len().saturating_sub(self.max);
-        self.records.drain(..overflow);
+        for record in self.records.drain(..overflow) {
+            self.times.remove(&record.seq);
+        }
     }
 
     /// Пришли ли ошибки с прошлого вызова (для Error Pause).
@@ -116,6 +145,7 @@ impl ConsoleState {
 
     pub(crate) fn clear(&mut self) {
         self.records.clear();
+        self.times.clear();
         self.selected = None;
         self.errors_seen = 0;
     }
@@ -184,7 +214,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     {
         let console = &mut editor.console;
         theme::toolbar_strip(ui, |ui| {
-            if theme::icon_text_button(ui, Icon::Trash, "Clear").on_hover_text("Remove all messages").clicked() {
+            if theme::icon_text_button(ui, Icon::Trash, tr_s("Clear")).on_hover_text(tr_s("Remove all messages")).clicked() {
                 console.clear();
             }
             theme::toolbar_separator(ui);
@@ -192,30 +222,30 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                 ui,
                 &mut console.collapse,
                 Icon::Collapse,
-                "Collapse",
-                "Show identical messages once, with a count",
+                tr_s("Collapse"),
+                tr_s("Show identical messages once, with a count"),
             );
             theme::toggle_button(
                 ui,
                 &mut console.error_pause,
                 Icon::Pause,
-                "Error Pause",
-                "Pause the game when an error is logged in Play mode",
+                tr_s("Error Pause"),
+                tr_s("Pause the game when an error is logged in Play mode"),
             );
             theme::toggle_button(
                 ui,
                 &mut console.auto_scroll,
                 Icon::ArrowDown,
-                "Auto-scroll",
-                "Keep the newest message in view",
+                tr_s("Auto-scroll"),
+                tr_s("Keep the newest message in view"),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 1.0;
-                theme::pill_toggle(ui, &mut console.show_error, Icon::Error, theme::ERROR, &errors.to_string(), "Show errors");
-                theme::pill_toggle(ui, &mut console.show_warn, Icon::Warn, theme::WARN, &warnings.to_string(), "Show warnings");
-                theme::pill_toggle(ui, &mut console.show_info, Icon::Info, theme::INFO, &infos.to_string(), "Show messages");
+                ui.spacing_mut().item_spacing.x = theme::SP_1;
+                theme::pill_toggle(ui, &mut console.show_error, Icon::Error, theme::ERROR, &errors.to_string(), tr_s("Show errors"));
+                theme::pill_toggle(ui, &mut console.show_warn, Icon::Warn, theme::WARN, &warnings.to_string(), tr_s("Show warnings"));
+                theme::pill_toggle(ui, &mut console.show_info, Icon::Info, theme::INFO, &infos.to_string(), tr_s("Show messages"));
                 ui.add_space(theme::SP_S);
-                theme::search_field(ui, &mut console.filter, "Search messages", 240.0);
+                theme::search_field(ui, &mut console.filter, tr_s("Search messages"), 240.0);
             });
         });
     }
@@ -243,9 +273,9 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
 
     if rows.is_empty() {
         let (title, hint) = if editor.console.records.is_empty() {
-            ("No messages", "Logs from the engine, your game and builds appear here")
+            (tr_s("No messages"), tr_s("Logs from the engine, your game and builds appear here"))
         } else {
-            ("Nothing matches", "Change the search text or turn the level filters back on")
+            (tr_s("Nothing matches"), tr_s("Change the search text or turn the level filters back on"))
         };
         theme::empty_state(ui, Icon::Console, title, hint);
         return;
@@ -300,6 +330,11 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                 .galley(target_pos, target, theme::TEXT_DISABLED);
             right = target_pos.x - theme::SP_L;
 
+            // Время прихода записи (с запуска редактора) — моноширинно, слева.
+            let stamp = console.times.get(&record.seq).copied().map(time_label).unwrap_or_default();
+            let stamp = ui.painter().layout_no_wrap(stamp, theme::mono(), theme::TEXT_DISABLED);
+            let stamp_width = stamp.size().x;
+            ui.painter().galley(pos2(rect.left() + 26.0, rect.center().y - stamp.size().y * 0.5), stamp, theme::TEXT_DISABLED);
             let first_line = record.message.lines().next().unwrap_or_default();
             let more = record.message.lines().nth(1).is_some();
             let text_color = match record.level {
@@ -308,8 +343,8 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                 _ => theme::TEXT,
             };
             let font = if record.target == "build" { theme::mono() } else { theme::body() };
-            let text = if more { format!("{first_line}  …") } else { first_line.to_string() };
-            let clip = Rect::from_min_max(pos2(rect.left() + 26.0, rect.top()), pos2(right, rect.bottom()));
+            let text = if more { trf!("{first_line}  …", first_line = first_line) } else { first_line.to_string() };
+            let clip = Rect::from_min_max(pos2(rect.left() + 26.0 + stamp_width + theme::SP_M, rect.top()), pos2(right, rect.bottom()));
             ui.painter().with_clip_rect(clip).text(
                 pos2(clip.left(), rect.center().y),
                 Align2::LEFT_CENTER,
@@ -348,16 +383,16 @@ fn details(editor: &mut Editor, ui: &mut egui::Ui, record: &LogRecord) {
         ui.label(egui::RichText::new(format!("{}", record.level)).font(theme::strong(theme::FONT_CAPTION)).color(theme::TEXT));
         ui.label(egui::RichText::new(&record.target).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if icons::small_button(ui, Icon::Close, "Close details").clicked() {
+            if icons::small_button(ui, Icon::Close, tr_s("Close details")).clicked() {
                 editor.console.selected = None;
             }
-            if theme::icon_text_button(ui, Icon::Copy, "Copy").clicked() {
+            if theme::icon_text_button(ui, Icon::Copy, tr_s("Copy")).clicked() {
                 ui.ctx().copy_text(record.message.clone());
             }
             if let Some((file, line)) = &location {
                 let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                if theme::icon_text_button(ui, Icon::Code, &format!("Open {name}:{line}"))
-                    .on_hover_text("Open the file in the Code tab at this line")
+                if theme::icon_text_button(ui, Icon::Code, &trf!("Open {name}:{line}", name = name, line = line))
+                    .on_hover_text(tr_s("Open the file in the Code tab at this line"))
                     .clicked()
                 {
                     editor.actions.push(Action::OpenCode(file.clone()));
@@ -417,6 +452,21 @@ fn resolve_source(editor: &Editor, path: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn records_get_a_time_since_the_editor_started() {
+        assert_eq!(time_label(83.44), "01:23.4");
+        assert_eq!(time_label(3.0), "00:03.0");
+        assert_eq!(time_label(3725.0), "1:02:05");
+        logging::init();
+        let mut console = ConsoleState::default();
+        log::warn!(target: "console-time-test", "stamped");
+        assert!(console.poll());
+        let record = console.records.iter().rev().find(|r| r.message == "stamped").expect("the record arrived");
+        assert!(console.times.contains_key(&record.seq), "every record gets a time");
+        console.clear();
+        assert!(console.times.is_empty());
+    }
 
     #[test]
     fn compiler_locations_are_found() {

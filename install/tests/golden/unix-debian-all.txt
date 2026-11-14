@@ -1,0 +1,79 @@
+Components: core cpp web android linux-cross engine
+DRY RUN: nothing is installed, downloaded or changed. Detection below only reads.
+[1/21] STEP core.packages - System packages (compiler, pkg-config, ALSA, udev, Vulkan, X11/Wayland libraries)
+         elevation: administrator rights are needed for the package manager (sudo asks for your password; the command is shown first)
+         run      sudo apt-get update
+         run      sudo apt-get install -y ca-certificates curl git unzip xz-utils build-essential pkg-config libasound2-dev libudev-dev mesa-vulkan-drivers libvulkan1 libxkbcommon0 libwayland-client0 libx11-6
+         note     the package manager runs through sudo and asks for your password
+[2/21] STEP core.rustup - Rust (rustup, stable)
+         download https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init (~20 MB)
+         verify   sha256 from https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init.sha256
+         cache    <FAKE>/prefix/cache
+         run      rustup-init -y --default-toolchain stable --profile minimal
+[3/21] STEP core.rust-components - Rust components (clippy rustfmt)
+         run      rustup component add clippy rustfmt
+[4/21] STEP core.vulkan - Vulkan runtime (GPU driver)
+         note     libvulkan.so.1 comes from the Vulkan loader + a driver (Mesa or NVIDIA); the package step installs the Mesa drivers.
+[5/21] STEP cpp.packages - CMake + Ninja
+         elevation: administrator rights are needed for the package manager (sudo asks for your password; the command is shown first)
+         run      sudo apt-get update
+         run      sudo apt-get install -y cmake ninja-build
+         note     the package manager runs through sudo and asks for your password
+[6/21] STEP web.target - Rust target wasm32-unknown-unknown
+         run      rustup target add wasm32-unknown-unknown
+[7/21] STEP android.jdk - JDK 17
+         elevation: administrator rights are needed for the package manager (sudo asks for your password; the command is shown first)
+         run      sudo apt-get update
+         run      sudo apt-get install -y openjdk-17-jdk-headless
+         note     the package manager runs through sudo and asks for your password
+[8/21] STEP android.cmdline-tools - Android command-line tools (sdkmanager)
+         download https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip (~182 MB)
+         verify   sha256 4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
+         cache    <FAKE>/prefix/cache
+         extract  to <FAKE>/Android/Sdk/cmdline-tools/latest
+[9/21] STEP android.licenses - Android SDK licences
+         licence: the Android SDK (https://developer.android.com/studio/terms) - accepted only with --accept-licenses or your answer
+         run      yes | sdkmanager --sdk_root=<FAKE>/Android/Sdk --licenses   (answers 'y' to every licence; only after you accept)
+[10/21] STEP android.packages - Android SDK packages
+         run      sdkmanager --sdk_root=<FAKE>/Android/Sdk "platform-tools" "platforms;android-35" "build-tools;36.0.0" "ndk;28.2.13676358"
+[11/21] STEP android.cargo-ndk - cargo-ndk 4.1.2
+         run      cargo install cargo-ndk --version 4.1.2 --locked   (compiles from crates.io, a few minutes; cargo checks crate hashes)
+[12/21] STEP android.target - Rust target aarch64-linux-android
+         run      rustup target add aarch64-linux-android
+[13/21] STEP android.env - Environment: ANDROID_HOME, ANDROID_NDK_HOME (and JAVA_HOME if unset)
+         env      export ANDROID_HOME="<FAKE>/Android/Sdk"
+         env      export ANDROID_NDK_HOME="<FAKE>/Android/Sdk/ndk/28.2.13676358"
+         env      [ -z "${JAVA_HOME:-}" ] && export JAVA_HOME="<JDK folder>"
+         env      export PISKA_ZIG="<FAKE>/prefix/tools/zig/0.17.1/zig-linux-x86_64-0.17.1/zig"
+         file     <FAKE>/.profile  (a delimited block that sources <FAKE>/prefix/env.sh; backup first)
+[14/21] STEP linux-cross.zig - zig 0.17.1
+         download https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz (~55 MB)
+         verify   sha256 3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a (cross-checked with https://ziglang.org/download/index.json)
+         cache    <FAKE>/prefix/cache
+         extract  to <FAKE>/prefix/tools/zig/0.17.1
+[15/21] STEP linux-cross.target - Rust target x86_64-unknown-linux-gnu
+         run      rustup target add x86_64-unknown-linux-gnu
+[16/21] STEP linux-cross.env - Environment: PISKA_ZIG
+         env      export PISKA_ZIG="<FAKE>/prefix/tools/zig/0.17.1/zig-linux-x86_64-0.17.1/zig"
+         file     <FAKE>/.profile  (a delimited block that sources <FAKE>/prefix/env.sh; backup first)
+[17/21] STEP engine.source - Engine sources (with the modeler submodule)
+         run      git -C "<REPO>" submodule update --init --recursive   (the modeler is a submodule in modeler/; skipped when it is already there)
+[18/21] STEP engine.build - Build hub, editor, export tool and modeler (release)
+         run      cargo build --release -p piska-hub -p piska-editor -p piska-export   (in <REPO>; 20-40 minutes, about 3 GB)
+         run      cargo build --release --manifest-path modeler/Cargo.toml -p piska-modeler   (in <REPO>)
+[19/21] STEP engine.desktop - Application-menu entries and icon
+         file     <FAKE>/.local/share/applications/piska-hub.desktop, piska-editor.desktop, piska-modeler.desktop
+         file     <FAKE>/.local/share/icons/hicolor/256x256/apps/piska-engine.png  (from assets/branding/icon-256.png)
+[20/21] STEP engine.uninstaller - Uninstall script
+         copy     install.sh + packages.toml to <FAKE>/prefix  (uninstall.sh removes only what the manifest lists)
+[21/21] STEP config.preferences - Editor preferences: Build & Tools paths
+         prefs    tool_cargo = <FAKE>/.cargo/bin/cargo
+         prefs    tool_android_sdk = <FAKE>/Android/Sdk
+         prefs    tool_android_ndk = <FAKE>/Android/Sdk/ndk/28.2.13676358
+         prefs    tool_java = <JDK folder>
+         prefs    tool_zig = <FAKE>/prefix/tools/zig/0.17.1/zig-linux-x86_64-0.17.1/zig
+         prefs    tool_cmake = <cmake>
+         prefs    tool_cxx = <c++>
+         file     <FAKE>/.config/PiskaEngine/editor.ron  (merged: existing values are kept, a backup .piska-backup-<time> is made first)
+DRY RUN finished: no changes were made.
+exit=0

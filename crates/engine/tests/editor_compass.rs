@@ -160,8 +160,20 @@ fn the_compass_swallows_clicks_and_drags_instead_of_the_scene() {
     assert!(angle_between(after.yaw, before.yaw) > 0.2, "yaw {} -> {}", before.yaw, after.yaw);
     assert!((after.pitch - before.pitch).abs() > 0.1, "pitch {} -> {}", before.pitch, after.pitch);
 
-    // А перетаскивание по самой сцене по-прежнему сдвигает точку взгляда.
+    // А средняя кнопка по самой сцене сдвигает точку взгляда (левая там — рамка выделения).
     let scene_point = beside + egui::vec2(-200.0, 60.0);
-    hands.drag(&mut editor, scene_point, scene_point + egui::vec2(80.0, 0.0));
-    assert_ne!(editor.orbit().target, after.target, "dragging the scene pans");
+    let middle = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Middle,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    hands.frame(&mut editor, vec![egui::Event::PointerMoved(scene_point)]);
+    hands.frame(&mut editor, vec![middle(scene_point, true)]);
+    for step in 1..=8 {
+        let pos = scene_point + egui::vec2(10.0 * step as f32, 0.0);
+        hands.frame(&mut editor, vec![egui::Event::PointerMoved(pos)]);
+    }
+    hands.frame(&mut editor, vec![middle(scene_point + egui::vec2(80.0, 0.0), false)]);
+    assert_ne!(editor.orbit().target, after.target, "dragging the scene with the middle button pans");
 }

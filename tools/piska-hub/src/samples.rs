@@ -1,5 +1,6 @@
 //! Вкладка Samples: игры-примеры движка (с картинками) и документация `docs/api/*.md`.
 
+use engine_editor::kit::i18n::{n_};
 use std::path::{Path, PathBuf};
 
 /// Игра-пример из `games/` движка.
@@ -15,20 +16,20 @@ pub struct Sample {
 pub const SAMPLES: [Sample; 3] = [
     Sample {
         folder: "swarm",
-        title: "Swarm",
-        summary: "Arena survival shooter: waves, bosses, upgrades, a sprite atlas and a thousand bullets on screen.",
+        title: n_("Swarm"),
+        summary: n_("Arena survival shooter: waves, bosses, upgrades, a sprite atlas and a thousand bullets on screen."),
         picture: include_bytes!("../assets/samples/swarm.jpg"),
     },
     Sample {
         folder: "lantern",
-        title: "Lantern Keeper",
-        summary: "2D platformer with tilemaps, light, enemies, a boss, menus and saved progress across levels.",
+        title: n_("Lantern Keeper"),
+        summary: n_("2D platformer with tilemaps, light, enemies, a boss, menus and saved progress across levels."),
         picture: include_bytes!("../assets/samples/lantern.jpg"),
     },
     Sample {
         folder: "marble",
-        title: "Marble Factory",
-        summary: "3D physics course with PBR materials, fog and bloom; level mechanisms are written in C++.",
+        title: n_("Marble Factory"),
+        summary: n_("3D physics course with PBR materials, fog and bloom; level mechanisms are written in C++."),
         picture: include_bytes!("../assets/samples/marble.jpg"),
     },
 ];

@@ -9,6 +9,9 @@ publish = false
 [dependencies]
 # Пак ассетов пишет тот же код, что его читает.
 engine-assets.workspace = true
+# Файл с исходниками проекта (`project-pack`) и его расширение из `brand`.
+engine-project.workspace = true
+engine-i18n.workspace = true
 # Версия ОБЯЗАНА совпадать с `wasm-bindgen` в Cargo.lock (проверяется при экспорте):
 # обвязка и рантайм wasm-bindgen должны быть одной версии.
 wasm-bindgen-cli-support = "=0.2.130"

@@ -2,6 +2,7 @@
 //! диск при каждом изменении, перерисовка сцены и миниатюр), список материалов
 //! `MeshRenderer` по частям модели, создание материалов и извлечение их из модели.
 
+use crate::i18n::{n_, tr_s, trf, trn};
 use std::collections::HashMap;
 
 use egui::{pos2, vec2, Color32, Rect, Sense};
@@ -41,8 +42,8 @@ pub(crate) struct MaterialEditor {
 
 const UNDO_LIMIT: usize = 100;
 
-const TEXTURE: FieldMeta = FieldMeta { variants: &[], asset_kind: "Texture" };
-const MATERIAL: FieldMeta = FieldMeta { variants: &[], asset_kind: "Material" };
+const TEXTURE: FieldMeta = FieldMeta { variants: &[], asset_kind: n_("Texture") };
+const MATERIAL: FieldMeta = FieldMeta { variants: &[], asset_kind: n_("Material") };
 
 /// Поля встроенного материала `MeshRenderer` (раздел «Inline material (legacy)»).
 const INLINE_FIELDS: [&str; 8] = ["color", "texture", "metallic", "roughness", "emissive", "tiling", "grid", "cast_shadows"];
@@ -186,7 +187,7 @@ impl Editor {
             .and_then(|o| o.get::<MeshRenderer>())
             .map(|r| r.mesh)
             .filter(|m| !m.is_none())
-            .ok_or_else(|| EditorError::Other("extracting materials needs a MeshRenderer with a model file".into()))?;
+            .ok_or_else(|| EditorError::Other(tr_s("extracting materials needs a MeshRenderer with a model file").into()))?;
         let database = self.app.world.resources.get_mut::<AssetDatabase>().ok_or_else(|| EditorError::Other("no assets".into()))?;
         let materials = database.model_materials(mesh.guid())?;
         let extras = database.mesh_extras(mesh.guid())?;
@@ -207,7 +208,7 @@ impl Editor {
                 .chars()
                 .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
                 .collect();
-            let relative = format!("{dir}{stem}_{name}.material");
+            let relative = format!("{dir}{stem}_{name}.material", dir = dir, stem = stem, name = name);
             handles.push(database.save_material(&relative, material)?);
             created.push(relative);
         }
@@ -315,10 +316,10 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) -> bool {
                         egui::Label::new(egui::RichText::new(file_name(&asset.path)).font(theme::strong(theme::FONT_TITLE)).color(theme::TEXT))
                             .truncate(),
                     );
-                    ui.label(egui::RichText::new("Material").color(theme::TEXT_MUTED));
+                    ui.label(egui::RichText::new(tr_s("Material")).color(theme::TEXT_MUTED));
                     ui.horizontal(|ui| {
-                        let undo = ui.add_enabled(!editor.material_editor.undo.is_empty(), egui::Button::new("Undo")).on_hover_text("Ctrl+Z");
-                        let redo = ui.add_enabled(!editor.material_editor.redo.is_empty(), egui::Button::new("Redo")).on_hover_text("Ctrl+Y");
+                        let undo = ui.add_enabled_ui(!editor.material_editor.undo.is_empty(), |ui| crate::controls::button(ui, tr_s("Undo"))).inner.on_hover_text("Ctrl+Z");
+                        let redo = ui.add_enabled_ui(!editor.material_editor.redo.is_empty(), |ui| crate::controls::button(ui, tr_s("Redo"))).inner.on_hover_text("Ctrl+Y");
                         if undo.clicked() {
                             editor.undo_material();
                         }
@@ -352,60 +353,60 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) -> bool {
                 property(ui, label, doc, |ui| texture_slot(ui, handle, &assets, &mut filter, thumbs, root.as_deref(), salt))
             };
 
-            section(ui, "Surface");
-            edited |= property(ui, "Base Colour", "Multiplied by the base texture; alpha is transparency", |ui| {
+            section(ui, tr_s("Surface"));
+            edited |= property(ui, tr_s("Base Colour"), tr_s("Multiplied by the base texture; alpha is transparency"), |ui| {
                 let c = &mut material.base_color;
                 color_widget(ui, &mut c.r, &mut c.g, &mut c.b, &mut c.a, ("material_base", guid))
             });
-            edited |= slot(ui, "Base Texture", "Colour texture (sRGB)", &mut material.base_color_texture, "base");
-            edited |= property(ui, "Metallic", "0 — plastic, wood; 1 — metal", |ui| slider(ui, &mut material.metallic, 0.0..=1.0));
-            edited |= property(ui, "Roughness", "0 — mirror, 1 — matte", |ui| slider(ui, &mut material.roughness, 0.0..=1.0));
-            edited |= slot(ui, "Metal / Rough Map", "glTF layout: green — roughness, blue — metallic (linear)", &mut material.metallic_roughness_texture, "mr");
+            edited |= slot(ui, tr_s("Base Texture"), tr_s("Colour texture (sRGB)"), &mut material.base_color_texture, "base");
+            edited |= property(ui, tr_s("Metallic"), tr_s("0 — plastic, wood; 1 — metal"), |ui| slider(ui, &mut material.metallic, 0.0..=1.0));
+            edited |= property(ui, tr_s("Roughness"), tr_s("0 — mirror, 1 — matte"), |ui| slider(ui, &mut material.roughness, 0.0..=1.0));
+            edited |= slot(ui, tr_s("Metal / Rough Map"), tr_s("glTF layout: green — roughness, blue — metallic (linear)"), &mut material.metallic_roughness_texture, "mr");
 
-            section(ui, "Normal Map");
-            edited |= slot(ui, "Normal Map", "Tangent-space normals, OpenGL convention (green up)", &mut material.normal_texture, "normal");
-            edited |= property(ui, "Strength", "0 — flat, 1 — as in the texture", |ui| slider(ui, &mut material.normal_strength, 0.0..=2.0));
+            section(ui, tr_s("Normal Map"));
+            edited |= slot(ui, tr_s("Normal Map"), tr_s("Tangent-space normals, OpenGL convention (green up)"), &mut material.normal_texture, "normal");
+            edited |= property(ui, tr_s("Strength"), tr_s("0 — flat, 1 — as in the texture"), |ui| slider(ui, &mut material.normal_strength, 0.0..=2.0));
 
-            section(ui, "Emission");
-            edited |= property(ui, "Emissive Colour", "Glow added on top of lighting", |ui| {
+            section(ui, tr_s("Emission"));
+            edited |= property(ui, tr_s("Emissive Colour"), tr_s("Glow added on top of lighting"), |ui| {
                 let c = &mut material.emissive;
                 let mut alpha = 1.0;
                 color_widget(ui, &mut c.r, &mut c.g, &mut c.b, &mut alpha, ("material_emissive", guid))
             });
-            edited |= property(ui, "Intensity", "Above 1 makes bloom", |ui| slider(ui, &mut material.emissive_intensity, 0.0..=20.0));
-            edited |= slot(ui, "Emissive Map", "Multiplies the emissive colour (sRGB)", &mut material.emissive_texture, "emissive");
+            edited |= property(ui, tr_s("Intensity"), tr_s("Above 1 makes bloom"), |ui| slider(ui, &mut material.emissive_intensity, 0.0..=20.0));
+            edited |= slot(ui, tr_s("Emissive Map"), tr_s("Multiplies the emissive colour (sRGB)"), &mut material.emissive_texture, "emissive");
 
-            section(ui, "Occlusion");
-            edited |= slot(ui, "Occlusion Map", "Red channel darkens ambient light in creases", &mut material.occlusion_texture, "ao");
-            edited |= property(ui, "Strength", "", |ui| slider(ui, &mut material.occlusion_strength, 0.0..=1.0));
+            section(ui, tr_s("Occlusion"));
+            edited |= slot(ui, tr_s("Occlusion Map"), tr_s("Red channel darkens ambient light in creases"), &mut material.occlusion_texture, "ao");
+            edited |= property(ui, tr_s("Strength"), "", |ui| slider(ui, &mut material.occlusion_strength, 0.0..=1.0));
 
-            section(ui, "Tiling");
-            edited |= property(ui, "UV Tiling", "Texture repeats along U and V", |ui| pair(ui, &mut material.uv_scale, 0.05));
-            edited |= property(ui, "UV Offset", "", |ui| pair(ui, &mut material.uv_offset, 0.01));
-            edited |= property(ui, "World Tiling", "Repeat the base texture every N metres in world space (0 — use mesh UV)", |ui| {
-                ui.add(egui::DragValue::new(&mut material.world_tiling).range(0.0..=100.0).speed(0.05).suffix(" m")).changed()
+            section(ui, tr_s("Tiling"));
+            edited |= property(ui, tr_s("UV Tiling"), tr_s("Texture repeats along U and V"), |ui| pair(ui, &mut material.uv_scale, 0.05));
+            edited |= property(ui, tr_s("UV Offset"), "", |ui| pair(ui, &mut material.uv_offset, 0.01));
+            edited |= property(ui, tr_s("World Tiling"), tr_s("Repeat the base texture every N metres in world space (0 — use mesh UV)"), |ui| {
+                crate::controls::number_field_ex(ui, &mut material.world_tiling, 0.0..=100.0, 0.05, "", tr_s(" m"), 3, 96.0).changed()
             });
 
-            section(ui, "Rendering");
-            edited |= property(ui, "Alpha", "Opaque, cut out below a threshold (leaves), or blended (glass)", |ui| {
+            section(ui, tr_s("Rendering"));
+            edited |= property(ui, tr_s("Alpha"), tr_s("Opaque, cut out below a threshold (leaves), or blended (glass)"), |ui| {
                 theme::segmented(
                     ui,
                     &mut material.alpha_mode,
                     &[
-                        (AlphaMode::Opaque, "Opaque", "Alpha is ignored"),
-                        (AlphaMode::Cutout, "Cutout", "Pixels below the threshold are not drawn (also in shadows)"),
-                        (AlphaMode::Blend, "Blend", "Mixed with what is behind; drawn after opaque objects"),
+                        (AlphaMode::Opaque, tr_s("Opaque"), tr_s("Alpha is ignored")),
+                        (AlphaMode::Cutout, tr_s("Cutout"), tr_s("Pixels below the threshold are not drawn (also in shadows)")),
+                        (AlphaMode::Blend, tr_s("Blend"), tr_s("Mixed with what is behind; drawn after opaque objects")),
                     ],
                 )
             });
             if material.alpha_mode == AlphaMode::Cutout {
-                edited |= property(ui, "Threshold", "", |ui| slider(ui, &mut material.alpha_cutoff, 0.0..=1.0));
+                edited |= property(ui, tr_s("Threshold"), "", |ui| slider(ui, &mut material.alpha_cutoff, 0.0..=1.0));
             }
-            edited |= property(ui, "Double-Sided", "Draw back faces too, lit from their own side", |ui| ui.checkbox(&mut material.double_sided, "").changed());
-            edited |= property(ui, "Cast Shadows", "", |ui| ui.checkbox(&mut material.cast_shadows, "").changed());
-            edited |= property(ui, "Receive Shadows", "", |ui| ui.checkbox(&mut material.receive_shadows, "").changed());
-            edited |= property(ui, "Unlit", "No lighting: the colour as is (plus emission)", |ui| ui.checkbox(&mut material.unlit, "").changed());
-            edited |= property(ui, "Dev Grid", "Metre grid on top — for level prototypes", |ui| ui.checkbox(&mut material.grid, "").changed());
+            edited |= property(ui, tr_s("Double-Sided"), tr_s("Draw back faces too, lit from their own side"), |ui| ui.checkbox(&mut material.double_sided, "").changed());
+            edited |= property(ui, tr_s("Cast Shadows"), "", |ui| ui.checkbox(&mut material.cast_shadows, "").changed());
+            edited |= property(ui, tr_s("Receive Shadows"), "", |ui| ui.checkbox(&mut material.receive_shadows, "").changed());
+            edited |= property(ui, tr_s("Unlit"), tr_s("No lighting: the colour as is (plus emission)"), |ui| ui.checkbox(&mut material.unlit, "").changed());
+            edited |= property(ui, tr_s("Dev Grid"), tr_s("Metre grid on top — for level prototypes"), |ui| ui.checkbox(&mut material.grid, "").changed());
             ui.add_space(theme::SP_XL);
         });
         editor.inspector.asset_filter = filter;
@@ -437,8 +438,8 @@ fn slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeInclusive<f3
 
 fn pair(ui: &mut egui::Ui, value: &mut Vec2, speed: f64) -> bool {
     let width = (ui.available_width() - theme::SP_M) * 0.5;
-    let x = ui.add_sized(vec2(width, 24.0), egui::DragValue::new(&mut value.x).speed(speed).prefix("U ")).changed();
-    let y = ui.add_sized(vec2(width, 24.0), egui::DragValue::new(&mut value.y).speed(speed).prefix("V ")).changed();
+    let x = crate::controls::number_field_ex(ui, &mut value.x, f32::MIN..=f32::MAX, speed, tr_s("U "), "", 3, width).changed();
+    let y = crate::controls::number_field_ex(ui, &mut value.y, f32::MIN..=f32::MAX, speed, tr_s("V "), "", 3, width).changed();
     x || y
 }
 
@@ -460,7 +461,7 @@ fn texture_slot(
             let path = assets.iter().find(|a| a.guid == guid).zip(root).map(|(a, root)| root.join(&a.path))?;
             let image = image::open(&path).ok()?.thumbnail(64, 64).to_rgba8();
             let size = [image.width() as usize, image.height() as usize];
-            Some(ui.ctx().load_texture(format!("material_slot_{guid}"), egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw()), egui::TextureOptions::LINEAR))
+            Some(ui.ctx().load_texture(format!("material_slot_{guid}", guid = guid), egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw()), egui::TextureOptions::LINEAR))
         });
         if let Some(texture) = texture {
             ui.painter().image(texture.id(), square.shrink(2.0), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
@@ -481,9 +482,9 @@ pub(crate) fn shape_switch(previews: &mut Previews, ui: &mut egui::Ui) {
         ui,
         &mut shape,
         &[
-            (PreviewShape::Sphere, "Sphere", "Preview on a sphere"),
-            (PreviewShape::Cube, "Cube", "Preview on a cube"),
-            (PreviewShape::Plane, "Plane", "Preview on a flat plane"),
+            (PreviewShape::Sphere, tr_s("Sphere"), tr_s("Preview on a sphere")),
+            (PreviewShape::Cube, tr_s("Cube"), tr_s("Preview on a cube")),
+            (PreviewShape::Plane, tr_s("Plane"), tr_s("Preview on a flat plane")),
         ],
     ) {
         previews.detail.shape = shape;
@@ -523,7 +524,34 @@ pub(crate) fn mesh_renderer_body(ui: &mut egui::Ui, mesh: &mut MeshRenderer, ctx
         edited && mesh.set_field(name, &value).is_ok()
     };
     changed |= field(ui, mesh, "shape", filter);
+    let mesh_top = ui.cursor().top();
     changed |= field(ui, mesh, "mesh", filter);
+    let mesh_bottom = ui.min_rect().bottom();
+    // Правая кнопка по подписи поля Mesh: модель — «Edit in Modeler», чужой меш —
+    // «Edit a Copy in Modeler» (без программы Piska Modeler — неактивно с подсказкой).
+    let model_file = (!mesh.mesh.is_none()).then(|| database.and_then(|db| db.path_of(mesh.mesh.guid()))).flatten();
+    if let Some(file) = model_file {
+        if let Some(entry) = crate::modeler_link::ModelerEntry::for_path(&file) {
+            // Подпись поля — левая колонка сетки свойств (само поле не перекрывается).
+            let left = ui.max_rect().left();
+            let label = egui::Rect::from_min_max(egui::pos2(left, mesh_top), egui::pos2(left + ui.available_width() * 0.35, mesh_bottom));
+            let response = ui.interact(label, egui::Id::new(("mesh_modeler_menu", object)), egui::Sense::click());
+            let installed = crate::modeler_link::modeler_executable().is_some();
+            response.context_menu(|ui| {
+                theme::menu_body(ui);
+                if theme::item(tr_s(entry.label()))
+                    .icon(crate::icons::Icon::Cube)
+                    .enabled_if(installed, tr_s(crate::modeler_link::MODELER_MISSING))
+                    .show(ui)
+                {
+                    actions.push(match entry {
+                        crate::modeler_link::ModelerEntry::Edit => Action::EditInModeler(file.clone()),
+                        crate::modeler_link::ModelerEntry::EditCopy => Action::EditCopyInModeler(file.clone()),
+                    });
+                }
+            });
+        }
+    }
 
     // Части модели и сколько материалов в её файле.
     let model = (!mesh.mesh.is_none()).then(|| mesh.mesh.guid());
@@ -532,7 +560,7 @@ pub(crate) fn mesh_renderer_body(ui: &mut egui::Ui, mesh: &mut MeshRenderer, ctx
             .part_names
             .entry(guid)
             .or_insert_with(|| match db.load_mesh(guid) {
-                Ok(data) => data.parts().iter().enumerate().map(|(i, p)| if p.name.is_empty() { format!("Part {i}") } else { p.name.clone() }).collect(),
+                Ok(data) => data.parts().iter().enumerate().map(|(i, p)| if p.name.is_empty() { trf!("Part {i}", i = i) } else { p.name.clone() }).collect(),
                 Err(_) => Vec::new(),
             })
             .clone(),
@@ -546,16 +574,16 @@ pub(crate) fn mesh_renderer_body(ui: &mut egui::Ui, mesh: &mut MeshRenderer, ctx
     };
 
     ui.add_space(theme::SP_S);
-    theme::section_label(ui, "Materials");
+    theme::section_label(ui, tr_s("Materials"));
     let slots = names.len().max(mesh.materials.len()).max(1);
     let pixels_per_point = ui.ctx().pixels_per_point();
     let mut slots_changed = false;
     for slot in 0..slots {
-        let label = names.get(slot).cloned().unwrap_or_else(|| format!("Element {slot}"));
+        let label = names.get(slot).cloned().unwrap_or_else(|| trf!("Element {slot}", slot = slot));
         let current = mesh.materials.get(slot).copied().unwrap_or_default();
         let mut text = if current.is_none() { String::new() } else { current.guid().to_string() };
         let mut edit = None;
-        let edited = property(ui, &label, "Material of this part of the mesh; drag a .material here", |ui| {
+        let edited = property(ui, &label, tr_s("Material of this part of the mesh; drag a .material here"), |ui| {
             let (square, _) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::hover());
             ui.painter().rect_filled(square, theme::R_S, theme::BG_INSET);
             if !current.is_none() {
@@ -565,9 +593,9 @@ pub(crate) fn mesh_renderer_body(ui: &mut egui::Ui, mesh: &mut MeshRenderer, ctx
             }
             let width = (ui.available_width() - if current.is_none() { 0.0 } else { 40.0 + theme::SP_M * 2.0 }).max(40.0);
             let changed = ui
-                .allocate_ui(vec2(width, 26.0), |ui| asset_widget(ui, &mut text, MATERIAL, assets, filter, ("material_slot", object, slot)))
+                .allocate_ui(vec2(width, theme::CONTROL_H), |ui| asset_widget(ui, &mut text, MATERIAL, assets, filter, ("material_slot", object, slot)))
                 .inner;
-            if !current.is_none() && ui.add_sized(vec2(40.0, 24.0), egui::Button::new("Edit")).on_hover_text("Open the material in the Inspector").clicked() {
+            if !current.is_none() && crate::controls::button(ui, tr_s("Edit")).on_hover_text(tr_s("Open the material in the Inspector")).clicked() {
                 edit = Some(current.guid());
             }
             changed
@@ -591,15 +619,15 @@ pub(crate) fn mesh_renderer_body(ui: &mut egui::Ui, mesh: &mut MeshRenderer, ctx
         changed = true;
     }
     if model.is_some() && file_materials > 0 {
-        changed |= property(ui, "Model Materials", "Without assigned materials, use the materials described in the model file", |ui| {
+        changed |= property(ui, tr_s("Model Materials"), tr_s("Without assigned materials, use the materials described in the model file"), |ui| {
             ui.checkbox(&mut mesh.model_materials, "").changed()
         });
         ui.horizontal(|ui| {
             // Под колонкой значений, как поля выше.
-            ui.add_space((ui.available_width() * 0.38).clamp(84.0, 168.0) + theme::SP_M);
+            ui.add_space(theme::property_columns(ui.available_width()).0 + theme::SP_S);
             if ui
-                .button("Extract materials from model")
-                .on_hover_text(format!("Create {file_materials} .material file(s) next to the model from its embedded materials and assign them"))
+                .button(tr_s("Extract materials from model"))
+                .on_hover_text(trn!("Create {n} .material file next to the model from its embedded materials and assign it", "Create {n} .material files next to the model from its embedded materials and assign them", file_materials))
                 .clicked()
             {
                 actions.push(Action::ExtractMaterials(object));
@@ -610,14 +638,11 @@ pub(crate) fn mesh_renderer_body(ui: &mut egui::Ui, mesh: &mut MeshRenderer, ctx
 
     if !mesh.uses_material_assets() {
         ui.add_space(theme::SP_S);
-        egui::CollapsingHeader::new(egui::RichText::new("Inline material (legacy)").color(theme::TEXT_MUTED))
-            .id_salt(("inline_material", object))
-            .default_open(true)
-            .show(ui, |ui| {
-                for name in INLINE_FIELDS {
-                    changed |= field(ui, mesh, name, filter);
-                }
-            });
+        theme::foldout(ui, egui::Id::new(("inline_material", object)), tr_s("Inline material (legacy)"), true, |ui| {
+            for name in INLINE_FIELDS {
+                changed |= field(ui, mesh, name, filter);
+            }
+        });
     } else {
         changed |= field(ui, mesh, "cast_shadows", filter);
     }

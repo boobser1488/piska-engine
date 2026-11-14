@@ -1,0 +1,53 @@
+(
+    name: "Bat",
+    tag: "Enemy",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(1.0, 1.0, 1.0, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.5),
+                "sheet_columns": Int(4),
+                "sheet_rows": Int(1),
+                "size": Vec2(1.0, 1.0),
+                "sorting_layer": Int(2),
+                "texture": Asset("51192fc785edebaf31e86ca9fe18609f"),
+                "uv_offset": Vec2(0.0, 0.0),
+                "uv_size": Vec2(1.0, 1.0),
+            },
+        ),
+        (
+            kind: "SpriteAnimator",
+            fields: {
+                "clip": Str("fly"),
+                "clips": List([
+                    Str("fly: 0-3 @10"),
+                ]),
+                "finished": Bool(false),
+                "frame": Int(0),
+                "playing": Bool(true),
+                "speed": Float(1.0),
+                "time": Float(0.0),
+            },
+        ),
+        (
+            kind: "Bat",
+            fields: {
+                "amp": Float(1.5),
+                "anchor": Vec2(0.0, 0.0),
+                "range": Float(3.0),
+                "speed": Float(1.0),
+                "t": Float(0.0),
+            },
+        ),
+    ],
+)

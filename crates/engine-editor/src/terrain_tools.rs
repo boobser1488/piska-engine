@@ -7,6 +7,7 @@
 //! когда кнопку отпустили. Правки хранятся в поле `edits` компонента и сохраняются
 //! вместе со сценой.
 
+use crate::i18n::{n_, tr_s, trf};
 use std::collections::HashMap;
 
 use egui::{vec2, Align2, PointerButton, Rect, Stroke};
@@ -38,12 +39,12 @@ pub(crate) struct TerrainTools {
 }
 
 const TOOLS: [(Option<BrushTool>, &str, &str); 6] = [
-    (None, "Off", "No brush: select and move objects as usual"),
-    (Some(BrushTool::Raise), "Raise", "Raise the ground under the brush"),
-    (Some(BrushTool::Lower), "Lower", "Lower the ground under the brush"),
-    (Some(BrushTool::Smooth), "Smooth", "Smooth bumps and sharp edges"),
-    (Some(BrushTool::Flatten), "Flatten", "Pull the ground to a set height (Ctrl+click picks the height)"),
-    (Some(BrushTool::Paint), "Paint", "Paint a texture layer over the automatic ones"),
+    (None, n_("Off"), n_("No brush: select and move objects as usual")),
+    (Some(BrushTool::Raise), n_("Raise"), n_("Raise the ground under the brush")),
+    (Some(BrushTool::Lower), n_("Lower"), n_("Lower the ground under the brush")),
+    (Some(BrushTool::Smooth), n_("Smooth"), n_("Smooth bumps and sharp edges")),
+    (Some(BrushTool::Flatten), n_("Flatten"), n_("Pull the ground to a set height (Ctrl+click picks the height)")),
+    (Some(BrushTool::Paint), n_("Paint"), n_("Paint a texture layer over the automatic ones")),
 ];
 
 /// Выделенный объект с рельефом.
@@ -62,10 +63,10 @@ pub(crate) fn brush_active(editor: &Editor) -> bool {
 
 /// Пункты меню GameObject → 3D Object.
 pub(crate) fn menu_items(editor: &mut Editor, ui: &mut egui::Ui) {
-    if item("Terrain").icon(Icon::Plane).show(ui) {
+    if item(tr_s("Terrain")).icon(Icon::Plane).show(ui) {
         create_terrain(editor);
     }
-    if item("Water").icon(Icon::Plane).show(ui) {
+    if item(tr_s("Water")).icon(Icon::Plane).show(ui) {
         create_water(editor);
     }
 }
@@ -75,9 +76,9 @@ pub(crate) fn snap_menu_item(editor: &mut Editor, ui: &mut egui::Ui) {
     let can = editor
         .selection
         .is_some_and(|id| editor.app.world.scene.get_component::<Terrain>(id).is_none());
-    if item("Snap to Terrain")
+    if item(tr_s("Snap to Terrain"))
         .icon(Icon::Move)
-        .enabled_if(can, "Select an object above a terrain")
+        .enabled_if(can, tr_s("Select an object above a terrain"))
         .show(ui)
     {
         snap_selection(editor);
@@ -90,7 +91,7 @@ pub(crate) fn create_terrain(editor: &mut Editor) -> GameObjectId {
     // Больше суши, чем в образце: новый рельеф — холмы, а не берег и мокрое дно.
     let terrain = Terrain { size: 512.0, land_bias: 0.6, ..Terrain::default() };
     let half = terrain.extent() * 0.5;
-    let id = editor.app.world.scene.spawn("Terrain");
+    let id = editor.app.world.scene.spawn(tr_s("Terrain"));
     if let Some(object) = editor.app.world.scene.get_mut(id) {
         object.transform.position = Vec3::new(-half, 0.0, -half);
         object.add(terrain);
@@ -102,7 +103,7 @@ pub(crate) fn create_terrain(editor: &mut Editor) -> GameObjectId {
 /// Создать воду (море до горизонта) на нулевой высоте.
 pub(crate) fn create_water(editor: &mut Editor) -> GameObjectId {
     editor.touch();
-    let id = editor.app.world.scene.spawn("Water");
+    let id = editor.app.world.scene.spawn(tr_s("Water"));
     if let Some(object) = editor.app.world.scene.get_mut(id) {
         object.add(Water::default());
     }
@@ -169,21 +170,23 @@ pub(crate) fn scene_view(
         let Some(terrain) = world.scene.get_component::<Terrain>(id) else { return };
         let sampler = terrain.sampler(world.resources.get::<AssetDatabase>());
         let radius = editor.terrain_tools.brush.radius;
-        let ring = |r: f32| -> Vec<egui::Pos2> {
-            (0..=64)
-                .filter_map(|k| {
+        // Круг — точки мира; каждое ребро обрезается у камеры (lines.rs): точка позади
+        // камеры не проецируется и не тянет линию через весь экран.
+        let ring = |r: f32| -> Vec<Vec3> {
+            (0..64)
+                .map(|k| {
                     let a = k as f32 / 64.0 * std::f32::consts::TAU;
                     let (x, z) = (center.x + a.cos() * r, center.z + a.sin() * r);
                     let y = origin.y + sampler.height_local(x - origin.x, z - origin.z) + 0.15;
-                    projector.project(Vec3::new(x, y, z))
+                    Vec3::new(x, y, z)
                 })
                 .collect()
         };
         let accent = theme::accent();
-        painter.add(egui::Shape::line(ring(radius), Stroke::new(2.0_f32, accent)));
+        projector.polyline(painter, &ring(radius), true, Stroke::new(2.0_f32, accent));
         let inner = radius * (1.0 - editor.terrain_tools.brush.falloff.clamp(0.0, 1.0));
         if inner > 0.05 {
-            painter.add(egui::Shape::line(ring(inner), Stroke::new(1.0_f32, accent.gamma_multiply(0.6))));
+            projector.polyline(painter, &ring(inner), true, Stroke::new(1.0_f32, accent.gamma_multiply(0.6)));
         }
         if let Some(p) = projector.project(center) {
             painter.circle_filled(p, 2.5, accent);
@@ -234,9 +237,9 @@ fn toolbar(ctx: &egui::Context, rect: Rect, tools: &mut TerrainTools) {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Terrain").strong());
+                    ui.label(egui::RichText::new(tr_s("Terrain")).strong());
                     for (tool, label, hint) in TOOLS {
-                        if ui.selectable_label(tools.tool == tool, label).on_hover_text(hint).clicked() {
+                        if ui.selectable_label(tools.tool == tool, tr_s(label)).on_hover_text(tr_s(hint)).clicked() {
                             tools.tool = tool;
                         }
                     }
@@ -246,31 +249,31 @@ fn toolbar(ctx: &egui::Context, rect: Rect, tools: &mut TerrainTools) {
                 }
                 let brush = &mut tools.brush;
                 ui.horizontal(|ui| {
-                    ui.label("Size");
-                    ui.add(egui::Slider::new(&mut brush.radius, 1.0..=200.0).logarithmic(true).suffix(" m"));
-                    ui.label("Strength");
+                    ui.label(tr_s("Size"));
+                    ui.add(egui::Slider::new(&mut brush.radius, 1.0..=200.0).logarithmic(true).suffix(tr_s(" m")));
+                    ui.label(tr_s("Strength"));
                     ui.add(egui::Slider::new(&mut brush.strength, 0.01..=1.0));
-                    ui.label("Falloff");
+                    ui.label(tr_s("Falloff"));
                     ui.add(egui::Slider::new(&mut brush.falloff, 0.0..=1.0));
                 });
                 match tools.tool {
                     Some(BrushTool::Flatten) => {
                         ui.horizontal(|ui| {
-                            ui.label("Height");
-                            ui.add(egui::DragValue::new(&mut brush.target_height).speed(0.1).suffix(" m"));
-                            ui.label(egui::RichText::new("Ctrl+click picks the height").color(theme::TEXT_MUTED));
+                            ui.label(tr_s("Height"));
+                            crate::controls::number_field_ex(ui, &mut brush.target_height, f32::MIN..=f32::MAX, 0.1, "", tr_s(" m"), 2, 80.0);
+                            ui.label(egui::RichText::new(tr_s("Ctrl+click picks the height")).color(theme::TEXT_MUTED));
                         });
                     }
                     Some(BrushTool::Paint) => {
                         ui.horizontal(|ui| {
-                            ui.label("Layer");
-                            let current = brush.layer.map_or("Erase paint", |k| TERRAIN_LAYERS[k]);
-                            egui::ComboBox::from_id_salt("terrain_paint_layer").selected_text(current).show_ui(ui, |ui| {
+                            ui.label(tr_s("Layer"));
+                            let current = brush.layer.map_or(tr_s("Erase paint"), |k| TERRAIN_LAYERS[k]);
+                            crate::controls::combo(ui, "terrain_paint_layer", current, 140.0, |ui| {
                                 for (k, name) in TERRAIN_LAYERS.iter().enumerate() {
                                     ui.selectable_value(&mut brush.layer, Some(k), *name);
                                 }
-                                ui.selectable_value(&mut brush.layer, None, "Erase paint")
-                                    .on_hover_text("Back to the automatic height / slope layers");
+                                ui.selectable_value(&mut brush.layer, None, tr_s("Erase paint"))
+                                    .on_hover_text(tr_s("Back to the automatic height / slope layers"));
                             });
                         });
                     }
@@ -294,7 +297,7 @@ fn field_row<T: Reflect>(
     let meta = component.field_meta(field);
     let doc = clean_doc(component.field_doc(field));
     let edited = property(ui, label, &doc, |ui| {
-        let widget = ui.scope(|ui| value_widget(ui, &mut value, meta, assets, asset_filter, ("Terrain", field)));
+        let widget = ui.scope(|ui| value_widget(ui, &mut value, meta, assets, asset_filter, (tr_s("Terrain"), field)));
         rects.insert(("Terrain", field), widget.response.rect);
         widget.inner
     });
@@ -333,7 +336,7 @@ pub(crate) fn inspector_body(
     ui.spacing_mut().item_spacing.y = 2.0;
 
     // --- Форма: черновик, применяется кнопкой Regenerate ---
-    heading(ui, "Shape");
+    heading(ui, tr_s("Shape"));
     if tools.draft.as_ref().is_none_or(|(owner, _)| *owner != id) {
         tools.draft = Some((id, terrain.clone()));
         tools.confirm = None;
@@ -344,12 +347,13 @@ pub(crate) fn inspector_body(
     }
     let differs = TERRAIN_SHAPE_FIELDS.iter().any(|f| draft.get_field(f) != terrain.get_field(f));
     ui.add_space(theme::SP_S);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         let regenerate_clicked = ui
-            .add_enabled(differs, egui::Button::new("Regenerate"))
-            .on_hover_text("Apply the shape settings above and rebuild the terrain")
+            .add_enabled_ui(differs, |ui| crate::controls::button(ui, tr_s("Regenerate")))
+            .inner
+            .on_hover_text(tr_s("Apply the shape settings above and rebuild the terrain"))
             .clicked();
-        if ui.add_enabled(differs, egui::Button::new("Revert")).on_hover_text("Forget the unapplied shape settings").clicked() {
+        if ui.add_enabled_ui(differs, |ui| crate::controls::button(ui, tr_s("Revert"))).inner.on_hover_text(tr_s("Forget the unapplied shape settings")).clicked() {
             *draft = terrain.clone();
         }
         if regenerate_clicked {
@@ -362,30 +366,29 @@ pub(crate) fn inspector_body(
         }
     });
     if differs {
-        ui.label(egui::RichText::new("Shape settings are applied with Regenerate").color(theme::WARN));
+        ui.label(egui::RichText::new(tr_s("Shape settings are applied with Regenerate")).color(theme::WARN));
     }
 
     if tools.confirm == Some(id) {
         let mut answer: Option<Option<bool>> = None;
-        egui::Window::new("Regenerate Terrain")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
-            .show(ui.ctx(), |ui| {
-                ui.label("The terrain has sculpting and painting.\nKeep it on top of the new shape, or discard it?");
-                ui.add_space(theme::SP_M);
-                ui.horizontal(|ui| {
-                    if ui.button("Keep Sculpting").clicked() {
+        let ctx = ui.ctx().clone();
+        let dialog = crate::window_kit::dialog("terrain_regenerate_dialog", tr_s("Regenerate Terrain")).width(360.0).show(&ctx, |ui| {
+                ui.label(egui::RichText::new(tr_s("The terrain has sculpting and painting.\nKeep it on top of the new shape, or discard it?")).color(theme::TEXT_MUTED));
+                crate::window_kit::dialog_actions(ui, |ui| {
+                    if crate::window_kit::primary_action(ui, tr_s("Keep Sculpting")).clicked() {
                         answer = Some(Some(true));
                     }
-                    if ui.button("Discard Sculpting").clicked() {
+                    if crate::window_kit::action_button(ui, tr_s("Discard Sculpting")).clicked() {
                         answer = Some(Some(false));
                     }
-                    if ui.button("Cancel").clicked() {
+                    if crate::window_kit::action_button(ui, tr_s("Cancel")).clicked() {
                         answer = Some(None);
                     }
                 });
             });
+        if dialog.cancel && answer.is_none() {
+            answer = Some(None);
+        }
         if let Some(choice) = answer {
             tools.confirm = None;
             if let Some(keep) = choice {
@@ -398,13 +401,13 @@ pub(crate) fn inspector_body(
     }
 
     // --- Отрисовка ---
-    heading(ui, "Rendering");
+    heading(ui, tr_s("Rendering"));
     for field in ["view_distance", "lod_distance", "cast_shadows", "sea_level", "snow_height", "desert", "texture_scale"] {
         changed |= field_row(ui, terrain, field, &theme::pretty_name(field), assets, asset_filter, rects);
     }
 
     // --- Слои ---
-    heading(ui, "Layers");
+    heading(ui, tr_s("Layers"));
     const LAYER_FIELDS: [(&str, &str); 5] = [
         ("grass_texture", "grass_color"),
         ("dirt_texture", "dirt_color"),
@@ -413,27 +416,27 @@ pub(crate) fn inspector_body(
         ("snow_texture", "snow_color"),
     ];
     for (name, (texture, color)) in TERRAIN_LAYERS.iter().zip(LAYER_FIELDS) {
-        changed |= field_row(ui, terrain, texture, &format!("{name} Texture"), assets, asset_filter, rects);
-        changed |= field_row(ui, terrain, color, &format!("{name} Tint"), assets, asset_filter, rects);
+        changed |= field_row(ui, terrain, texture, &trf!("{name} Texture", name = name), assets, asset_filter, rects);
+        changed |= field_row(ui, terrain, color, &trf!("{name} Tint", name = name), assets, asset_filter, rects);
     }
 
     // --- Скульпт ---
-    heading(ui, "Sculpting");
-    ui.horizontal(|ui| {
+    heading(ui, tr_s("Sculpting"));
+    ui.horizontal_wrapped(|ui| {
         let tiles = terrain.edits.tile_count();
         let text = if tiles == 0 {
-            "No sculpting or painting yet".to_string()
+            tr_s("No sculpting or painting yet").to_string()
         } else {
-            format!("Edited {tiles} tile(s) of 64 × 64 samples")
+            trf!("Edited {tiles} tile(s) of 64 × 64 samples", tiles = tiles)
         };
         ui.label(egui::RichText::new(text).color(theme::TEXT_MUTED));
-        if ui.add_enabled(tiles > 0, egui::Button::new("Clear")).on_hover_text("Remove all sculpting and painting").clicked() {
+        if ui.add_enabled_ui(tiles > 0, |ui| crate::controls::button(ui, tr_s("Clear"))).inner.on_hover_text(tr_s("Remove all sculpting and painting")).clicked() {
             terrain.clear_edits();
             changed = true;
         }
     });
     ui.label(
-        egui::RichText::new("Brushes: pick a tool in the Scene view (3D) toolbar, then drag over the terrain.")
+        egui::RichText::new(tr_s("Brushes: pick a tool in the Scene view (3D) toolbar, then drag over the terrain."))
             .color(theme::TEXT_MUTED),
     );
     if changed {

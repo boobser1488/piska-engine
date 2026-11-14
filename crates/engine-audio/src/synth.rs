@@ -5,6 +5,12 @@
 //! * [`Melody`] — строка нот → [`Sound`] (зацикливается без щелчка).
 //! * [`sfx`] — готовые эффекты (прыжок, монета, удар, взрыв, клик…).
 //! * [`music`] — готовые короткие музыкальные петли.
+//! * [`Level`] — политика громкости: `sound.render_at(Level::Music)`.
+//!
+//! Качество: осцилляторы квадрат / пила / треугольник ограничены по полосе (таблицы
+//! волн по октавам — без «иголок» наложения спектров на высоких нотах), фильтры
+//! двухполюсные, у шума и «острых» волн по умолчанию мягкий срез верхов, у каждого
+//! тона — короткие антищёлчковые фаски в начале и в конце.
 //!
 //! ```
 //! use engine_audio::synth::*;
@@ -23,9 +29,22 @@
 use std::f32::consts::TAU;
 
 use crate::clip::AudioClip;
+pub use crate::clip::Level;
+use crate::dsp::{bl_pulse, bl_saw, bl_triangle, Svf, SvfCoefs, BUTTERWORTH_Q};
 
 /// Частота дискретизации синтезатора по умолчанию.
 pub const SAMPLE_RATE: u32 = 44_100;
+
+/// Срез ФНЧ по умолчанию для шума (если `lowpass` не задан): без него белый шум —
+/// это шипение до 22 кГц.
+pub const DEFAULT_NOISE_LOWPASS: f32 = 9_000.0;
+/// Срез ФНЧ по умолчанию для квадрата и пилы: убирает «стеклянный» верх.
+/// `.lowpass(20_000.0)` — звук без смягчения.
+pub const DEFAULT_EDGE_LOWPASS: f32 = 12_000.0;
+/// Антищёлчковые фаски каждого тона: нарастание и спад, секунд. Работают поверх ADSR,
+/// поэтому даже `adsr(0, …, 0)` не даёт ступеньки на краях.
+const DECLICK_IN: f32 = 0.0015;
+const DECLICK_OUT: f32 = 0.003;
 
 /// Форма волны осциллятора.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,8 +141,15 @@ pub struct Tone {
     pub duty: f32,
     /// Вибрато: (частота модуляции Гц, глубина в полутонах).
     pub vibrato: Option<(f32, f32)>,
-    /// ФНЧ: частота среза в начале и в конце тона (Гц).
+    /// ФНЧ (двухполюсный, 12 дБ/окт): частота среза в начале и в конце тона (Гц).
+    /// `None` — срез по умолчанию: [`DEFAULT_NOISE_LOWPASS`] у шума,
+    /// [`DEFAULT_EDGE_LOWPASS`] у квадрата и пилы, без фильтра у синуса и треугольника.
     pub lowpass: Option<(f32, f32)>,
+    /// ФВЧ (двухполюсный): убрать низ — так из шума получаются хэты и шелест.
+    pub highpass: Option<f32>,
+    /// Мягкое насыщение (0 — выключено, 1 — заметное, 4 — сильное): «тёплый» перегруз
+    /// без жёсткого клиппирования.
+    pub drive: f32,
     pub seed: u32,
     pub sample_rate: u32,
 }
@@ -141,6 +167,8 @@ impl Tone {
             duty: 0.5,
             vibrato: None,
             lowpass: None,
+            highpass: None,
+            drive: 0.0,
             seed: 0x9E37_79B9,
             sample_rate: SAMPLE_RATE,
         }
@@ -215,6 +243,23 @@ impl Tone {
         self
     }
 
+    /// ФВЧ: срезать всё ниже `cutoff_hz`.
+    pub fn highpass(mut self, cutoff_hz: f32) -> Self {
+        self.highpass = Some(cutoff_hz);
+        self
+    }
+
+    /// Мягкое насыщение (`0` — выключено). Пик остаётся в пределах ±1.
+    pub fn drive(mut self, amount: f32) -> Self {
+        self.drive = amount.max(0.0);
+        self
+    }
+
+    /// Отрисовать и привести к уровню политики громкости: `tone.render_at(Level::Sfx)`.
+    pub fn render_at(&self, level: impl Into<Level>) -> AudioClip {
+        self.render().render_at(level)
+    }
+
     /// Зерно генератора шума: разные зёрна — разные, но воспроизводимые шумы.
     pub fn seed(mut self, seed: u32) -> Self {
         self.seed = seed.max(1);
@@ -236,6 +281,15 @@ impl Tone {
         }
     }
 
+    /// Срез ФНЧ с учётом значения по умолчанию для формы волны.
+    fn effective_lowpass(&self) -> Option<(f32, f32)> {
+        self.lowpass.or(match self.wave {
+            Wave::Noise => Some((DEFAULT_NOISE_LOWPASS, DEFAULT_NOISE_LOWPASS)),
+            Wave::Square | Wave::Saw => Some((DEFAULT_EDGE_LOWPASS, DEFAULT_EDGE_LOWPASS)),
+            Wave::Sine | Wave::Triangle => None,
+        })
+    }
+
     /// Сгенерировать звук длиной `duration + release`.
     pub fn render(&self) -> Sound {
         let rate = self.sample_rate as f32;
@@ -244,7 +298,14 @@ impl Tone {
         let mut phase = 0.0f32;
         let mut noise_state = self.seed.max(1);
         let mut held_noise = 0.0f32;
-        let mut filtered = 0.0f32;
+        let lowpass = self.effective_lowpass();
+        let mut lp = Svf::default();
+        let mut lp_coefs = lowpass.map(|(from, _)| SvfCoefs::new(from, BUTTERWORTH_Q, rate));
+        let mut hp = Svf::default();
+        let hp_coefs = self.highpass.map(|cutoff| SvfCoefs::new(cutoff, BUTTERWORTH_Q, rate));
+        let drive_norm = if self.drive > 0.0 { (1.0 + self.drive).tanh() } else { 1.0 };
+        let ramp_in = DECLICK_IN * rate;
+        let ramp_out = DECLICK_OUT * rate;
         for i in 0..total {
             let t = i as f32 / rate;
             let progress = if self.duration > 0.0 { t / self.duration } else { 1.0 };
@@ -252,54 +313,52 @@ impl Tone {
             if let Some((vib_rate, depth)) = self.vibrato {
                 freq *= (depth * (TAU * vib_rate * t).sin() / 12.0).exp2();
             }
-            let dt = (freq / rate).clamp(0.0, 0.5);
             let mut value = match self.wave {
                 Wave::Sine => (TAU * phase).sin(),
-                Wave::Square => {
-                    let mut v = if phase < self.duty { 1.0 } else { -1.0 };
-                    v += poly_blep(phase, dt);
-                    v -= poly_blep((phase + 1.0 - self.duty).fract(), dt);
-                    v
-                }
-                Wave::Saw => 2.0 * phase - 1.0 - poly_blep(phase, dt),
-                Wave::Triangle => 1.0 - 4.0 * (phase - 0.5).abs(),
+                Wave::Square => bl_pulse(phase, self.duty, freq, rate),
+                Wave::Saw => bl_saw(phase, freq, rate),
+                Wave::Triangle => bl_triangle(phase, freq, rate),
                 Wave::Noise => {
+                    let dt = (freq / rate).clamp(0.0, 0.5);
                     if freq <= 0.0 || freq >= rate * 0.5 || phase + dt >= 1.0 || i == 0 {
                         held_noise = next_noise(&mut noise_state);
                     }
                     held_noise
                 }
             };
-            phase += dt;
-            if phase >= 1.0 {
-                phase -= 1.0;
+            phase += if self.wave == Wave::Noise { (freq / rate).clamp(0.0, 0.5) } else { freq / rate };
+            phase -= phase.floor();
+            if let Some((from, to)) = lowpass {
+                // Скользящий срез: коэффициенты пересчитываются каждые 16 сэмплов.
+                if from != to && i % 16 == 0 {
+                    let cutoff = from + (to - from) * progress.clamp(0.0, 1.0);
+                    lp_coefs = Some(SvfCoefs::new(cutoff, BUTTERWORTH_Q, rate));
+                }
+                if let Some(c) = &lp_coefs {
+                    value = lp.lowpass(c, value);
+                }
             }
-            if let Some((from, to)) = self.lowpass {
-                let cutoff = from + (to - from) * progress.clamp(0.0, 1.0);
-                let a = 1.0 - (-TAU * cutoff.max(1.0) / rate).exp();
-                filtered += a * (value - filtered);
-                value = filtered;
+            if let Some(c) = &hp_coefs {
+                value = hp.highpass(c, value);
             }
-            samples.push(value * self.volume * self.envelope.level(t, self.duration));
+            if self.drive > 0.0 {
+                value = (value * (1.0 + self.drive)).tanh() / drive_norm;
+            }
+            let mut env = self.envelope.level(t, self.duration);
+            let fi = i as f32;
+            if fi < ramp_in {
+                env *= fi / ramp_in;
+            }
+            let left = (total - i) as f32 - 1.0;
+            if left < ramp_out {
+                env *= left.max(0.0) / ramp_out;
+            }
+            samples.push(value * self.volume * env);
         }
         Sound {
             sample_rate: self.sample_rate,
             samples,
         }
-    }
-}
-
-fn poly_blep(t: f32, dt: f32) -> f32 {
-    if dt <= 0.0 {
-        0.0
-    } else if t < dt {
-        let x = t / dt;
-        x + x - x * x - 1.0
-    } else if t > 1.0 - dt {
-        let x = (t - 1.0) / dt;
-        x * x + x + x + 1.0
-    } else {
-        0.0
     }
 }
 
@@ -484,15 +543,94 @@ impl Sound {
         self
     }
 
-    /// Простой ФНЧ (однополюсный): «глушит» верха.
+    /// ФНЧ (двухполюсный, 12 дБ/окт): «глушит» верха.
     pub fn lowpass(mut self, cutoff_hz: f32) -> Self {
-        let a = 1.0 - (-TAU * cutoff_hz.max(1.0) / self.sample_rate as f32).exp();
-        let mut y = 0.0;
+        let c = SvfCoefs::new(cutoff_hz, BUTTERWORTH_Q, self.sample_rate as f32);
+        let mut f = Svf::default();
         for s in &mut self.samples {
-            y += a * (*s - y);
+            *s = f.lowpass(&c, *s);
+        }
+        self
+    }
+
+    /// ФВЧ (двухполюсный): убрать низ ниже `cutoff_hz`.
+    pub fn highpass(mut self, cutoff_hz: f32) -> Self {
+        let c = SvfCoefs::new(cutoff_hz, BUTTERWORTH_Q, self.sample_rate as f32);
+        let mut f = Svf::default();
+        for s in &mut self.samples {
+            *s = f.highpass(&c, *s);
+        }
+        self
+    }
+
+    /// Убрать постоянную составляющую (ФВЧ ~10 Гц): смещение «съедает» запас по пику
+    /// и щёлкает на стыках. Для петель — вызывайте до нормализации.
+    pub fn dc_block(mut self) -> Self {
+        let r = (-TAU * 10.0 / self.sample_rate as f32).exp();
+        let (mut x1, mut y1) = (0.0f32, 0.0f32);
+        // Петли: начальное состояние — среднее, чтобы первый сэмпл не «прыгнул».
+        let mean = if self.samples.is_empty() {
+            0.0
+        } else {
+            self.samples.iter().map(|&s| s as f64).sum::<f64>() / self.samples.len() as f64
+        } as f32;
+        if let Some(&first) = self.samples.first() {
+            x1 = first;
+            y1 = first - mean;
+        }
+        for s in &mut self.samples {
+            let y = *s - x1 + r * y1;
+            x1 = *s;
+            y1 = y;
             *s = y;
         }
         self
+    }
+
+    /// Мягкое ограничение пиков: линейно до `knee` (например 0.7), выше плавно
+    /// подходит к ±1 и никогда его не превышает.
+    pub fn soft_clip(mut self, knee: f32) -> Self {
+        let knee = knee.clamp(0.0, 0.99);
+        for s in &mut self.samples {
+            *s = crate::dsp::soft_clip(*s, knee);
+        }
+        self
+    }
+
+    /// Интегральная громкость, LUFS (BS.1770, K-взвешивание со стробированием).
+    /// Тишина — `-inf`.
+    pub fn loudness(&self) -> f32 {
+        crate::dsp::integrated_loudness(&self.samples, 1, self.sample_rate)
+    }
+
+    /// Привести к уровню политики громкости ([`Level`]). Число — целевая громкость
+    /// в LUFS: `music.normalized_to(-14.0)`. Пик при этом не выше −1 дБFS.
+    pub fn normalized_to(mut self, level: impl Into<Level>) -> Self {
+        crate::clip::apply_level(&mut self.samples, 1, self.sample_rate, level.into());
+        self
+    }
+
+    /// Привести к уровню и сразу превратить в клип: `sound.render_at(Level::Sfx)`.
+    pub fn render_at(self, level: impl Into<Level>) -> AudioClip {
+        self.normalized_to(level).into_clip()
+    }
+
+    /// Эхо для петли: хвост повторов заворачивается в начало, длина не меняется —
+    /// петля остаётся бесшовной и в такт (в отличие от [`echo`](Self::echo)).
+    pub fn echo_loop(self, delay: f32, feedback: f32, mix: f32) -> Self {
+        let len = self.samples.len();
+        if len == 0 {
+            return self;
+        }
+        let rate = self.sample_rate;
+        // Хвосты прошлых кругов петли тоже звучат: прогоняем эхо по трём кругам подряд
+        // и берём последний — это установившийся режим.
+        let wet = self.repeat(3).echo(delay, feedback, mix);
+        let mut out = wet.samples[2 * len..3 * len].to_vec();
+        for (i, s) in wet.samples[3 * len..].iter().enumerate() {
+            out[i % len] += s;
+        }
+        Sound::new(rate, out)
     }
 
     /// Эхо: `feedback` — доля, возвращающаяся в повтор, `mix` — громкость повторов.
@@ -556,15 +694,22 @@ impl Sound {
             };
         }
         let ratio = self.sample_rate as f64 / rate as f64;
-        let n = (self.samples.len() as f64 / ratio) as usize;
+        // Понижение частоты: сначала срезать всё выше новой частоты Найквиста.
+        let src = if ratio > 1.0 {
+            let c = SvfCoefs::normalized(0.45 / ratio as f32, BUTTERWORTH_Q);
+            let (mut a, mut b) = (Svf::default(), Svf::default());
+            self.samples.iter().map(|&s| b.lowpass(&c, a.lowpass(&c, s))).collect()
+        } else {
+            self.samples
+        };
+        let n = (src.len() as f64 / ratio) as usize;
+        let at = |i: i64| if i < 0 { 0.0 } else { src.get(i as usize).copied().unwrap_or(0.0) };
         let samples = (0..n)
             .map(|i| {
                 let pos = i as f64 * ratio;
-                let a = pos as usize;
+                let a = pos.floor() as i64;
                 let frac = (pos - a as f64) as f32;
-                let s0 = self.samples[a];
-                let s1 = *self.samples.get(a + 1).unwrap_or(&s0);
-                s0 + (s1 - s0) * frac
+                crate::dsp::cubic(at(a - 1), at(a), at(a + 1), at(a + 2), frac)
             })
             .collect();
         Sound {
@@ -606,7 +751,9 @@ impl From<Tone> for Sound {
 ///
 /// * `C4`, `F#3`, `Bb5` — нота;
 /// * `_` (или `.`) — пауза;
-/// * `-` — продлить предыдущую ноту ещё на шаг.
+/// * `-` — продлить предыдущую ноту ещё на шаг;
+/// * `C5@0.6` — нота с силой нажатия (velocity) 0..1: громкость ноты × 0.6 — акценты
+///   и «дыхание» партии без отдельной дорожки.
 ///
 /// ```
 /// use engine_audio::synth::*;
@@ -627,12 +774,15 @@ pub struct Melody {
     pub duty: f32,
     /// Какую долю шага нота звучит до отпускания (остальное — тишина перед следующей).
     pub gate: f32,
+    /// ФНЧ партии (Гц). `None` — срез по умолчанию для волны (см. [`Tone::lowpass`]).
+    pub lowpass: Option<f32>,
     steps: Vec<Step>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Step {
-    Note(f32),
+    /// Частота и сила нажатия.
+    Note(f32, f32),
     Rest,
     Hold,
 }
@@ -648,6 +798,7 @@ impl Melody {
             envelope: Envelope::adsr(0.005, 0.05, 0.7, 0.05),
             duty: 0.5,
             gate: 0.9,
+            lowpass: None,
             steps: Vec::new(),
         }
     }
@@ -677,6 +828,12 @@ impl Melody {
         self
     }
 
+    /// ФНЧ всей партии: `lead.lowpass(4000.0)` — мягче и «дальше».
+    pub fn lowpass(mut self, cutoff_hz: f32) -> Self {
+        self.lowpass = Some(cutoff_hz);
+        self
+    }
+
     /// Добавить шаги из строки (можно вызывать несколько раз — шаги дописываются).
     /// Нераспознанный токен считается паузой.
     pub fn notes(mut self, text: &str) -> Self {
@@ -684,7 +841,13 @@ impl Melody {
             self.steps.push(match token {
                 "_" | "." => Step::Rest,
                 "-" => Step::Hold,
-                other => note_freq(other).map(Step::Note).unwrap_or(Step::Rest),
+                other => {
+                    let (name, velocity) = match other.split_once('@') {
+                        Some((name, v)) => (name, v.parse::<f32>().map_or(1.0, |v| v.clamp(0.0, 1.0))),
+                        None => (other, 1.0),
+                    };
+                    note_freq(name).map(|f| Step::Note(f, velocity)).unwrap_or(Step::Rest)
+                }
             });
         }
         self
@@ -707,7 +870,7 @@ impl Melody {
         let mut out = vec![0.0f32; total.max(1)];
         let mut i = 0;
         while i < self.steps.len() {
-            let Step::Note(freq) = self.steps[i] else {
+            let Step::Note(freq, velocity) = self.steps[i] else {
                 i += 1;
                 continue;
             };
@@ -717,12 +880,15 @@ impl Melody {
             }
             let start = (i as f32 * step_s * rate as f32).round() as usize;
             let gate = (hold as f32 - 1.0 + self.gate) * step_s;
-            let tone = Tone::new(self.wave, freq)
+            let mut tone = Tone::new(self.wave, freq)
                 .duration(gate)
                 .envelope(self.envelope)
                 .duty(self.duty)
-                .volume(self.volume)
-                .render();
+                .volume(self.volume * velocity);
+            if let Some(cutoff) = self.lowpass {
+                tone = tone.lowpass(cutoff);
+            }
+            let tone = tone.render();
             for (j, s) in tone.samples.iter().enumerate() {
                 let at = start + j;
                 if at >= out.len() {
@@ -760,11 +926,16 @@ impl Melody {
 
 /// Готовые звуковые эффекты. Все возвращают клипы, которые остаётся передать в
 /// `Audio::add_clip`. Звуки детерминированы: один вызов — одни и те же сэмплы.
+/// Уровни — по политике громкости: эффекты [`Level::Sfx`], `ui_*` — [`Level::Ui`].
 pub mod sfx {
     use super::*;
 
     fn clip(sound: Sound) -> AudioClip {
-        sound.normalize(0.8).into_clip()
+        sound.render_at(Level::Sfx)
+    }
+
+    fn ui(sound: Sound) -> AudioClip {
+        sound.render_at(Level::Ui)
     }
 
     /// Прыжок: быстрый подъём квадратной волны.
@@ -885,7 +1056,7 @@ pub mod sfx {
 
     /// Клик по кнопке интерфейса.
     pub fn ui_click() -> AudioClip {
-        clip(
+        ui(
             Tone::new(Wave::Triangle, 1500.0)
                 .sweep_to(900.0)
                 .duration(0.03)
@@ -896,12 +1067,17 @@ pub mod sfx {
 
     /// Наведение на кнопку: тихий короткий тик.
     pub fn ui_hover() -> AudioClip {
-        clip(Tone::new(Wave::Sine, 1900.0).duration(0.018).percussive().volume(0.5).render())
+        // Наведение — самый частый звук интерфейса: ещё тише клика.
+        Tone::new(Wave::Sine, 1900.0)
+            .duration(0.018)
+            .percussive()
+            .render()
+            .render_at(Level::Peak(Level::UI_PEAK * 0.6))
     }
 
     /// Подтверждение: две ноты вверх, мягкие.
     pub fn ui_confirm() -> AudioClip {
-        clip(
+        ui(
             Tone::new(Wave::Triangle, 660.0)
                 .duration(0.07)
                 .adsr(0.003, 0.0, 1.0, 0.02)
@@ -913,7 +1089,8 @@ pub mod sfx {
     /// Отказ / ошибка: низкий двойной «бзз».
     pub fn ui_error() -> AudioClip {
         let buzz = Tone::new(Wave::Square, 150.0).duration(0.09).duty(0.4).adsr(0.003, 0.0, 1.0, 0.01).volume(0.5);
-        clip(buzz.render().then(Sound::silence(0.04)).then(buzz.render()))
+        let buzz = buzz.lowpass(3000.0).render();
+        ui(buzz.clone().then(Sound::silence(0.04)).then(buzz))
     }
 
     /// Шаг по земле.
@@ -943,6 +1120,7 @@ pub mod sfx {
 }
 
 /// Короткие музыкальные петли (бесшовные), чтобы в игре сразу была музыка.
+/// Громкость — [`Level::Music`].
 pub mod music {
     use super::*;
 
@@ -958,20 +1136,23 @@ pub mod music {
             .notes("C3 _ G3 _ C3 _ G3 _")
             .notes("G2 _ D3 _ G2 _ D3 _")
             .render_loop();
+        // Мелодия: акценты силой нажатия, верх приглушён — без «стеклянного» звона.
         let lead = Melody::new(Wave::Square, bpm)
-            .volume(0.17)
+            .volume(0.15)
             .duty(0.25)
-            .adsr(0.005, 0.06, 0.6, 0.06)
-            .notes("E5 - C5 E5 A5 - E5 -")
-            .notes("C5 - A4 C5 F5 - C5 -")
-            .notes("E5 - G5 E5 C5 - E5 -")
-            .notes("D5 - B4 D5 G5 - D5 _")
+            .lowpass(4_500.0)
+            .adsr(0.006, 0.06, 0.6, 0.06)
+            .notes("E5 - C5@0.8 E5@0.85 A5 - E5@0.8 -")
+            .notes("C5 - A4@0.8 C5@0.85 F5 - C5@0.8 -")
+            .notes("E5 - G5@0.8 E5@0.85 C5 - E5@0.8 -")
+            .notes("D5 - B4@0.8 D5@0.85 G5 - D5@0.8 _")
             .render_loop();
         let kick = Tone::new(Wave::Sine, 150.0).sweep_to(45.0).duration(0.12).percussive().volume(0.8).render();
-        let hat = Tone::noise().duration(0.03).lowpass_sweep(9000.0, 6000.0).percussive().volume(0.12).render();
+        // Хэт — полоса шума 6–10 кГц, тихо: ритм без шипения.
+        let hat = Tone::noise().duration(0.03).highpass(6_000.0).lowpass(10_000.0).percussive().volume(0.07).render();
         let kicks = Sound::pattern(&kick, "x...x...x...x...x...x...x...x...", step);
         let hats = Sound::pattern(&hat, ".x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x", step);
-        Sound::mix_all([bass, lead, kicks, hats]).normalize(0.7).into_clip()
+        Sound::mix_all([bass, lead, kicks, hats]).dc_block().render_at(Level::Music)
     }
 
     /// Спокойная ночная петля: мягкие ноты, без ударных.
@@ -988,7 +1169,8 @@ pub mod music {
             .adsr(0.004, 0.5, 0.0, 0.3)
             .notes("E5 _ _ C5 _ A4 _ _ C5 _ _ A4 _ F4 _ _ G4 _ _ E4 _ C4 _ _ B4 _ _ D5 _ G4 _ _")
             .render_loop();
-        Sound::mix_all([pad, bell]).echo(0.36, 0.35, 0.5).normalize(0.6).into_clip()
+        // Эхо заворачивается внутрь петли: длина ровно 32 шага, стык бесшовный.
+        Sound::mix_all([pad, bell]).echo_loop(0.36, 0.35, 0.5).dc_block().render_at(Level::Music)
     }
 }
 
@@ -1129,7 +1311,8 @@ mod tests {
             ("adventure", music::adventure()),
             ("calm", music::calm()),
         ] {
-            assert!(clip.peak() > 0.3, "{name} is too quiet: {}", clip.peak());
+            // Звуки интерфейса по политике громкости тише эффектов (пик 0.24…0.4).
+            assert!(clip.peak() > 0.2, "{name} is too quiet: {}", clip.peak());
             assert!(clip.peak() <= 1.0, "{name} clips: {}", clip.peak());
             assert!(clip.duration() > 0.01, "{name}");
             assert!(clip.samples().iter().all(|s| s.is_finite()), "{name}");

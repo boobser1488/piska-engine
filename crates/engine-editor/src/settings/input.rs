@@ -9,6 +9,7 @@
 //! Карта хранится в `project.settings` (раздел `input`) и сразу применяется к миру;
 //! удалённые и переименованные действия убираются из `world.input` здесь же.
 
+use crate::i18n::{tr_s, trf};
 use egui::{pos2, vec2, Rect, Sense};
 use engine_core::input::{Binding, GamepadAxis, GamepadButton, Key, MouseButton, DEFAULT_DEAD_ZONE};
 use engine_core::settings::{ActionKind, InputAction, InputSettings};
@@ -186,13 +187,13 @@ fn spaced(name: &str) -> String {
 fn key_name(key: Key) -> String {
     let debug = format!("{key:?}");
     match key {
-        Key::Left | Key::Right | Key::Up | Key::Down => format!("{debug} Arrow"),
-        Key::LShift => "Left Shift".into(),
-        Key::RShift => "Right Shift".into(),
-        Key::LCtrl => "Left Ctrl".into(),
-        Key::RCtrl => "Right Ctrl".into(),
-        Key::LAlt => "Left Alt".into(),
-        Key::RAlt => "Right Alt".into(),
+        Key::Left | Key::Right | Key::Up | Key::Down => trf!("{debug} Arrow", debug = debug),
+        Key::LShift => tr_s("Left Shift").into(),
+        Key::RShift => tr_s("Right Shift").into(),
+        Key::LCtrl => tr_s("Left Ctrl").into(),
+        Key::RCtrl => tr_s("Right Ctrl").into(),
+        Key::LAlt => tr_s("Left Alt").into(),
+        Key::RAlt => tr_s("Right Alt").into(),
         _ => match debug.strip_prefix("Digit") {
             Some(digit) => digit.to_string(),
             None => spaced(&debug),
@@ -202,10 +203,10 @@ fn key_name(key: Key) -> String {
 
 fn pad_button_name(button: GamepadButton) -> String {
     let face = match button {
-        GamepadButton::South => " (A / Cross)",
-        GamepadButton::East => " (B / Circle)",
-        GamepadButton::West => " (X / Square)",
-        GamepadButton::North => " (Y / Triangle)",
+        GamepadButton::South => tr_s(" (A / Cross)"),
+        GamepadButton::East => tr_s(" (B / Circle)"),
+        GamepadButton::West => tr_s(" (X / Square)"),
+        GamepadButton::North => tr_s(" (Y / Triangle)"),
         _ => "",
     };
     let name = format!("{button:?}").replace("DPad", "D-Pad ");
@@ -216,16 +217,16 @@ fn pad_axis_direction(axis: GamepadAxis, positive: bool) -> String {
     let base = spaced(&format!("{axis:?}"));
     match axis {
         GamepadAxis::LeftStickX | GamepadAxis::RightStickX => {
-            format!("{} {}", base.trim_end_matches(" X"), if positive { "Right" } else { "Left" })
+            format!("{} {}", base.trim_end_matches(" X"), if positive { tr_s("Right") } else { tr_s("Left") })
         }
         GamepadAxis::LeftStickY | GamepadAxis::RightStickY => {
-            format!("{} {}", base.trim_end_matches(" Y"), if positive { "Up" } else { "Down" })
+            format!("{} {}", base.trim_end_matches(" Y"), if positive { tr_s("Up") } else { tr_s("Down") })
         }
         GamepadAxis::LeftTrigger | GamepadAxis::RightTrigger => {
             if positive {
-                format!("{base} (pressed)")
+                trf!("{base} (pressed)", base = base)
             } else {
-                format!("{base} (released side)")
+                trf!("{base} (released side)", base = base)
             }
         }
     }
@@ -234,10 +235,10 @@ fn pad_axis_direction(axis: GamepadAxis, positive: bool) -> String {
 /// Источник и его название для человека: («Key», «Space»).
 pub(crate) fn binding_label(binding: Binding) -> (&'static str, String) {
     match binding {
-        Binding::Key(key) => ("Key", key_name(key)),
-        Binding::Mouse(button) => ("Mouse", format!("{} Button", spaced(&format!("{button:?}")))),
-        Binding::Pad(button) => ("Pad", pad_button_name(button)),
-        Binding::PadAxis { axis, positive } => ("Stick", pad_axis_direction(axis, positive)),
+        Binding::Key(key) => (tr_s("Key"), key_name(key)),
+        Binding::Mouse(button) => (tr_s("Mouse"), trf!("{} Button", spaced(&format!("{button:?}")))),
+        Binding::Pad(button) => (tr_s("Pad"), pad_button_name(button)),
+        Binding::PadAxis { axis, positive } => (tr_s("Stick"), pad_axis_direction(axis, positive)),
     }
 }
 
@@ -248,7 +249,7 @@ fn text_label(text: &str) -> (&'static str, String, bool) {
             let (kind, name) = binding_label(binding);
             (kind, name, true)
         }
-        None => ("?", format!("{text} (unknown)"), false),
+        None => ("?", trf!("{text} (unknown)", text = text), false),
     }
 }
 
@@ -296,7 +297,7 @@ fn analog_text(axis: GamepadAxis, invert: bool) -> String {
 fn analog_label(text: &str) -> String {
     match parse_analog(text) {
         Some((axis, invert)) => format!("{}{}", spaced(&format!("{axis:?}")), if invert { " (inverted)" } else { "" }),
-        None => format!("{text} (unknown)"),
+        None => trf!("{text} (unknown)", text = text),
     }
 }
 
@@ -304,10 +305,10 @@ fn analog_label(text: &str) -> String {
 fn check_name(map: &InputSettings, name: &str, except: Option<&str>) -> Result<String, String> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("An action needs a name".to_string());
+        return Err(tr_s("An action needs a name").to_string());
     }
     if map.actions.iter().any(|a| a.name == name && Some(a.name.as_str()) != except) {
-        return Err(format!("An action named “{name}” already exists: names must be unique"));
+        return Err(trf!("An action named “{name}” already exists: names must be unique", name = name));
     }
     Ok(name.to_string())
 }
@@ -404,14 +405,14 @@ fn binding_menu(ui: &mut egui::Ui) -> Option<Binding> {
             });
         });
     };
-    theme::menu_section(ui, "Keyboard");
-    keys(ui, Icon::Text, "Letters", 0..26);
-    keys(ui, Icon::Text, "Digits", 26..36);
-    keys(ui, Icon::Move, "Arrows and editing", 36..51);
-    keys(ui, Icon::ArrowUp, "Modifiers", 51..57);
-    keys(ui, Icon::List, "Function keys", 57..69);
+    theme::menu_section(ui, tr_s("Keyboard"));
+    keys(ui, Icon::Text, tr_s("Letters"), 0..26);
+    keys(ui, Icon::Text, tr_s("Digits"), 26..36);
+    keys(ui, Icon::Move, tr_s("Arrows and editing"), 36..51);
+    keys(ui, Icon::ArrowUp, tr_s("Modifiers"), 51..57);
+    keys(ui, Icon::List, tr_s("Function keys"), 57..69);
     theme::menu_separator(ui);
-    theme::menu_section(ui, "Mouse");
+    theme::menu_section(ui, tr_s("Mouse"));
     for button in MouseButton::ALL {
         let (_, name) = binding_label(Binding::Mouse(button));
         if theme::item(&name).show(ui) {
@@ -419,15 +420,15 @@ fn binding_menu(ui: &mut egui::Ui) -> Option<Binding> {
         }
     }
     theme::menu_separator(ui);
-    theme::menu_section(ui, "Gamepad");
-    theme::submenu(ui, Icon::Target, "Buttons", |ui| {
+    theme::menu_section(ui, tr_s("Gamepad"));
+    theme::submenu(ui, Icon::Target, tr_s("Buttons"), |ui| {
         for button in GamepadButton::ALL {
             if theme::item(&pad_button_name(button)).show(ui) {
                 picked = Some(Binding::Pad(button));
             }
         }
     });
-    theme::submenu(ui, Icon::Move, "Sticks and triggers", |ui| {
+    theme::submenu(ui, Icon::Move, tr_s("Sticks and triggers"), |ui| {
         for axis in GamepadAxis::ALL {
             let directions: &[bool] = match axis {
                 GamepadAxis::LeftTrigger | GamepadAxis::RightTrigger => &[true],
@@ -492,7 +493,7 @@ fn binding_list(
     }
     // Услышанное нажатие (Space, Enter) не должно ещё и «нажать» строку под фокусом.
     let heard = op.is_some();
-    let prompt = "Press a key, click a mouse button or use the gamepad…  (Esc cancels)";
+    let prompt = tr_s("Press a key, click a mouse button or use the gamepad…  (Esc cancels)");
     let width = ui.available_width();
     for (index, text) in texts.iter().enumerate() {
         let (rect, _) = ui.allocate_exact_size(vec2(width, theme::ROW + 2.0), Sense::hover());
@@ -510,11 +511,11 @@ fn binding_list(
         let (shown, color) = if waiting { (prompt.to_string(), theme::TEXT_STRONG) } else { (name, if known { theme::TEXT } else { theme::WARN }) };
         let galley = ui.painter().layout(shown, theme::body(), color, (rect.right() - 36.0 - x).max(10.0));
         ui.painter().galley(pos2(x + theme::SP_M, rect.center().y - galley.size().y * 0.5), galley, color);
-        if click.on_hover_text("Click, then press the new key, mouse button or gamepad input").clicked() && !heard {
+        if click.on_hover_text(tr_s("Click, then press the new key, mouse button or gamepad input")).clicked() && !heard {
             op = Some(ListOp::Listen(Some(index)));
         }
         let remove = Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), vec2(20.0, 20.0));
-        if row_icon_button(ui, remove, Editor::input_remove_binding_id(list, index), Icon::Close, "Remove this binding") && !heard {
+        if row_icon_button(ui, remove, Editor::input_remove_binding_id(list, index), Icon::Close, tr_s("Remove this binding")) && !heard {
             op = Some(ListOp::Remove(index));
         }
         hairline(ui);
@@ -524,7 +525,7 @@ fn binding_list(
         ui.painter().text(
             rect.left_center() + vec2(theme::SP_S, 0.0),
             egui::Align2::LEFT_CENTER,
-            "No bindings yet",
+            tr_s("No bindings yet"),
             theme::caption(),
             theme::TEXT_DISABLED,
         );
@@ -540,14 +541,14 @@ fn binding_list(
     ui.add_space(theme::SP_S);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme::SP_S;
-        let listen_button = theme::icon_text_button(ui, Icon::Target, "Listen");
+        let listen_button = theme::icon_text_button(ui, Icon::Target, tr_s("Listen"));
         let listen_button = ui
             .interact(listen_button.rect, Editor::input_listen_id(list), Sense::click())
-            .on_hover_text("Add a binding: press the key, mouse button or gamepad input it should react to");
+            .on_hover_text(tr_s("Add a binding: press the key, mouse button or gamepad input it should react to"));
         if listen_button.clicked() && !heard {
             op = Some(ListOp::Listen(None));
         }
-        if let Some(Some(binding)) = theme::dropdown_button(ui, "Add", "Pick a key, mouse button or gamepad input from a list", binding_menu) {
+        if let Some(Some(binding)) = theme::dropdown_button(ui, "Add", tr_s("Pick a key, mouse button or gamepad input from a list"), binding_menu) {
             if !heard {
                 op = Some(ListOp::Add(binding));
             }
@@ -571,21 +572,18 @@ fn analog_list(ui: &mut egui::Ui, analog: &mut Vec<String>) -> bool {
         );
         child.spacing_mut().item_spacing.x = theme::SP_M;
         let (mut axis, mut invert) = parse_analog(text).unwrap_or((GamepadAxis::LeftStickX, false));
-        egui::ComboBox::from_id_salt(("settings_input_analog", index))
-            .selected_text(spaced(&format!("{axis:?}")))
-            .width(WIDE_W * 0.75)
-            .show_ui(&mut child, |ui| {
+        crate::controls::combo(&mut child, ("settings_input_analog", index), &spaced(&format!("{axis:?}")), WIDE_W * 0.75, |ui| {
                 for option in GamepadAxis::ALL {
                     ui.selectable_value(&mut axis, option, spaced(&format!("{option:?}")));
                 }
             });
-        child.checkbox(&mut invert, "Invert").on_hover_text("Flip the sign: for example, stick down gives +1");
+        child.checkbox(&mut invert, tr_s("Invert")).on_hover_text(tr_s("Flip the sign: for example, stick down gives +1"));
         let new = analog_text(axis, invert);
         if parse_analog(text).is_some() && *text != new {
             *text = new;
         }
         let x = Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), vec2(20.0, 20.0));
-        if row_icon_button(ui, x, egui::Id::new(("settings_input_remove_analog", index)), Icon::Close, "Remove this axis") {
+        if row_icon_button(ui, x, egui::Id::new(("settings_input_remove_analog", index)), Icon::Close, tr_s("Remove this axis")) {
             remove = Some(index);
         }
         hairline(ui);
@@ -594,8 +592,8 @@ fn analog_list(ui: &mut egui::Ui, analog: &mut Vec<String>) -> bool {
         analog.remove(index);
     }
     ui.add_space(theme::SP_S);
-    let add = theme::icon_text_button(ui, Icon::Plus, "Add Axis");
-    if add.on_hover_text("Read a gamepad stick or trigger as this axis").clicked() {
+    let add = theme::icon_text_button(ui, Icon::Plus, tr_s("Add Axis"));
+    if add.on_hover_text(tr_s("Read a gamepad stick or trigger as this axis")).clicked() {
         let unused = GamepadAxis::ALL
             .into_iter()
             .find(|a| !analog.iter().any(|t| parse_analog(t).is_some_and(|(b, _)| b == *a)))
@@ -636,11 +634,11 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
         .filter(|b| matches!(b, Binding::Pad(_) | Binding::PadAxis { .. }));
 
     // --- Список действий ---
-    s.group("Actions");
+    s.group(tr_s("Actions"));
     let state = &mut editor.settings.input;
     let row = s.block(
-        "Action list",
-        "Read them in code: ctx.input().button(\"Jump\"), ctx.input().axis(\"Horizontal\"). Click an action to edit it.",
+        tr_s("Action list"),
+        tr_s("Read them in code: ctx.input().button(\"Jump\"), ctx.input().axis(\"Horizontal\"). Click an action to edit it."),
         map != defaults,
         |ui| {
             // Только что привязали кнопку мыши: щелчки игнорируются, пока её не отпустят.
@@ -659,8 +657,8 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
                 let name_w = name.size().x.max(110.0);
                 ui.painter().galley(pos2(rect.left() + theme::SP_M, rect.center().y - name.size().y * 0.5), name, theme::TEXT_STRONG);
                 let kind = match action.kind {
-                    ActionKind::Button => "Button",
-                    ActionKind::Axis => "Axis",
+                    ActionKind::Button => tr_s("Button"),
+                    ActionKind::Axis => tr_s("Axis"),
                 };
                 let tag_x = rect.left() + theme::SP_M + name_w + theme::SP_M;
                 kind_tag(ui, Rect::from_min_max(pos2(tag_x, rect.top()), rect.max), kind, true);
@@ -674,30 +672,23 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
                     op = Some(ActionOp::Select(action.name.clone()));
                 }
                 let remove = Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), vec2(20.0, 20.0));
-                if row_icon_button(ui, remove, Editor::input_remove_action_id(&action.name), Icon::Trash, "Remove this action") {
+                if row_icon_button(ui, remove, Editor::input_remove_action_id(&action.name), Icon::Trash, tr_s("Remove this action")) {
                     op = Some(ActionOp::Remove(action.name.clone()));
                 }
                 hairline(ui);
             }
             if map.actions.is_empty() {
-                theme::empty_state(ui, Icon::List, "No input actions", "Add one below, or press Reset page for the built-in ones.");
+                theme::empty_state(ui, Icon::List, tr_s("No input actions"), tr_s("Add one below, or press Reset page for the built-in ones."));
             }
             ui.add_space(theme::SP_S);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme::SP_S;
-                let edit = ui.add(
-                    egui::TextEdit::singleline(&mut state.new_name)
-                        .id(Editor::input_new_action_field_id())
-                        .hint_text(egui::RichText::new("New action name").color(theme::TEXT_DISABLED))
-                        .vertical_align(egui::Align::Center)
-                        .min_size(vec2(0.0, theme::FIELD_H))
-                        .desired_width(WIDE_W),
-                );
+                let edit = crate::controls::text_field_with_id(ui, Some(Editor::input_new_action_field_id()), &mut state.new_name, tr_s("New action name"), WIDE_W);
                 let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 let named = !state.new_name.trim().is_empty();
                 for (kind, label, tip) in [
-                    (ActionKind::Button, "Add Button", "A button action: pressed or not (Jump, Fire)"),
-                    (ActionKind::Axis, "Add Axis", "An axis action from −1 to 1 (Horizontal, Throttle)"),
+                    (ActionKind::Button, tr_s("Add Button"), tr_s("A button action: pressed or not (Jump, Fire)")),
+                    (ActionKind::Axis, tr_s("Add Axis"), tr_s("An axis action from −1 to 1 (Horizontal, Throttle)")),
                 ] {
                     let button = ui.add_enabled_ui(named, |ui| theme::icon_text_button(ui, Icon::Plus, label)).inner;
                     let button = ui.interact(button.rect, Editor::input_add_action_id(kind), Sense::click()).on_hover_text(tip);
@@ -751,7 +742,7 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     code_only.sort();
     code_only.dedup();
     if !code_only.is_empty() {
-        s.note(&format!(
+        s.note(&trf!(
             "Defined only in the game's code: {}. Code that binds an action after start-up wins over this map.",
             code_only.join(", ")
         ));
@@ -766,22 +757,16 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     let kind = map.actions[index].kind;
     let action_default = default_action(&defaults, &name, kind);
 
-    s.group(&format!("{} “{name}”", if kind == ActionKind::Axis { "Axis" } else { "Button" }));
+    s.group(&trf!("{p0} “{name}”", p0 = if kind == ActionKind::Axis { tr_s("Axis") } else { tr_s("Button") }, name = name));
     // Имя.
     let state = &mut editor.settings.input;
     let shown = match &state.rename {
         Some((action, text)) if *action == name => text.clone(),
         _ => name.clone(),
     };
-    let row = s.row("Name", "What code asks for. Must be unique; renaming keeps the bindings.", false, |ui| {
+    let row = s.row(tr_s("Name"), tr_s("What code asks for. Must be unique; renaming keeps the bindings."), false, |ui| {
         let mut text = shown.clone();
-        let edit = ui.add(
-            egui::TextEdit::singleline(&mut text)
-                .id(Editor::input_rename_field_id())
-                .vertical_align(egui::Align::Center)
-                .min_size(vec2(0.0, theme::FIELD_H))
-                .desired_width(WIDE_W),
-        );
+        let edit = crate::controls::text_field_with_id(ui, Some(Editor::input_rename_field_id()), &mut text, "", WIDE_W);
         if edit.changed() {
             state.rename = Some((name.clone(), text.clone()));
         }
@@ -804,14 +789,14 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     }
 
     // Вид.
-    let row = s.row("Type", "Button: pressed or not. Axis: a value from −1 to 1 from two sides and gamepad sticks.", kind != action_default.kind, |ui| {
+    let row = s.row(tr_s("Type"), tr_s("Button: pressed or not. Axis: a value from −1 to 1 from two sides and gamepad sticks."), kind != action_default.kind, |ui| {
         let mut value = kind;
         theme::segmented(
             ui,
             &mut value,
             &[
-                (ActionKind::Button, "Button", "Pressed or not: input.button(name)"),
-                (ActionKind::Axis, "Axis", "From −1 to 1: input.axis(name)"),
+                (ActionKind::Button, tr_s("Button"), tr_s("Pressed or not: input.button(name)")),
+                (ActionKind::Axis, tr_s("Axis"), tr_s("From −1 to 1: input.axis(name)")),
             ],
         )
         .then_some(value)
@@ -836,10 +821,10 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
 
     // Привязки.
     let lists: &[(InputBindingList, &str, &str)] = match kind {
-        ActionKind::Button => &[(InputBindingList::Bindings, "Bindings", "Any of these presses the button.")],
+        ActionKind::Button => &[(InputBindingList::Bindings, tr_s("Bindings"), tr_s("Any of these presses the button."))],
         ActionKind::Axis => &[
-            (InputBindingList::Negative, "Negative", "Any of these gives −1 (left, down, back)."),
-            (InputBindingList::Positive, "Positive", "Any of these gives +1 (right, up, forward)."),
+            (InputBindingList::Negative, tr_s("Negative"), tr_s("Any of these gives −1 (left, down, back).")),
+            (InputBindingList::Positive, tr_s("Positive"), tr_s("Any of these gives +1 (right, up, forward).")),
         ],
     };
     for (list, label, description) in lists {
@@ -879,8 +864,8 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
 
     if kind == ActionKind::Axis {
         let row = s.block(
-            "Analog axes",
-            "Gamepad sticks and triggers read smoothly; added to the keys above and kept within −1…1.",
+            tr_s("Analog axes"),
+            tr_s("Gamepad sticks and triggers read smoothly; added to the keys above and kept within −1…1."),
             map.actions[index].analog != action_default.analog,
             |ui| {
                 let mut analog = map.actions[index].analog.clone();
@@ -893,8 +878,8 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
             map.actions[index].analog = analog;
         }
         s.number(
-            "Dead zone",
-            "Stick movement smaller than this counts as zero; the rest is stretched to the full range.",
+            tr_s("Dead zone"),
+            tr_s("Stick movement smaller than this counts as zero; the rest is stretched to the full range."),
             &mut map.actions[index].dead_zone,
             action_default.dead_zone,
             0.0..=0.95,
@@ -906,11 +891,11 @@ pub(super) fn input(s: &mut SettingsUi<'_>, editor: &mut Editor) {
     let differs = map.actions[index] != action_default;
     let built_in = defaults.find(&name).is_some();
     let row = s.row(
-        "Revert action",
-        if built_in { "Give this built-in action its default bindings back." } else { "Remove every binding of this action." },
+        tr_s("Revert action"),
+        if built_in { tr_s("Give this built-in action its default bindings back.") } else { tr_s("Remove every binding of this action.") },
         false,
         |ui| {
-            let button = ui.add_enabled_ui(differs, |ui| theme::button(ui, if built_in { "Revert to default" } else { "Clear bindings" })).inner;
+            let button = ui.add_enabled_ui(differs, |ui| theme::button(ui, if built_in { tr_s("Revert to default") } else { tr_s("Clear bindings") })).inner;
             ui.interact(button.rect, Editor::input_revert_action_id(), Sense::click()).clicked() && differs
         },
     );

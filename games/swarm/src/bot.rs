@@ -53,7 +53,7 @@ pub fn bot_input(sim: &Sim) -> PlayerInput {
     let r = p.pos.length();
     let ring = 4.6;
     mv += p.pos.normalize_or_zero() * (ring - r) * 0.12;
-    if r > ARENA_R - 1.6 {
+    if r > arena_r() - 1.6 {
         mv -= p.pos.normalize_or_zero() * 1.5;
     }
     // К ближайшим обломкам.

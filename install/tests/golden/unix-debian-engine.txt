@@ -1,0 +1,31 @@
+Components: core engine
+DRY RUN: nothing is installed, downloaded or changed. Detection below only reads.
+[1/9] STEP core.packages - System packages (compiler, pkg-config, ALSA, udev, Vulkan, X11/Wayland libraries)
+         elevation: administrator rights are needed for the package manager (sudo asks for your password; the command is shown first)
+         run      sudo apt-get update
+         run      sudo apt-get install -y ca-certificates curl git unzip xz-utils build-essential pkg-config libasound2-dev libudev-dev mesa-vulkan-drivers libvulkan1 libxkbcommon0 libwayland-client0 libx11-6
+         note     the package manager runs through sudo and asks for your password
+[2/9] STEP core.rustup - Rust (rustup, stable)
+         download https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init (~20 MB)
+         verify   sha256 from https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init.sha256
+         cache    <FAKE>/prefix/cache
+         run      rustup-init -y --default-toolchain stable --profile minimal
+[3/9] STEP core.rust-components - Rust components (clippy rustfmt)
+         run      rustup component add clippy rustfmt
+[4/9] STEP core.vulkan - Vulkan runtime (GPU driver)
+         note     libvulkan.so.1 comes from the Vulkan loader + a driver (Mesa or NVIDIA); the package step installs the Mesa drivers.
+[5/9] STEP engine.source - Engine sources (with the modeler submodule)
+         run      git -C "<REPO>" submodule update --init --recursive   (the modeler is a submodule in modeler/; skipped when it is already there)
+[6/9] STEP engine.build - Build hub, editor, export tool and modeler (release)
+         run      cargo build --release -p piska-hub -p piska-editor -p piska-export   (in <REPO>; 20-40 minutes, about 3 GB)
+         run      cargo build --release --manifest-path modeler/Cargo.toml -p piska-modeler   (in <REPO>)
+[7/9] STEP engine.desktop - Application-menu entries and icon
+         file     <FAKE>/.local/share/applications/piska-hub.desktop, piska-editor.desktop, piska-modeler.desktop
+         file     <FAKE>/.local/share/icons/hicolor/256x256/apps/piska-engine.png  (from assets/branding/icon-256.png)
+[8/9] STEP engine.uninstaller - Uninstall script
+         copy     install.sh + packages.toml to <FAKE>/prefix  (uninstall.sh removes only what the manifest lists)
+[9/9] STEP config.preferences - Editor preferences: Build & Tools paths
+         prefs    tool_cargo = <FAKE>/.cargo/bin/cargo
+         file     <FAKE>/.config/PiskaEngine/editor.ron  (merged: existing values are kept, a backup .piska-backup-<time> is made first)
+DRY RUN finished: no changes were made.
+exit=0

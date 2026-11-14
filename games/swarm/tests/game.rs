@@ -3,7 +3,7 @@
 
 use engine::prelude::*;
 use swarm::bot::bot_input;
-use swarm::flow::Game;
+use swarm::scripts::game_manager::Game;
 use swarm::profile::*;
 use swarm::sim::{Mode, Phase};
 use swarm::ui::Screen;
@@ -312,7 +312,7 @@ fn boss_waves_show_a_boss_bar_and_music_changes() {
     }
     let g = game(&app);
     assert!(g.sim.boss().is_some(), "wave 5 has a boss");
-    assert_eq!(g.track, swarm::flow::Track::Boss, "the boss theme plays");
+    assert_eq!(g.track, swarm::scripts::game_manager::Track::Boss, "the boss theme plays");
     let bar = app.world.scene.find_by_name("BossBar").unwrap();
     assert!(app.world.scene.get(bar).unwrap().active, "the boss health bar is visible");
 }

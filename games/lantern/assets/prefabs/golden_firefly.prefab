@@ -1,0 +1,68 @@
+(
+    name: "GoldenFirefly",
+    tag: "Pickup",
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "SpriteRenderer",
+            fields: {
+                "color": Color(2.6, 1.7, 0.45, 1.0),
+                "flip_x": Bool(false),
+                "flip_y": Bool(false),
+                "frame": Int(0),
+                "order": Int(0),
+                "pivot": Vec2(0.5, 0.5),
+                "sheet_columns": Int(4),
+                "sheet_rows": Int(1),
+                "size": Vec2(1.5, 1.5),
+                "sorting_layer": Int(1),
+                "texture": Asset("57bf7c6df7d780bcb9ef48b7e54f7592"),
+                "uv_offset": Vec2(0.0, 0.0),
+                "uv_size": Vec2(1.0, 1.0),
+            },
+        ),
+        (
+            kind: "SpriteAnimator",
+            fields: {
+                "clip": Str("fly"),
+                "clips": List([
+                    Str("fly: 0-3 @12"),
+                ]),
+                "finished": Bool(false),
+                "frame": Int(0),
+                "playing": Bool(true),
+                "speed": Float(1.0),
+                "time": Float(0.0),
+            },
+        ),
+        (
+            kind: "TrailRenderer",
+            fields: {
+                "blend": Enum("Additive"),
+                "emitting": Bool(true),
+                "end_color": Color(3.0, 1.9, 0.4, 0.0),
+                "end_width": Float(0.0),
+                "lifetime": Float(0.9),
+                "max_points": Int(128),
+                "min_vertex_distance": Float(0.05),
+                "order": Int(-1),
+                "sorting_layer": Int(1),
+                "start_color": Color(3.0, 1.9, 0.4, 1.0),
+                "start_width": Float(0.3),
+            },
+        ),
+        (
+            kind: "Firefly",
+            fields: {
+                "golden": Bool(true),
+                "home": Vec2(0.0, 0.0),
+                "phase": Float(0.0),
+                "t": Float(0.0),
+            },
+        ),
+    ],
+)

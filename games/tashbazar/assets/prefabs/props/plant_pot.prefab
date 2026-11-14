@@ -1,0 +1,46 @@
+(
+    name: "plant_pot",
+    id: 7790659431515,
+    transform: (
+        position: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0),
+        scale: (1.0, 1.0, 1.0),
+    ),
+    components: [
+        (
+            kind: "MeshRenderer",
+            fields: {
+                "cast_shadows": Bool(true),
+                "color": Color(0.5775805, 0.5775805, 0.5775805, 1.0),
+                "emissive": Color(0.0, 0.0, 0.0, 1.0),
+                "grid": Bool(false),
+                "materials": List([
+                    Asset("f7ee8b743d50f74179fc5fadbc71a99b"),
+                ]),
+                "mesh": Asset("3465cc3e6df455293a6866fbb5ce285b"),
+                "metallic": Float(0.0),
+                "model_materials": Bool(false),
+                "roughness": Float(0.6),
+                "shape": Enum("Cube"),
+                "texture": Asset(""),
+                "tiling": Float(0.0),
+                "tint": Color(1.0, 1.0, 1.0, 1.0),
+            },
+        ),
+        (
+            kind: "Collider",
+            fields: {
+                "collides_with": Int(4294967295),
+                "density": Float(1.0),
+                "friction": Float(0.5),
+                "is_trigger": Bool(false),
+                "mesh": Asset(""),
+                "offset": Vec3(0.0, 0.26475, 0.0),
+                "radius": Float(0.5),
+                "restitution": Float(0.0),
+                "shape": Enum("Box"),
+                "size": Vec3(0.5572, 0.5295, 0.5914),
+            },
+        ),
+    ],
+)

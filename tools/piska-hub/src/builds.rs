@@ -9,6 +9,32 @@ use std::time::SystemTime;
 
 use crate::project::ProjectInfo;
 
+/// Программа движка (`piska-editor`, `piska-player`, `piska-modeler`): переменная
+/// окружения (`PISKA_EDITOR`, `PISKA_PLAYER`, `PISKA_MODELER`), иначе рядом с хабом,
+/// иначе в `<CARGO_TARGET_DIR или target движка>/debug`. `tools_dir` — только там (тесты).
+pub fn tool_exe(name: &str, tools_dir: Option<&Path>, engine_root: Option<&Path>) -> Option<PathBuf> {
+    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    if let Some(dir) = tools_dir {
+        let path = dir.join(&file);
+        return path.is_file().then_some(path);
+    }
+    let env = name.to_uppercase().replace('-', "_");
+    if let Some(path) = std::env::var_os(&env).map(PathBuf::from).filter(|p| p.is_file()) {
+        return Some(path);
+    }
+    let mut candidates = Vec::new();
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
+        candidates.push(dir.join(&file));
+    }
+    if let Some(dir) = std::env::var_os("CARGO_TARGET_DIR").filter(|d| !d.is_empty()) {
+        candidates.push(PathBuf::from(dir).join("debug").join(&file));
+    }
+    if let Some(root) = engine_root {
+        candidates.push(root.join("target").join("debug").join(&file));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
 /// Состояние программы проекта.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuildState {

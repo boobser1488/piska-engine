@@ -3,6 +3,7 @@
 //! Сама сцена приходит готовой текстурой от рендерера движка; здесь поверх неё
 //! рисуются сетка, рамки и гизмо, и обрабатывается мышь.
 
+use crate::i18n::{n_, tr_s, trf};
 use egui::{pos2, vec2, Color32, PointerButton, Pos2, Rect, Sense, Shape, Stroke};
 use engine_core::prelude::*;
 use engine_render::{Camera, Projection, SpriteRenderer};
@@ -10,10 +11,27 @@ use engine_render::{Camera, Projection, SpriteRenderer};
 use crate::hierarchy::object_icon;
 use crate::icons::{self, Icon};
 use crate::project::DragAsset;
+use crate::selection::{GizmoOp, Moved};
 use crate::state::{sprite_quad, Action, Editor, Mode, Tool, ViewTab};
 use crate::theme;
 
 const AXIS_LENGTH: f32 = 72.0;
+
+/// Подсказки мыши в углу вида Scene (2D и 3D): клавиша и что она делает.
+const HINT_2D: [(&str, &str); 5] = [
+    (n_("Drag"), n_("select")),
+    (n_("Right / middle drag"), n_("pan")),
+    (n_("Wheel"), n_("zoom")),
+    ("F", n_("frame")),
+    ("Ctrl", n_("snap")),
+];
+const HINT_3D: [(&str, &str); 5] = [
+    (n_("Right drag + W A S D"), n_("fly")),
+    (n_("Alt drag"), n_("orbit")),
+    (n_("Middle drag"), n_("pan")),
+    (n_("Wheel"), n_("zoom")),
+    ("F", n_("frame")),
+];
 const RING_RADIUS: f32 = 62.0;
 const HANDLE_REACH: f32 = 8.0;
 
@@ -32,6 +50,15 @@ pub(crate) struct ViewportState {
     pub orbit_goal: Option<(f32, f32)>,
     /// Границы мешей из файлов — для выбора щелчком и каркаса выделения.
     pub mesh_bounds: std::collections::HashMap<engine_assets::Guid, (Vec3, Vec3)>,
+    /// Рамка выделения: где нажали левую кнопку на пустом месте.
+    pub box_select: Option<Pos2>,
+    /// Правая кнопка зажата над видом Scene: режим полёта (WASD), буквы инструментов
+    /// в это время не срабатывают.
+    pub flying: bool,
+    /// Текущая скорость полёта (плавный разгон к нужной).
+    pub fly_velocity: Vec3,
+    /// До какого времени (`ctx.input().time`) показывать скорость полёта после колеса.
+    pub fly_speed_shown_until: f64,
 }
 
 impl Default for ViewportState {
@@ -45,6 +72,10 @@ impl Default for ViewportState {
             compass_drag: false,
             orbit_goal: None,
             mesh_bounds: std::collections::HashMap::new(),
+            box_select: None,
+            flying: false,
+            fly_velocity: Vec3::ZERO,
+            fly_speed_shown_until: 0.0,
         }
     }
 }
@@ -62,15 +93,17 @@ pub(crate) enum Handle {
 /// Перетаскивание гизмо: всё считается от состояния на момент нажатия,
 /// поэтому ошибки не накапливаются от кадра к кадру.
 pub(crate) struct GizmoDrag {
+    /// Активный объект в момент нажатия (сменился — перетаскивание отменяется).
     object: GameObjectId,
     handle: Handle,
     pointer_start: Vec2,
-    /// Мировая позиция объекта в начале.
+    /// Точка гизмо в начале: активный объект (Pivot) или середина выделения (Center).
     origin: Vec3,
-    /// Локальный Transform в начале.
-    start: Transform,
-    parent_inverse: Mat4,
-    /// Мировые направления локальных осей объекта (для масштаба).
+    /// Мировая позиция активного объекта в начале (к ней применяется привязка).
+    active_start: Vec3,
+    /// Все двигаемые объекты выделения.
+    moved: Vec<Moved>,
+    /// Мировые направления локальных осей активного объекта (для масштаба).
     axis_x: Vec2,
     axis_y: Vec2,
 }
@@ -105,36 +138,57 @@ pub(crate) fn show_scene(editor: &mut Editor, ui: &mut egui::Ui) {
     // Полоса вида Scene: что рисовать поверх сцены, камера, сводка справа.
     let objects = editor.app.world.scene.len();
     let draw_calls = editor.profiler.stats.draw_calls;
+    let view_tip = editor.prefs.shortcuts.tip(tr_s("Flat XY view or perspective view with a free camera"), "view-3d");
     theme::toolbar_strip(ui, |ui| {
-        theme::dropdown_button(ui, "Gizmos", "What the Scene view draws over the scene", |ui| {
-            if theme::item("Object Icons and Colliders").icon(Icon::Gizmo).checked(editor.show_gizmos).show(ui) {
+        // Вид: 2D / 3D → что рисовать поверх (Gizmos) → камера; справа — сводка.
+        let mut three_d = editor.scene_3d;
+        if theme::segmented(ui, &mut three_d, &[(false, "2D", view_tip.as_str()), (true, "3D", view_tip.as_str())]) {
+            editor.set_scene_3d(three_d);
+        }
+        theme::toolbar_separator(ui);
+        theme::dropdown_button(ui, tr_s("Gizmos"), tr_s("What the Scene view draws over the scene"), |ui| {
+            if theme::item(tr_s("Object Icons and Colliders")).icon(Icon::Gizmo).checked(editor.show_gizmos).show(ui) {
                 editor.show_gizmos = !editor.show_gizmos;
             }
-            if theme::item("Grid").icon(Icon::Grid).checked(editor.show_grid).show(ui) {
+            if theme::item(tr_s("Grid")).icon(Icon::Grid).checked(editor.show_grid).show(ui) {
                 editor.show_grid = !editor.show_grid;
             }
+            if theme::item(tr_s("Fog")).icon(Icon::Environment).checked(editor.prefs.scene_fog).show(ui) {
+                editor.prefs.scene_fog = !editor.prefs.scene_fog;
+            }
         });
-        theme::dropdown_button(ui, "Camera", "The Scene view camera", |ui| {
-            if theme::item("3D View").icon(Icon::Cube).shortcut(&editor.shortcut_text("view-3d")).checked(editor.scene_3d).show(ui) {
+        theme::dropdown_button(ui, tr_s("Camera"), tr_s("The Scene view camera"), |ui| {
+            if theme::item(tr_s("3D View")).icon(Icon::Cube).shortcut(&editor.shortcut_text("view-3d")).checked(editor.scene_3d).show(ui) {
                 let enabled = !editor.scene_3d;
                 editor.set_scene_3d(enabled);
             }
             theme::menu_separator(ui);
-            if theme::item("Frame Selected")
+            if theme::item(tr_s("Frame Selected"))
                 .icon(Icon::Search)
                 .shortcut(&editor.shortcut_text("frame-selected"))
-                .enabled_if(editor.selection.is_some(), "Select an object first")
+                .enabled_if(editor.selection.is_some(), tr_s("Select an object first"))
                 .show(ui)
             {
                 editor.actions.push(Action::FrameSelected);
             }
-            if theme::item("Frame Whole Scene").show(ui) {
+            if theme::item(tr_s("Frame Whole Scene")).show(ui) {
                 editor.frame_all();
             }
+            // Скорость полёта (ПКМ + W A S D) — прямо здесь, без окна Preferences.
+            theme::menu_separator(ui);
+            ui.horizontal(|ui| {
+                ui.add_space(theme::SP_M);
+                ui.label(egui::RichText::new(tr_s("Fly speed")).color(theme::TEXT_MUTED));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(theme::SP_M);
+                    crate::controls::number_field_ex(ui, &mut editor.prefs.fly_speed, 0.1..=200.0, 0.1, "", tr_s(" m/s"), 1, 96.0)
+                    .on_hover_text(tr_s("Speed of flying with the right mouse button held and W / A / S / D, Q / E. Shift flies three times faster; the wheel changes it while flying."));
+                });
+            });
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
-                egui::RichText::new(format!("{objects} objects  ·  {draw_calls} draw calls"))
+                egui::RichText::new(trf!("{objects} objects  ·  {draw_calls} draw calls", objects = objects, draw_calls = draw_calls))
                     .size(theme::FONT_CAPTION)
                     .color(theme::TEXT_MUTED),
             );
@@ -150,20 +204,22 @@ pub(crate) fn show_game(editor: &mut Editor, ui: &mut egui::Ui) {
     let mut maximize = editor.dock.maximize_on_play;
     theme::toolbar_strip(ui, |ui| {
         ui.label(
-            egui::RichText::new(format!("Display  {} × {}", pixels[0], pixels[1]))
+            egui::RichText::new(trf!("Display  {} × {}", pixels[0], pixels[1]))
                 .size(theme::FONT_CAPTION)
                 .color(theme::TEXT_MUTED),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // Динамик: звук игры в редакторе (editor_audio.rs).
+            crate::editor_audio::speaker_toggle(ui, &mut editor.prefs);
             theme::toggle_button(
                 ui,
                 &mut maximize,
                 Icon::Collapse,
-                "Maximize On Play",
-                "Enlarge the Game view to the whole dock area when Play starts",
+                tr_s("Maximize On Play"),
+                tr_s("Enlarge the Game view to the whole dock area when Play starts"),
             );
             ui.label(
-                egui::RichText::new(format!("{draw_calls} draw calls"))
+                egui::RichText::new(trf!("{draw_calls} draw calls", draw_calls = draw_calls))
                     .size(theme::FONT_CAPTION)
                     .color(theme::TEXT_MUTED),
             );
@@ -171,6 +227,9 @@ pub(crate) fn show_game(editor: &mut Editor, ui: &mut egui::Ui) {
     });
     editor.dock.maximize_on_play = maximize;
     show_view(editor, ui, ViewTab::Game);
+    // Скрипты сцены не собраны в эту программу — сказать прямо и предложить сборку.
+    let rect = editor.dock.game.rect;
+    crate::rust_scripts::missing_scripts_banner(editor, ui, rect);
 }
 
 /// Область вида Scene или Game: текстура сцены, поверх — гизмо или рамка игры.
@@ -187,6 +246,7 @@ fn show_view(editor: &mut Editor, ui: &mut egui::Ui, which: ViewTab) {
     let texture = if which == ViewTab::Game {
         editor.dock.game.rect = rect;
         editor.dock.game.pixels = pixels;
+        editor.dock.game.layer = ui.layer_id();
         editor.dock.game.texture
     } else {
         editor.viewport.rect = rect;
@@ -212,7 +272,7 @@ fn show_view(editor: &mut Editor, ui: &mut egui::Ui, which: ViewTab) {
     match which {
         ViewTab::Scene if editor.scene_3d => {
             crate::view3d::show(editor, ui, &painter, &response);
-            hint(&painter, rect, "Right drag  orbit     Drag  pan     Wheel  zoom     F  frame selection");
+            hint(&painter, rect, &HINT_3D);
         }
         ViewTab::Scene => scene_view(editor, ui, &painter, &response),
         ViewTab::Game | ViewTab::Code => game_view(editor, &painter, rect),
@@ -272,16 +332,33 @@ fn show_view(editor: &mut Editor, ui: &mut egui::Ui, which: ViewTab) {
 fn game_view(editor: &Editor, painter: &egui::Painter, rect: Rect) {
     match editor.mode {
         Mode::Playing | Mode::Paused => {
-            let color = if editor.mode == Mode::Playing { theme::accent() } else { theme::WARN };
-            painter.rect_stroke(rect.shrink(1.0), 0.0, Stroke::new(2.0_f32, color));
+            // Рамка акцентом — ввод у игры; тонкая серая — ввод у редактора.
+            let focused = editor.game_has_input_focus();
+            let (width, color) = match editor.mode {
+                Mode::Paused => (2.0, theme::WARN),
+                _ if focused => (2.0, theme::accent()),
+                _ => (1.0, theme::LINE_SOFT),
+            };
+            painter.rect_stroke(rect.shrink(width * 0.5), 0.0, Stroke::new(width, color));
             if editor.mode == Mode::Paused {
-                theme::chip(painter, rect.left_top() + vec2(12.0, 12.0), "Paused — Step advances one frame", theme::WARN);
+                theme::chip(painter, rect.left_top() + vec2(12.0, 12.0), tr_s("Paused — Step advances one frame"), theme::WARN);
+            } else if editor.game_cursor_captured() {
+                // Мышь у игры (курсор заперт и спрятан): как её вернуть.
+                theme::chip(painter, rect.left_bottom() + vec2(12.0, -32.0), tr_s("Shift+Esc — release the mouse"), theme::TEXT_MUTED);
+            } else if !focused {
+                // Внизу: сверху может стоять плашка о несобранных скриптах.
+                theme::chip(
+                    painter,
+                    rect.left_bottom() + vec2(12.0, -32.0),
+                    tr_s("The editor has the input — click the Game view to play"),
+                    theme::TEXT_MUTED,
+                );
             }
         }
         Mode::Edit => {
-            let text = format!(
+            let text = trf!(
                 "This is what the game camera sees. {} to run the game",
-                editor.prefs.shortcuts.tip("Press Play", "play")
+                editor.prefs.shortcuts.tip(tr_s("Press Play"), "play")
             );
             let galley = painter.layout_no_wrap(text, theme::caption(), theme::TEXT_MUTED);
             let size = galley.size() + vec2(16.0, 8.0);
@@ -293,8 +370,19 @@ fn game_view(editor: &Editor, painter: &egui::Painter, rect: Rect) {
 }
 
 /// Подсказка по управлению в нижнем левом углу вида.
-fn hint(painter: &egui::Painter, rect: Rect, text: &str) {
-    let galley = painter.layout_no_wrap(text.to_string(), theme::caption(), theme::TEXT_MUTED);
+/// Пары «клавиша — действие»: клавиша светлее, действие приглушено, между парами « · »
+/// (в любом языке видно, где кончается одна подсказка и начинается другая).
+fn hint(painter: &egui::Painter, rect: Rect, pairs: &[(&'static str, &'static str)]) {
+    let mut job = egui::text::LayoutJob::default();
+    let format = |color| egui::TextFormat { font_id: theme::caption(), color, ..Default::default() };
+    for (index, (key, action)) in pairs.iter().enumerate() {
+        if index > 0 {
+            job.append("  ·  ", 0.0, format(theme::TEXT_DISABLED));
+        }
+        job.append(tr_s(key), 0.0, format(theme::TEXT));
+        job.append(tr_s(action), 6.0, format(theme::TEXT_MUTED));
+    }
+    let galley = painter.layout_job(job);
     let plate = Rect::from_min_size(
         rect.left_bottom() + vec2(8.0, -galley.size().y - 14.0),
         galley.size() + vec2(12.0, 6.0),
@@ -319,15 +407,17 @@ fn scene_view(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, respo
             editor.cam_center += before - after;
         }
     }
+    // Сдвиг вида: правая или средняя кнопка, а также левая с зажатым Space или Alt.
+    // Левая по пустому месту — рамка выделения.
+    let (space, alt) = ui.input(|i| (i.key_down(egui::Key::Space), i.modifiers.alt));
     let panning = response.dragged_by(PointerButton::Secondary)
         || response.dragged_by(PointerButton::Middle)
-        || (response.dragged_by(PointerButton::Primary)
-            && !response.drag_started_by(PointerButton::Primary)
-            && editor.viewport.drag.is_none());
+        || (response.dragged_by(PointerButton::Primary) && (space || alt) && editor.viewport.drag.is_none());
     if panning {
         let delta = response.drag_delta() / editor.view_transform().scale();
         editor.cam_center += Vec2::new(-delta.x, delta.y);
     }
+    fly_2d(editor, ui, response);
 
     // Сетка 2D-вида рисуется рендером за спрайтами (`CameraView::grid`).
     let view = editor.view_transform();
@@ -340,7 +430,7 @@ fn scene_view(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, respo
         if !scene.is_active(id) || !editor.show_gizmos {
             continue;
         }
-        let selected = editor.selection == Some(id);
+        let selected = editor.is_selected(id);
         if let Some(camera) = object.get::<Camera>() {
             if camera.projection == Projection::Orthographic {
                 let (_, rotation, position) = scene.world_matrix(id).to_scale_rotation_translation();
@@ -350,10 +440,7 @@ fn scene_view(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, respo
                     view.to_screen((position + rotation * local).truncate())
                 });
                 let alpha = if selected { 220 } else { 90 };
-                painter.add(Shape::closed_line(
-                    corners.to_vec(),
-                    Stroke::new(1.0_f32, Color32::from_white_alpha(alpha)),
-                ));
+                crate::lines::polyline(painter, &corners, true, Stroke::new(1.0_f32, Color32::from_white_alpha(alpha)));
             }
         }
         if !object.has::<SpriteRenderer>() {
@@ -366,32 +453,112 @@ fn scene_view(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, respo
         }
     }
 
-    // --- Выделение: контур спрайта и коллайдера, затем гизмо ---
-    let selection = editor.selection.filter(|id| scene.contains(*id));
-    if let Some(id) = selection {
-        if let Some(quad) = sprite_quad(scene, id) {
-            painter.add(Shape::closed_line(
-                quad.map(|corner| view.to_screen(corner)).to_vec(),
-                Stroke::new(1.5_f32, theme::accent()),
-            ));
+    // --- Выделение: контур спрайта и коллайдера у каждого выделенного, затем гизмо ---
+    let selected = editor.selected();
+    for id in &selected {
+        let active = editor.selection == Some(*id);
+        if let Some(quad) = sprite_quad(scene, *id) {
+            let color = if active { theme::accent() } else { theme::mix(theme::accent(), Color32::WHITE, 0.35) };
+            crate::lines::polyline(
+                painter,
+                &quad.map(|corner| view.to_screen(corner)),
+                true,
+                Stroke::new(if active { 1.5_f32 } else { 1.0_f32 }, color),
+            );
         }
         if editor.show_gizmos {
-            draw_collider(painter, &view, scene, id);
+            draw_collider(painter, &view, scene, *id);
         }
     }
+    let selection = editor.selection.filter(|id| scene.contains(*id));
 
-    gizmo(editor, ui, painter, response, selection, pointer);
+    let box_started = gizmo(editor, ui, painter, response, selection, pointer);
+    if box_started && !space && !alt {
+        editor.viewport.box_select = ui.input(|i| i.pointer.press_origin());
+    }
+    let picker = |editor: &Editor, area: Rect| -> Vec<GameObjectId> {
+        let view = editor.view_transform();
+        let scene = &editor.app.world.scene;
+        crate::selection::tree_order(scene)
+            .into_iter()
+            .filter(|id| scene.is_active(*id) && !editor.pick_locked(*id))
+            .filter(|id| {
+                let center = match editor.bounds_of(*id) {
+                    Some((min, max)) => (min + max) * 0.5,
+                    None => scene.world_position(*id).truncate(),
+                };
+                area.contains(view.to_screen(center))
+            })
+            .collect()
+    };
+    box_select(editor, ui, painter, response, picker);
 
-    // --- Клик без перетаскивания — выбор объекта ---
+    // --- Клик без перетаскивания — выбор объекта (Ctrl — переключить, Shift — добавить) ---
     if response.clicked() {
         if let Some(pointer) = response.interact_pointer_pos() {
             let view = editor.view_transform();
             let picked = editor.pick(view.to_world(pointer), 10.0 / view.scale());
-            editor.actions.push(Action::Select(picked));
+            let modifiers = ui.input(|i| i.modifiers);
+            editor.pick_with_modifiers(picked.into_iter().collect(), modifiers);
         }
     }
 
-    hint(painter, rect, "Drag  pan     Wheel  zoom     F  frame selection     Ctrl  snap");
+    hint(painter, rect, &HINT_2D);
+}
+
+/// Рамка выделения: тянут левой кнопкой по пустому месту; при отпускании выбираются
+/// объекты, чьи центры внутри (Ctrl — переключить, Shift — добавить). `pick` — кто попал.
+pub(crate) fn box_select(
+    editor: &mut Editor,
+    ui: &egui::Ui,
+    painter: &egui::Painter,
+    response: &egui::Response,
+    pick: impl Fn(&Editor, Rect) -> Vec<GameObjectId>,
+) {
+    let Some(start) = editor.viewport.box_select else { return };
+    let current = ui.ctx().pointer_latest_pos().unwrap_or(start);
+    let area = Rect::from_two_pos(start, current);
+    painter.rect(
+        area,
+        0.0,
+        theme::accent().gamma_multiply(0.12),
+        Stroke::new(1.0_f32, theme::accent().gamma_multiply(0.9)),
+    );
+    if !response.dragged() || response.drag_stopped() {
+        editor.viewport.box_select = None;
+        if area.width() > 2.0 || area.height() > 2.0 {
+            let picked = pick(editor, area);
+            let modifiers = ui.input(|i| i.modifiers);
+            editor.pick_with_modifiers(picked, modifiers);
+        }
+    }
+}
+
+/// 2D: с зажатой правой кнопкой W / A / S / D (и стрелки, когда вид в фокусе) сдвигают
+/// вид, как полёт в 3D.
+fn fly_2d(editor: &mut Editor, ui: &egui::Ui, response: &egui::Response) {
+    let held = ui.input(|i| i.pointer.secondary_down()) && (response.hovered() || editor.viewport.flying);
+    editor.viewport.flying = held;
+    let focused = editor.focused_panel() == Some(crate::dock::Panel::Scene) && !ui.ctx().wants_keyboard_input();
+    let (dir, fast, dt) = ui.input(|i| {
+        let key = |k: egui::Key| if i.key_down(k) { 1.0 } else { 0.0 };
+        let mut dir = Vec2::ZERO;
+        if held {
+            dir += Vec2::new(key(egui::Key::D) - key(egui::Key::A), key(egui::Key::W) - key(egui::Key::S));
+        }
+        if focused && !held && i.modifiers.is_none() {
+            dir += Vec2::new(
+                key(egui::Key::ArrowRight) - key(egui::Key::ArrowLeft),
+                key(egui::Key::ArrowUp) - key(egui::Key::ArrowDown),
+            );
+        }
+        (dir, i.modifiers.shift, i.unstable_dt.clamp(crate::view3d::MOTION_DT.0, crate::view3d::MOTION_DT.1))
+    });
+    if dir != Vec2::ZERO {
+        let speed = editor.cam_half_height * 1.5 * if fast { 3.0 } else { 1.0 };
+        editor.cam_center += dir.normalize() * speed * dt;
+        ui.ctx().request_repaint();
+    }
 }
 
 /// Контур 2D-коллайдера. Физику редактор не подключает: форма читается через
@@ -426,7 +593,7 @@ fn draw_collider(painter: &egui::Painter, view: &ViewTransform, scene: &Scene, i
         let half = vec2_field("size") * 0.5;
         let corners = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
             .map(|(x, y)| to_screen(offset + Vec2::new(half.x * x, half.y * y)));
-        painter.add(Shape::closed_line(corners.to_vec(), stroke));
+        crate::lines::polyline(painter, &corners, true, stroke);
     }
 }
 
@@ -462,6 +629,8 @@ fn hit_handle(tool: Tool, origin: Pos2, axis_x: Vec2, axis_y: Vec2, pointer: Pos
     }
 }
 
+/// Гизмо 2D. Действует на всё выделение. `true` — нажали левой кнопкой мимо ручек
+/// (с этого начинается рамка выделения).
 fn gizmo(
     editor: &mut Editor,
     ui: &egui::Ui,
@@ -469,16 +638,18 @@ fn gizmo(
     response: &egui::Response,
     selection: Option<GameObjectId>,
     pointer: Option<Pos2>,
-) {
+) -> bool {
+    let missed = response.drag_started_by(PointerButton::Primary);
     let Some(id) = selection else {
         editor.viewport.drag = None;
-        return;
+        return missed;
     };
     let view = editor.view_transform();
     let scene = &editor.app.world.scene;
     let world = scene.world_matrix(id);
-    let (_, world_rotation, world_position) = world.to_scale_rotation_translation();
-    let origin = view.to_screen(world_position.truncate());
+    let (_, world_rotation, _) = world.to_scale_rotation_translation();
+    let pivot = editor.gizmo_pivot().unwrap_or(world.w_axis.truncate());
+    let origin = view.to_screen(pivot.truncate());
 
     // Перемещение — по осям мира; масштаб — по локальным осям объекта.
     let local_x = (world_rotation * Vec3::X).truncate().try_normalize().unwrap_or(Vec2::X);
@@ -489,26 +660,31 @@ fn gizmo(
     };
 
     // --- Начало перетаскивания ---
+    let mut started_on_handle = false;
     if response.drag_started_by(PointerButton::Primary) {
         let press = ui.input(|i| i.pointer.press_origin());
         let handle = press.and_then(|press| hit_handle(editor.tool, origin, axis_x, axis_y, press));
-        if let (Some(handle), Some(press), Some(object)) = (handle, press, scene.get(id)) {
-            let parent_inverse = object
-                .parent()
-                .map_or(Mat4::IDENTITY, |parent| scene.world_matrix(parent).inverse());
+        if let (Some(handle), Some(press)) = (handle, press) {
+            started_on_handle = true;
+            // Alt + перетаскивание перемещения — сначала дублировать выделение (как в Unity).
+            if editor.tool == Tool::Move && ui.input(|i| i.modifiers.alt) {
+                editor.apply(Action::DuplicateSelection);
+            }
+            let active = editor.selection.unwrap_or(id);
             editor.viewport.drag = Some(GizmoDrag {
-                object: id,
+                object: active,
                 handle,
                 pointer_start: view.to_world(press),
-                origin: world_position,
-                start: object.transform,
-                parent_inverse,
+                origin: pivot,
+                active_start: editor.app.world.scene.world_position(active),
+                moved: editor.capture_moved(),
                 axis_x,
                 axis_y,
             });
         }
     }
-    if response.drag_stopped() || editor.viewport.drag.as_ref().is_some_and(|d| d.object != id) {
+    let active_now = editor.selection;
+    if response.drag_stopped() || editor.viewport.drag.as_ref().is_some_and(|d| Some(d.object) != active_now) {
         editor.viewport.drag = None;
     }
 
@@ -516,11 +692,11 @@ fn gizmo(
     let snap = ui.input(|i| i.modifiers.command) != editor.snap;
     let (snap_move, snap_turn, snap_scale) = editor.snap_steps();
     let mut readout = None;
+    let mut op = None;
     if let (Some(drag), Some(pointer)) = (editor.viewport.drag.as_ref(), pointer) {
         let now = view.to_world(pointer);
         let delta = now - drag.pointer_start;
         let origin_2d = drag.origin.truncate();
-        let mut transform = drag.start;
         match (editor.tool, drag.handle) {
             (Tool::Move, handle) => {
                 let delta = match handle {
@@ -528,7 +704,8 @@ fn gizmo(
                     Handle::Y => Vec2::new(0.0, delta.y),
                     _ => delta,
                 };
-                let mut target = origin_2d + delta;
+                // Привязка — для активного объекта; остальные едут на тот же сдвиг.
+                let mut target = drag.active_start.truncate() + delta;
                 if snap {
                     if handle != Handle::Y {
                         target.x = (target.x / snap_move).round() * snap_move;
@@ -537,9 +714,7 @@ fn gizmo(
                         target.y = (target.y / snap_move).round() * snap_move;
                     }
                 }
-                transform.position = drag
-                    .parent_inverse
-                    .transform_point3(target.extend(drag.origin.z));
+                op = Some(GizmoOp::Move((target - drag.active_start.truncate()).extend(0.0)));
                 readout = Some(format!("{:.2}, {:.2}", target.x, target.y));
             }
             (Tool::Rotate, _) => {
@@ -548,10 +723,9 @@ fn gizmo(
                 if from.length_squared() > 1e-8 && to.length_squared() > 1e-8 {
                     let mut angle = from.angle_to(to);
                     if snap {
-                        let step = snap_turn;
-                        angle = (angle / step).round() * step;
+                        angle = (angle / snap_turn).round() * snap_turn;
                     }
-                    transform.rotation = Quat::from_rotation_z(angle) * drag.start.rotation;
+                    op = Some(GizmoOp::Rotate { rotation: Quat::from_rotation_z(angle), pivot: drag.origin });
                     readout = Some(format!("{:+.1}°", angle.to_degrees()));
                 }
             }
@@ -569,25 +743,19 @@ fn gizmo(
                 if snap {
                     factor = (factor / snap_scale).round() * snap_scale;
                 }
-                transform.scale = drag.start.scale * Vec3::new(factor.x, factor.y, 1.0);
-                if handle == Handle::Free {
-                    transform.scale.z = drag.start.scale.z * factor.x;
-                }
+                let z = if handle == Handle::Free { factor.x } else { 1.0 };
+                op = Some(GizmoOp::Scale {
+                    factor: Vec3::new(factor.x, factor.y, z),
+                    axes: [drag.axis_x.extend(0.0), drag.axis_y.extend(0.0), Vec3::Z],
+                    pivot: drag.origin,
+                });
                 readout = Some(format!("× {:.2}, {:.2}", factor.x, factor.y));
             }
         }
-        let changed = editor
-            .app
-            .world
-            .scene
-            .get(id)
-            .is_some_and(|object| object.transform != transform);
-        if changed {
-            editor.touch();
-            if let Some(object) = editor.app.world.scene.get_mut(id) {
-                object.transform = transform;
-            }
-        }
+    }
+    if let (Some(op), Some(drag)) = (op, editor.viewport.drag.take()) {
+        editor.apply_gizmo_op(&drag.moved, op);
+        editor.viewport.drag = Some(drag);
     }
 
     // --- Отрисовка ---
@@ -644,4 +812,5 @@ fn gizmo(
     if let Some(text) = readout {
         theme::chip(painter, origin + vec2(16.0, 16.0), &text, Color32::WHITE);
     }
+    missed && !started_on_handle
 }

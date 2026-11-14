@@ -6,6 +6,10 @@
 нуля, забег проигран. Погибший дрон возвращается через три секунды, но реактор платит за
 него 25 прочности.
 
+Игра устроена как проект редактора: арена, дрон, реактор, враги, боссы, снаряды, эффекты,
+экраны интерфейса, таблицы баланса, звуки и управление — файлы в `assets/`; логика — скрипты
+на Rust в `src/scripts/`. Откройте проект в редакторе и смотрите / правьте.
+
 ## Правила в пяти строках
 
 1. Двигайся, целься и стреляй: враги выходят на край арены (место появления помечено
@@ -33,14 +37,78 @@
 | пауза | Esc | Start | кнопка «II» |
 | меню и карточки | мышь, стрелки + Enter, цифры 1–3 | D-pad / стик + A | касание |
 
-Экранные стики появляются только после первого касания экрана.
+Экранные стики появляются только после первого касания экрана. Привязки клавиш — в
+`assets/project.settings` (раздел `input`), их можно менять в редакторе.
 
-## Запуск
+## Структура проекта
+
+```text
+games/swarm/
+├── assets/
+│   ├── scenes/arena.scene   арена: камера, свечение, фон, пол, дрон, реактор, менеджер игры
+│   │                        (объект GameManager со скриптами) и экраны интерфейса
+│   ├── prefabs/             drone, reactor_core; enemies/ (8 видов + осколок + мина),
+│   │                        bosses/ (4), projectiles/, pickups/, fx/ (кольца, вспышки,
+│   │                        цифры урона, частицы, метки появления, щит)
+│   ├── ui/                  hud, main_menu, mode_select, options, pause, upgrade_cards,
+│   │                        results — экраны интерфейса (холсты engine-ui)
+│   ├── data/                enemies.ron (враги и боссы), upgrades.ron (18 улучшений),
+│   │                        balance.ron (числа игры), waves.ron (таблица 20 волн)
+│   ├── audio/               33 файла .wav: эффекты и три музыкальные петли
+│   ├── sprites/             atlas.png (все спрайты), arena.png, space.png
+│   └── project.settings     управление, порядок скриптов, окно
+├── src/
+│   ├── lib.rs               build(): подключить ассеты, зарегистрировать скрипты, загрузить сцену
+│   ├── scripts/             по файлу на поведение (mod.rs пишет редактор):
+│   │     game_manager.rs    ход партии, музыка, замедление при смерти босса
+│   │     menus.rs           экраны и кнопки; touch_controls.rs — ввод, экранные стики
+│   │     hud.rs             HUD; drone.rs — дрон; weapons.rs — снаряды; upgrades.rs —
+│   │     карточки; waves.rs — волны; enemy_kinds.rs — враги; bosses.rs — боссы;
+│   │     reactor.rs — реактор; stress.rs — нагрузочный режим
+│   ├── sim.rs, grid.rs      пул врагов и пуль с сеткой столкновений (один менеджер ради скорости)
+│   ├── data.rs, defs.rs     перечисления и чтение таблиц из assets/data
+│   ├── view.rs, ui.rs       спрайты пулов из префабов; привязка к экранам интерфейса
+│   └── bin/swarm-editor.rs  игра в редакторе
+├── examples/bake_assets/    запекатель: пересоздаёт префабы, UI, сцену, звук (не нужен игре)
+├── tools/                   gen_assets.py (графика), gen_data.py (таблицы баланса)
+└── tests/                   sim.rs, game.rs, project.rs, packed.rs, editor_assets.rs
+```
+
+## Запуск и редактор
 
 ```bash
-cargo run -p swarm                       # играть
-cargo test -p swarm                      # тесты без окна
-python games/swarm/tools/gen_assets.py   # пересоздать графику (Pillow, numpy)
+cargo run -p swarm                                          # играть
+cargo run -p swarm --features editor --bin swarm-editor     # открыть проект в редакторе
+cargo test -p swarm                                         # тесты без окна
+```
+
+Из хаба: «Open Project» → `games/swarm`.
+
+## Как изменить игру, редактируя ассеты
+
+* **Врага или босса** — откройте `assets/data/enemies.ron` (здоровье, скорость, награда,
+  с какой волны появляется, сценарий атак босса) и префаб `assets/prefabs/enemies/<вид>.prefab`
+  (картинка, размер, покачивание — компонент `EnemyKind`). Новый вид врага требует новой
+  строки в перечислении `Kind` (`src/data.rs`) и его поведения в `scripts/enemy_kinds.rs`.
+* **Волны** — `assets/data/waves.ron`: в каждой волне список групп (когда, кто, сколько,
+  как расставить). После 20-й волны работает генератор (`generator` в `balance.ron`).
+* **Улучшения** — `assets/data/upgrades.ron`: название, иконка, предел уровней, вес
+  выпадения, числа (`params`) и описание (`{0}`, `{1}` — числа для следующего уровня).
+* **Экран интерфейса** — откройте `assets/ui/<экран>.prefab` или объект экрана в сцене:
+  кнопки, тексты, панели — обычные объекты с компонентами; игра находит их по именам
+  (`HpText`, `card0`, `play` …), поэтому не переименовывайте их.
+* **Звуки** — подмените файл в `assets/audio` (те же имена). Музыку и эффекты можно
+  пересинтезировать запекателем.
+* **Управление** — `assets/project.settings` (Input).
+* **Вид дрона и реактора, цвета следов, тексты надписей волн** — поля компонентов `Drone`,
+  `Weapons`, `ReactorCore`, `Waves`, `Hud`, `Menus`… на объектах сцены и префабов.
+
+Пересоздать всё с нуля (после правки генераторов графики и таблиц):
+
+```bash
+python games/swarm/tools/gen_assets.py     # спрайты, фон, иконки, базовая сцена
+python games/swarm/tools/gen_data.py       # враги, улучшения, баланс
+cargo run -p swarm --example bake_assets   # таблица волн, звук, префабы, UI, сцена
 ```
 
 Отладочные переменные окружения (только десктоп): `SWARM_SCREEN=menu|mode|options|wave7|wave10_pause|wave5_upgrade|wave12_win|wave12_lose`
@@ -48,7 +116,7 @@ python games/swarm/tools/gen_assets.py   # пересоздать графику
 (400 врагов и 600 пуль), `SWARM_BOT=1` — автопилот. Скриншот без окна:
 
 ```bash
-SWARM_SCREEN=wave7 ENGINE_FRAMES=900 ENGINE_SCREENSHOT=shot.png cargo run -p swarm
+SWARM_SCREEN=wave7 ENGINE_FRAMES=900 ENGINE_SCREENSHOT=shot.png ENGINE_AUDIO=off cargo run -p swarm
 ```
 
 ## Экспорт
@@ -56,16 +124,7 @@ SWARM_SCREEN=wave7 ENGINE_FRAMES=900 ENGINE_SCREENSHOT=shot.png cargo run -p swa
 ```bash
 cargo run -p piska-export -- web --game swarm --release        # браузер → dist/swarm/web
 cargo run -p piska-export -- windows --game swarm --release    # Windows → dist/swarm/windows
-cargo run -p piska-export -- serve dist/swarm/web --open       # проверить в браузере
 ```
 
-В браузере геймпады пока не работают (ограничение движка), мышь и клавиатура — да.
-
-## Устройство
-
-* `src/sim.rs`, `boss.rs`, `data.rs`, `grid.rs` — вся логика без сцены: враги, пули и обломки лежат
-  в пулах фиксированной ёмкости, столкновения «круг против круга» идут через равномерную сетку.
-* `src/view.rs` — спрайты из одного атласа (пулы объектов), частицы, следы, числа урона.
-* `src/ui.rs`, `flow.rs` — интерфейс на `engine-ui` и ход игры; `sound.rs` — звук из синтезатора.
-* `src/bot.rs` — бот-игрок для тестов и автопилота.
-* `tools/gen_assets.py` — рисует атлас, арену, фон, иконки и пишет `src/atlas.rs`, `.meta` и сцену.
+В браузере кнопка «Выход» скрыта (вкладку закрыть нельзя), геймпады пока не работают
+(ограничение движка), мышь и клавиатура — да.

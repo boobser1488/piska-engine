@@ -28,6 +28,7 @@ mod tools;
 /// Идентификатор страницы Build окна Project Settings.
 const BUILD_PAGE: &str = "build";
 
+use crate::i18n::{n_, tr_s, trf};
 use std::path::{Path, PathBuf};
 
 use egui::{pos2, vec2, Rect, Sense};
@@ -65,8 +66,8 @@ impl SettingsScope {
 
     fn title(self) -> &'static str {
         match self {
-            SettingsScope::Preferences => "Preferences",
-            SettingsScope::Project => "Project Settings",
+            SettingsScope::Preferences => tr_s("Preferences"),
+            SettingsScope::Project => tr_s("Project Settings"),
         }
     }
 }
@@ -89,138 +90,138 @@ pub(crate) const PAGES: &[PageDef] = &[
     PageDef {
         scope: SettingsScope::Preferences,
         id: "general",
-        title: "General",
+        title: n_("General"),
         icon: Icon::Gear,
-        about: "Undo, auto-save and the code editor. Kept for this user.",
+        about: n_("Undo, auto-save and the code editor. Kept for this user."),
         draw: pages_prefs::general,
     },
     PageDef {
         scope: SettingsScope::Preferences,
         id: "appearance",
-        title: "Appearance",
+        title: n_("Appearance"),
         icon: Icon::Eye,
-        about: "How the editor looks. Changes apply at once and are kept for this user.",
+        about: n_("How the editor looks. Changes apply at once and are kept for this user."),
         draw: pages_prefs::appearance,
     },
     PageDef {
         scope: SettingsScope::Preferences,
         id: "scene-view",
-        title: "Scene View",
+        title: n_("Scene View"),
         icon: Icon::Scene,
-        about: "Grid, background, snapping steps and the camera of the Scene view.",
+        about: n_("Grid, background, snapping steps and the camera of the Scene view."),
         draw: pages_prefs::scene_view,
     },
     PageDef {
         scope: SettingsScope::Preferences,
         id: "game-view",
-        title: "Game View",
+        title: n_("Game View"),
         icon: Icon::Camera,
-        about: "Frame rate of the editor window in Edit and Play mode.",
+        about: n_("Frame rate of the editor window in Edit and Play mode."),
         draw: pages_prefs::game_view,
     },
     PageDef {
         scope: SettingsScope::Preferences,
         id: "console",
-        title: "Console & Diagnostics",
+        title: n_("Console & Diagnostics"),
         icon: Icon::Console,
-        about: "What the Console shows when the editor starts, and the Profiler history.",
+        about: n_("What the Console shows when the editor starts, and the Profiler history."),
         draw: pages_prefs::console,
     },
     PageDef {
         scope: SettingsScope::Preferences,
         id: "build-tools",
-        title: "Build & Tools",
+        title: n_("Build & Tools"),
         icon: Icon::Build,
-        about: "Where cargo, the Android SDK, Java, zig and the C++ tools are, and where exports go.",
+        about: n_("Where cargo, the Android SDK, Java, zig and the C++ tools are, and where exports go."),
         draw: tools::build_tools,
     },
     PageDef {
         scope: SettingsScope::Preferences,
         id: "shortcuts",
-        title: "Shortcuts",
+        title: n_("Shortcuts"),
         icon: Icon::Text,
-        about: "Keyboard shortcuts of every editor command. Click a shortcut, then press the new keys.",
+        about: n_("Keyboard shortcuts of every editor command. Click a shortcut, then press the new keys."),
         draw: shortcuts_page::shortcuts,
     },
     // --- Project Settings ---
     PageDef {
         scope: SettingsScope::Project,
         id: "player",
-        title: "Player",
+        title: n_("Player"),
         icon: Icon::Play,
-        about: "The game window, its title and icon, and the first scene. Exported with the game.",
+        about: n_("The game window, its title and icon, and the first scene. Exported with the game."),
         draw: pages_project::player,
     },
     PageDef {
         scope: SettingsScope::Project,
         id: "build",
-        title: "Build",
+        title: n_("Build"),
         icon: Icon::Build,
-        about: "Export options of the game crate: [package.metadata.piska] in its Cargo.toml, read by piska-export.",
+        about: n_("Export options of the game crate: [package.metadata.piska] in its Cargo.toml, read by piska-export."),
         draw: build::build,
     },
     PageDef {
         scope: SettingsScope::Project,
         id: "physics2d",
-        title: "Physics 2D",
+        title: n_("Physics 2D"),
         icon: Icon::Physics,
-        about: "Gravity, solver and which layers collide for 2D bodies.",
+        about: n_("Gravity, solver and which layers collide for 2D bodies."),
         draw: physics::physics2d,
     },
     PageDef {
         scope: SettingsScope::Project,
         id: "physics3d",
-        title: "Physics 3D",
+        title: n_("Physics 3D"),
         icon: Icon::Cube,
-        about: "Gravity, solver and which layers collide for 3D bodies.",
+        about: n_("Gravity, solver and which layers collide for 3D bodies."),
         draw: physics::physics3d,
     },
     PageDef {
         scope: SettingsScope::Project,
         id: "tags-and-layers",
-        title: "Tags and Layers",
+        title: n_("Tags and Layers"),
         icon: Icon::List,
-        about: "Tags and layer names offered by the Inspector. Scenes keep the tag text and the layer number.",
+        about: n_("Tags and layer names offered by the Inspector. Scenes keep the tag text and the layer number."),
         draw: tags::tags_and_layers,
     },
     PageDef {
         scope: SettingsScope::Project,
         id: "input",
-        title: "Input",
+        title: n_("Input"),
         icon: Icon::Target,
-        about: "Input actions games read with input.button(…) and input.axis(…): keys, mouse and gamepad bindings.",
+        about: n_("Input actions games read with input.button(…) and input.axis(…): keys, mouse and gamepad bindings."),
         draw: input::input,
     },
     PageDef {
         scope: SettingsScope::Project,
         id: "time",
-        title: "Time",
+        title: n_("Time"),
         icon: Icon::Animation,
-        about: "Fixed step of physics and FixedUpdate, the longest frame and the start time scale.",
+        about: n_("Fixed step of physics and FixedUpdate, the longest frame and the start time scale."),
         draw: pages_project::time,
     },
     PageDef {
         scope: SettingsScope::Project,
         id: "graphics",
-        title: "Graphics",
+        title: n_("Graphics"),
         icon: Icon::Environment,
-        about: "Quality level and what the renderer draws. Games can switch the level at run time.",
+        about: n_("Quality level and what the renderer draws. Games can switch the level at run time."),
         draw: pages_project::graphics,
     },
     PageDef {
         scope: SettingsScope::Project,
         id: "audio",
-        title: "Audio",
+        title: n_("Audio"),
         icon: Icon::Audio,
-        about: "Start volumes of the mixer buses.",
+        about: n_("Start volumes of the mixer buses."),
         draw: pages_project::audio,
     },
     PageDef {
         scope: SettingsScope::Project,
         id: "script-order",
-        title: "Script Execution Order",
+        title: n_("Script Execution Order"),
         icon: Icon::Script,
-        about: "Which components run first. Changes wait for Apply, then work right away, also in Play.",
+        about: n_("Which components run first. Changes wait for Apply, then work right away, also in Play."),
         draw: crate::script_order::page,
     },
 ];
@@ -358,7 +359,8 @@ impl Editor {
         }
     }
 
-    fn set_settings_open(&mut self, scope: SettingsScope, open: bool) {
+    /// Открыть или закрыть окно Preferences / Project Settings.
+    pub fn set_settings_open(&mut self, scope: SettingsScope, open: bool) {
         match scope {
             SettingsScope::Preferences => self.preferences_open = open,
             SettingsScope::Project => self.script_order.open = open,
@@ -386,7 +388,7 @@ impl Editor {
 
     /// Страницы окна `scope`: (имя, заголовок).
     pub fn settings_pages(scope: SettingsScope) -> Vec<(&'static str, &'static str)> {
-        pages(scope).map(|p| (p.id, p.title)).collect()
+        pages(scope).map(|p| (p.id, tr_s(p.title))).collect()
     }
 
     /// Текст поиска окна (как ввод в поле поиска).
@@ -437,7 +439,7 @@ impl Editor {
             return false;
         }
         self.prefs.shortcuts.set(def.id, Some(binding));
-        self.settings.status[SettingsScope::Preferences.index()] = Some((format!("{} now runs “{}”", binding.text(), def.title), false));
+        self.settings.status[SettingsScope::Preferences.index()] = Some((trf!("{} now runs “{}”", binding.text(), tr_s(def.title)), false));
         true
     }
 }
@@ -503,7 +505,7 @@ impl Editor {
             .and_then(|root| draft.save(root.join(PROJECT_SETTINGS_FILE)).map_err(|e| EditorError::Other(e.to_string())));
         let status = &mut self.settings.status[SettingsScope::Project.index()];
         match &result {
-            Ok(()) => *status = Some((format!("Saved to {PROJECT_SETTINGS_FILE}"), false)),
+            Ok(()) => *status = Some((trf!("Saved to {PROJECT_SETTINGS_FILE}", PROJECT_SETTINGS_FILE = PROJECT_SETTINGS_FILE), false)),
             Err(error) => {
                 log::error!("{error}");
                 *status = Some((error.to_string(), true));
@@ -552,11 +554,11 @@ impl Editor {
         // предупреждением).
         let skipped = |id: &str| page.is_none() && scope == SettingsScope::Project && id == BUILD_PAGE;
         for def in pages(scope).filter(|p| page.is_none_or(|id| id == p.id) && !skipped(p.id)) {
-            let mut s = SettingsUi::new(ui, Pass::Reset, scope, "", def.title);
+            let mut s = SettingsUi::new(ui, Pass::Reset, scope, "", tr_s(def.title));
             (def.draw)(&mut s, self);
         }
-        let what = page.and_then(|id| page_def(scope, id)).map_or("all settings".to_string(), |p| format!("“{}”", p.title));
-        self.settings.status[scope.index()] = Some((format!("Reset {what} to defaults"), false));
+        let what = page.and_then(|id| page_def(scope, id)).map_or(tr_s("all settings").to_string(), |p| format!("“{}”", tr_s(p.title)));
+        self.settings.status[scope.index()] = Some((trf!("Reset {what} to defaults", what = what), false));
         if scope == SettingsScope::Project {
             self.commit_project_settings(true)?;
         }
@@ -591,8 +593,8 @@ impl Editor {
             let _ = std::fs::create_dir_all(dir);
         }
         std::fs::write(&file, text)
-            .map_err(|e| EditorError::Other(format!("cannot write `{}`: {e}. Choose another folder", file.display())))?;
-        self.settings.status[scope.index()] = Some((format!("Exported to {}", file.display()), false));
+            .map_err(|e| EditorError::Other(trf!("cannot write `{p0}`: {e}. Choose another folder", p0 = file.display(), e = e)))?;
+        self.settings.status[scope.index()] = Some((trf!("Exported to {}", file.display()), false));
         Ok(file)
     }
 
@@ -601,11 +603,11 @@ impl Editor {
     pub fn import_settings_file(&mut self, scope: SettingsScope, path: &str) -> Result<(), EditorError> {
         let file = self.resolve_settings_path(path);
         let text = std::fs::read_to_string(&file)
-            .map_err(|e| EditorError::Other(format!("cannot read `{}`: {e}. Check the path", file.display())))?;
+            .map_err(|e| EditorError::Other(trf!("cannot read `{p0}`: {e}. Check the path", p0 = file.display(), e = e)))?;
         match scope {
             SettingsScope::Preferences => {
                 if !text.contains(':') {
-                    return Err(EditorError::Other(format!(
+                    return Err(EditorError::Other(trf!(
                         "`{}` is not an editor preferences file: export one with Preferences → Export…",
                         file.display()
                     )));
@@ -623,7 +625,7 @@ impl Editor {
                 self.commit_project_settings(true)?;
             }
         }
-        self.settings.status[scope.index()] = Some((format!("Imported {}", file.display()), false));
+        self.settings.status[scope.index()] = Some((trf!("Imported {}", file.display()), false));
         Ok(())
     }
 }
@@ -668,17 +670,23 @@ impl Editor {
         };
         let screen = ctx.screen_rect();
         let size = vec2(900.0_f32.min(screen.width() - 40.0), 620.0_f32.min(screen.height() - 60.0));
-        egui::Window::new(scope.title())
-            .id(egui::Id::new(id))
+        let window_id = egui::Id::new(id);
+        crate::window_kit::keep_on_screen(ctx, window_id);
+        let shown = egui::Window::new(scope.title())
+            .id(window_id)
             .title_bar(false)
             .collapsible(false)
             .resizable(true)
+            .movable(false)
             .default_size(size)
             .min_size(vec2(620.0, 380.0))
-            .pivot(egui::Align2::CENTER_CENTER)
-            .default_pos(screen.center())
+            .anchor(egui::Align2::CENTER_CENTER, crate::window_kit::window_offset(ctx, window_id))
             .frame(theme::window_frame(&ctx.style()).inner_margin(egui::Margin::ZERO))
             .show(ctx, |ui| self.settings_body(ui, scope));
+        if let Some(shown) = shown {
+            crate::window_kit::record_window(ctx, window_id, shown.response.rect);
+        }
+        let _ = screen;
         self.settings_dialogs(ctx, scope);
     }
 
@@ -691,7 +699,7 @@ impl Editor {
         let mut hits: Vec<(&'static str, usize)> = Vec::new();
         if !query.is_empty() {
             for def in &defs {
-                let mut probe = SettingsUi::new(ui, Pass::Probe, scope, &query, def.title);
+                let mut probe = SettingsUi::new(ui, Pass::Probe, scope, &query, tr_s(def.title));
                 (def.draw)(&mut probe, self);
                 if probe.hits > 0 {
                     hits.push((def.id, probe.hits));
@@ -738,10 +746,17 @@ impl Editor {
         top_ui.add_space(theme::SP_XS);
         top_ui.label(egui::RichText::new(scope.title()).font(theme::strong(theme::FONT_HEADING)).color(theme::TEXT_STRONG));
         let title_end = top_ui.min_rect().right();
+        // Иконка и заголовок — ручка: окно тянут за них (двойной щелчок — в центр).
+        let window_id = egui::Id::new(match scope {
+            SettingsScope::Preferences => "editor_preferences",
+            SettingsScope::Project => "editor_project_settings",
+        });
+        let handle = Rect::from_min_max(pos2(top.left(), top.top()), pos2(title_end, top.bottom()));
+        crate::window_kit::drag_handle(&mut top_ui, window_id, handle);
         top_ui.add_space((side.right() + theme::SP_XL - theme::SP_M - title_end).max(theme::SP_L));
         let hint = match scope {
-            SettingsScope::Preferences => "Search preferences",
-            SettingsScope::Project => "Search project settings",
+            SettingsScope::Preferences => tr_s("Search preferences"),
+            SettingsScope::Project => tr_s("Search project settings"),
         };
         let search = theme::search_field(&mut top_ui, &mut self.settings.search[ix], hint, 300.0);
         let _ = top_ui.interact(search.rect, Editor::settings_search_id(scope), Sense::hover());
@@ -757,21 +772,21 @@ impl Editor {
                 Icon::Close,
                 if close.hovered() { theme::TEXT_STRONG } else { theme::TEXT_MUTED },
             );
-            if close.on_hover_text("Close").clicked() {
+            if close.on_hover_text(tr_s("Close")).clicked() {
                 self.set_settings_open(scope, false);
             }
             theme::toolbar_separator(ui);
-            let export = theme::icon_text_button(ui, Icon::Save, "Export…");
+            let export = theme::icon_text_button(ui, Icon::Save, tr_s("Export…"));
             let export = ui
                 .interact(export.rect, Editor::settings_export_id(scope), Sense::click())
-                .on_hover_text("Save these settings to a file");
+                .on_hover_text(tr_s("Save these settings to a file"));
             if export.clicked() {
                 self.settings.file = Some(FileDialog { scope, import: false, path: default_file(scope).to_string() });
             }
-            let import = theme::icon_text_button(ui, Icon::FolderOpen, "Import…");
+            let import = theme::icon_text_button(ui, Icon::FolderOpen, tr_s("Import…"));
             let import = ui
                 .interact(import.rect, Editor::settings_import_id(scope), Sense::click())
-                .on_hover_text("Replace these settings with the ones from a file");
+                .on_hover_text(tr_s("Replace these settings with the ones from a file"));
             if import.clicked() {
                 self.settings.file = Some(FileDialog { scope, import: true, path: default_file(scope).to_string() });
             }
@@ -797,12 +812,16 @@ impl Editor {
             icons::paint(side_ui.painter(), icon_rect, def.icon, if selected { theme::TEXT_STRONG } else { theme::TEXT_MUTED });
             let text_color = if selected { theme::TEXT_STRONG } else { theme::TEXT };
             let right = rect.right() - theme::SP_M - if count.is_some() { 26.0 } else { 0.0 };
-            let galley = side_ui.painter().layout(
-                def.title.to_string(),
-                theme::body(),
-                text_color,
-                f32::INFINITY,
-            );
+            // Длинное русское название страницы не обрезается на полуслове: «Порядок выполнения скр…».
+            let text_left = icon_rect.right() + theme::SP_M;
+            let mut job = egui::text::LayoutJob::simple(tr_s(def.title).to_string(), theme::body(), text_color, (right - text_left).max(20.0));
+            job.wrap.max_rows = 1;
+            job.wrap.break_anywhere = true;
+            job.wrap.overflow_character = Some('…');
+            let galley = side_ui.painter().layout_job(job);
+            if galley.elided {
+                response.clone().on_hover_text(tr_s(def.title));
+            }
             side_ui.painter().with_clip_rect(Rect::from_min_max(rect.min, pos2(right, rect.bottom()))).galley(
                 pos2(icon_rect.right() + theme::SP_M, rect.center().y - galley.size().y * 0.5),
                 galley,
@@ -829,16 +848,16 @@ impl Editor {
         let mut drawn = Vec::new();
         if !query.is_empty() && hits.is_empty() {
             page_ui.add_space(theme::SP_XXL * 2.0);
-            theme::empty_state(&mut page_ui, Icon::Search, &format!("No settings match “{}”", self.settings.search[ix].trim()), "Try another word, or clear the search.");
+            theme::empty_state(&mut page_ui, Icon::Search, &trf!("No settings match “{}”", self.settings.search[ix].trim()), tr_s("Try another word, or clear the search."));
         } else if let Some(def) = page_def(scope, current) {
             page_ui.horizontal(|ui| {
                 let (rect, _) = ui.allocate_exact_size(vec2(theme::ICON, theme::ICON), Sense::hover());
                 icons::paint(ui.painter(), rect, def.icon, theme::TEXT_MUTED);
                 ui.add_space(theme::SP_XS);
-                ui.label(egui::RichText::new(def.title).font(theme::strong(theme::FONT_HEADING)).color(theme::TEXT_STRONG));
+                ui.label(egui::RichText::new(tr_s(def.title)).font(theme::strong(theme::FONT_HEADING)).color(theme::TEXT_STRONG));
             });
             page_ui.add_space(theme::SP_XS);
-            page_ui.label(egui::RichText::new(def.about).font(theme::caption()).color(theme::TEXT_MUTED));
+            page_ui.label(egui::RichText::new(tr_s(def.about)).font(theme::caption()).color(theme::TEXT_MUTED));
             page_ui.add_space(theme::SP_M);
             egui::ScrollArea::vertical()
                 .id_salt(("settings_scroll", scope, def.id))
@@ -846,7 +865,7 @@ impl Editor {
                 .show(&mut page_ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     ui.set_width(ui.available_width() - theme::SP_M);
-                    let mut s = SettingsUi::new(ui, Pass::Draw, scope, &query, def.title);
+                    let mut s = SettingsUi::new(ui, Pass::Draw, scope, &query, tr_s(def.title));
                     (def.draw)(&mut s, self);
                     drawn = std::mem::take(&mut s.rows);
                     ui.add_space(theme::SP_L);
@@ -861,17 +880,17 @@ impl Editor {
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
         bottom_ui.spacing_mut().item_spacing.x = theme::SP_S;
-        let reset_page = theme::secondary_button(&mut bottom_ui, "Reset page");
+        let reset_page = theme::secondary_button(&mut bottom_ui, tr_s("Reset page"));
         let reset_page = bottom_ui
             .interact(reset_page.rect, Editor::settings_reset_page_id(scope), Sense::click())
-            .on_hover_text("Set every setting on this page back to its default");
+            .on_hover_text(tr_s("Set every setting on this page back to its default"));
         if reset_page.clicked() {
             self.settings.confirm = Some(Confirm::ResetPage(scope, current));
         }
-        let reset_all = theme::secondary_button(&mut bottom_ui, "Reset all");
+        let reset_all = theme::secondary_button(&mut bottom_ui, tr_s("Reset all"));
         let reset_all = bottom_ui
             .interact(reset_all.rect, Editor::settings_reset_all_id(scope), Sense::click())
-            .on_hover_text("Set every setting on every page back to its default");
+            .on_hover_text(tr_s("Set every setting on every page back to its default"));
         if reset_all.clicked() {
             self.settings.confirm = Some(Confirm::ResetAll(scope));
         }
@@ -879,8 +898,8 @@ impl Editor {
             Some((text, error)) => (text.clone(), *error),
             None => (
                 match scope {
-                    SettingsScope::Preferences => "Changes apply at once and are kept for this user".to_string(),
-                    SettingsScope::Project => format!("Changes apply at once and are saved to Assets/{PROJECT_SETTINGS_FILE}"),
+                    SettingsScope::Preferences => tr_s("Changes apply at once and are kept for this user").to_string(),
+                    SettingsScope::Project => trf!("Changes apply at once and are saved to Assets/{PROJECT_SETTINGS_FILE}", PROJECT_SETTINGS_FILE = PROJECT_SETTINGS_FILE),
                 },
                 false,
             ),
@@ -903,64 +922,61 @@ impl Editor {
         if let Some(confirm) = confirm {
             let (title, text, button) = match &confirm {
                 Confirm::ResetPage(_, page) => (
-                    format!("Reset {}?", page_def(scope, page).map_or("this page", |p| p.title)),
+                    trf!("Reset {}?", page_def(scope, page).map_or(tr_s("this page"), |p| tr_s(p.title))),
                     if scope == SettingsScope::Project && *page == BUILD_PAGE {
-                        "Every export option on this page is removed from [package.metadata.piska] in the game's Cargo.toml, so the export uses its defaults again.".to_string()
+                        tr_s("Every export option on this page is removed from [package.metadata.piska] in the game's Cargo.toml, so the export uses its defaults again.").to_string()
                     } else {
-                        "Every setting on this page goes back to its default value.".to_string()
+                        tr_s("Every setting on this page goes back to its default value.").to_string()
                     },
-                    "Reset",
+                    tr_s("Reset"),
                 ),
                 Confirm::ResetAll(_) => (
-                    format!("Reset all {}?", match scope {
+                    trf!("Reset all {}?", match scope {
                         SettingsScope::Preferences => "preferences",
                         SettingsScope::Project => "project settings",
                     }),
                     match scope {
-                        SettingsScope::Preferences => "Every preference on every page goes back to its default value. Window layouts are kept.".to_string(),
-                        SettingsScope::Project => format!("Every project setting goes back to its default value and Assets/{PROJECT_SETTINGS_FILE} is rewritten. The export options on the Build page (the game's Cargo.toml) are kept."),
+                        SettingsScope::Preferences => tr_s("Every preference on every page goes back to its default value. Window layouts are kept.").to_string(),
+                        SettingsScope::Project => trf!("Every project setting goes back to its default value and Assets/{PROJECT_SETTINGS_FILE} is rewritten. The export options on the Build page (the game's Cargo.toml) are kept.", PROJECT_SETTINGS_FILE = PROJECT_SETTINGS_FILE),
                     },
-                    "Reset All",
+                    tr_s("Reset All"),
                 ),
                 Confirm::RemoveTag(tag, used) => (
-                    format!("Remove tag “{tag}”?"),
-                    format!(
+                    trf!("Remove tag “{tag}”?", tag = tag),
+                    trf!(
                         "{used} object(s) in the open scene use it. They keep the tag text; the Inspector shows it as missing until the tag is added again."
-                    ),
-                    "Remove",
+                    , used = used),
+                    tr_s("Remove"),
                 ),
                 Confirm::ShortcutConflict { id, binding, other } => {
-                    let title_of = |id: &'static str| crate::shortcuts::command(id).map_or(id, |c| c.title);
+                    let title_of = |id: &'static str| crate::shortcuts::command(id).map_or(id, |c| tr_s(c.title));
                     (
-                        format!("{} is already used", binding.text()),
-                        format!(
+                        trf!("{} is already used", binding.text()),
+                        trf!(
                             "It runs “{}”. Replace: “{}” gets {} and “{}” is left without a shortcut.",
                             title_of(other),
                             title_of(id),
                             binding.text(),
                             title_of(other)
                         ),
-                        "Replace",
+                        tr_s("Replace"),
                     )
                 }
             };
             let mut outcome = None;
-            let modal = egui::Modal::new(egui::Id::new("settings_confirm_modal")).frame(theme::dialog_frame(&ctx.style())).show(ctx, |ui| {
+            let modal = crate::window_kit::dialog(egui::Id::new("settings_confirm_modal"), "").width(0.0).show(ctx, |ui| {
                 ui.set_width(380.0);
                 theme::dialog_title(ui, Icon::Warn, theme::WARN, &title);
                 ui.label(egui::RichText::new(text).color(theme::TEXT_MUTED));
-                ui.add_space(theme::SP_L);
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let yes = theme::danger_button(ui, button);
-                        if ui.interact(yes.rect, Editor::settings_confirm_id(), Sense::click()).clicked() {
-                            outcome = Some(true);
-                        }
-                        let no = theme::secondary_button(ui, "Cancel");
-                        if ui.interact(no.rect, Editor::settings_cancel_id(), Sense::click()).clicked() {
-                            outcome = Some(false);
-                        }
-                    });
+                crate::window_kit::dialog_actions(ui, |ui| {
+                    let yes = theme::danger_button(ui, button);
+                    if ui.interact(yes.rect, Editor::settings_confirm_id(), Sense::click()).clicked() {
+                        outcome = Some(true);
+                    }
+                    let no = theme::secondary_button(ui, tr_s("Cancel"));
+                    if ui.interact(no.rect, Editor::settings_cancel_id(), Sense::click()).clicked() {
+                        outcome = Some(false);
+                    }
                 });
             });
             if modal.should_close() && outcome.is_none() {
@@ -980,7 +996,7 @@ impl Editor {
                             self.prefs.shortcuts.set(other, None);
                             self.prefs.shortcuts.set(id, Some(binding));
                             self.settings.status[scope.index()] =
-                                Some((format!("{} now runs “{}”", binding.text(), crate::shortcuts::command(id).map_or(id, |c| c.title)), false));
+                                Some((trf!("{} now runs “{}”", binding.text(), crate::shortcuts::command(id).map_or(id, |c| tr_s(c.title))), false));
                             Ok(())
                         }
                     };
@@ -997,46 +1013,39 @@ impl Editor {
         };
         let import = dialog.import;
         let what = match scope {
-            SettingsScope::Preferences => "Preferences",
-            SettingsScope::Project => "Project Settings",
+            SettingsScope::Preferences => tr_s("Preferences"),
+            SettingsScope::Project => tr_s("Project Settings"),
         };
         let mut outcome = None;
-        let modal = egui::Modal::new(egui::Id::new("settings_file_modal")).frame(theme::dialog_frame(&ctx.style())).show(ctx, |ui| {
+        let modal = crate::window_kit::dialog(egui::Id::new("settings_file_modal"), "").width(0.0).show(ctx, |ui| {
             ui.set_width(460.0);
-            theme::dialog_title(ui, if import { Icon::FolderOpen } else { Icon::Save }, theme::accent(), &format!("{} {what}", if import { "Import" } else { "Export" }));
+            theme::dialog_title(ui, if import { Icon::FolderOpen } else { Icon::Save }, theme::accent(), &format!("{} {what}", if import { tr_s("Import") } else { tr_s("Export") }));
             ui.label(
                 egui::RichText::new(if import {
-                    "Read the settings from this file and apply them right away."
+                    tr_s("Read the settings from this file and apply them right away.")
                 } else {
-                    "Write the current settings to this file."
+                    tr_s("Write the current settings to this file.")
                 })
                 .color(theme::TEXT_MUTED),
             );
             ui.add_space(theme::SP_M);
-            let edit = ui.add(
-                egui::TextEdit::singleline(&mut dialog.path)
-                    .font(theme::mono())
-                    .desired_width(f32::INFINITY)
-                    .vertical_align(egui::Align::Center)
-                    .min_size(vec2(0.0, theme::FIELD_H + 4.0)),
-            );
+            let edit = crate::controls::text_field_font(ui, None, &mut dialog.path, "", f32::INFINITY, theme::mono());
             if !edit.has_focus() && !edit.lost_focus() {
                 edit.request_focus();
             }
             let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             ui.add_space(theme::SP_XS);
             ui.label(
-                egui::RichText::new(format!("Relative paths start in {}", base.display()))
+                egui::RichText::new(trf!("Relative paths start in {}", base.display()))
                     .font(theme::caption())
                     .color(theme::TEXT_DISABLED),
             );
-            ui.add_space(theme::SP_L);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let yes = theme::primary_button(ui, if import { "Import" } else { "Export" });
+            crate::window_kit::dialog_actions(ui, |ui| {
+                let yes = theme::primary_button(ui, if import { tr_s("Import") } else { tr_s("Export") });
                 if ui.interact(yes.rect, Editor::settings_confirm_id(), Sense::click()).clicked() || enter {
                     outcome = Some(true);
                 }
-                let no = theme::secondary_button(ui, "Cancel");
+                let no = theme::secondary_button(ui, tr_s("Cancel"));
                 if ui.interact(no.rect, Editor::settings_cancel_id(), Sense::click()).clicked() {
                     outcome = Some(false);
                 }

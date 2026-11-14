@@ -460,7 +460,8 @@ impl TerrainPass {
             }),
             // Юбки видны с обеих сторон.
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(depth(true, wgpu::CompareFunction::Less)),
+            // Обратная глубина (depth.rs): ближе — больше.
+            depth_stencil: Some(depth(true, wgpu::CompareFunction::Greater)),
             multisample: wgpu::MultisampleState { count: SAMPLES, ..wgpu::MultisampleState::default() },
             multiview: None,
             cache: None,
@@ -514,7 +515,7 @@ impl TerrainPass {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(depth(false, wgpu::CompareFunction::Less)),
+            depth_stencil: Some(depth(false, wgpu::CompareFunction::Greater)),
             multisample: wgpu::MultisampleState { count: SAMPLES, ..wgpu::MultisampleState::default() },
             multiview: None,
             cache: None,

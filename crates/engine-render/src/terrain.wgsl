@@ -75,7 +75,17 @@ struct Layer {
     albedo: vec3<f32>,
     height: f32,
     normal: vec3<f32>, // в мире
+    // Разброс нормалей внутри пикселя по карте деталей (Токсвиг): усреднённая мипами
+    // нормаль короче единицы — значит, в пикселе были разные наклоны.
+    variance: f32,
 };
+
+// Дисперсия наклонов из длины отфильтрованной нормали карты деталей (сила 0.7).
+fn toksvig(t: vec3<f32>) -> f32 {
+    let len = clamp(length(t), 1e-3, 1.0);
+    // ×2: анизотропная выборка берёт мип по короткой оси следа и недооценивает разброс.
+    return clamp((1.0 - len) / len, 0.0, 1.0) * 0.98;
+}
 
 // Производные мировой позиции — один раз в равномерном потоке управления. Все слои
 // выбираются с явными градиентами (textureSampleGrad), поэтому лишние слои можно
@@ -83,7 +93,30 @@ struct Layer {
 struct Grads {
     dx: vec3<f32>,
     dy: vec3<f32>,
+    // Доля второй, повёрнутой выборки плитки (0..1, плавный шум): против повторов.
+    alt: f32,
 };
+
+// Вторая выборка плитки: повёрнута на 37° и крупнее в 1.3 раза. Смешанная с первой по
+// плавному шуму, она прячет сетку повторов (ровные «волны» плиток вдали).
+const ALT_C: f32 = 0.6156; // cos(38°) / 1.28
+const ALT_S: f32 = 0.4810; // sin(38°) / 1.28
+fn alt_uv(uv: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(ALT_C * uv.x - ALT_S * uv.y, ALT_S * uv.x + ALT_C * uv.y) + vec2<f32>(0.37, 0.71);
+}
+fn alt_dir(d: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(ALT_C * d.x - ALT_S * d.y, ALT_S * d.x + ALT_C * d.y);
+}
+
+// Альбедо плитки с антиповтором (в местах, где вторая выборка не нужна, — одна).
+fn sample_albedo(layer: i32, uv: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>, alt: f32) -> vec4<f32> {
+    var a = textureSampleGrad(albedo_tex, tex_samp, uv, layer, gx, gy);
+    if (alt > 0.01) {
+        let b = textureSampleGrad(albedo_tex, tex_samp, alt_uv(uv), layer, alt_dir(gx), alt_dir(gy));
+        a = mix(a, b, alt);
+    }
+    return a;
+}
 
 fn tint(layer: i32) -> vec3<f32> {
     return terrain.tints[layer].rgb;
@@ -94,12 +127,19 @@ fn planar(layer: i32, p: vec3<f32>, scale: f32, gr: Grads, n: vec3<f32>) -> Laye
     let uv = p.xz * scale;
     let gx = gr.dx.xz * scale;
     let gy = gr.dy.xz * scale;
-    let a = textureSampleGrad(albedo_tex, tex_samp, uv, layer, gx, gy);
-    let t = textureSampleGrad(normal_tex, tex_samp, uv, layer, gx, gy).xyz * 2.0 - 1.0;
+    let a = sample_albedo(layer, uv, gx, gy, gr.alt);
+    var t = textureSampleGrad(normal_tex, tex_samp, uv, layer, gx, gy).xyz * 2.0 - 1.0;
+    if (gr.alt > 0.01) {
+        // Нормаль из повёрнутой выборки поворачиваем обратно в мир.
+        let t2 = textureSampleGrad(normal_tex, tex_samp, alt_uv(uv), layer, alt_dir(gx), alt_dir(gy)).xyz * 2.0 - 1.0;
+        let back = vec2<f32>(ALT_C * t2.x + ALT_S * t2.y, -ALT_S * t2.x + ALT_C * t2.y) * 1.28;
+        t = mix(t, vec3<f32>(back, t2.z), gr.alt);
+    }
     var l: Layer;
     l.albedo = a.rgb * tint(layer);
     l.height = a.a;
     l.normal = normalize(n + vec3<f32>(t.x, 0.0, t.y) * 0.7);
+    l.variance = toksvig(t);
     return l;
 }
 
@@ -110,9 +150,9 @@ fn triplanar(layer: i32, wp: vec3<f32>, scale: f32, gr: Grads, n: vec3<f32>) -> 
     let p = wp * scale;
     let dx = gr.dx * scale;
     let dy = gr.dy * scale;
-    let ax = textureSampleGrad(albedo_tex, tex_samp, p.zy, layer, dx.zy, dy.zy);
-    let ay = textureSampleGrad(albedo_tex, tex_samp, p.xz, layer, dx.xz, dy.xz);
-    let az = textureSampleGrad(albedo_tex, tex_samp, p.xy, layer, dx.xy, dy.xy);
+    let ax = sample_albedo(layer, p.zy, dx.zy, dy.zy, gr.alt);
+    let ay = sample_albedo(layer, p.xz, dx.xz, dy.xz, gr.alt);
+    let az = sample_albedo(layer, p.xy, dx.xy, dy.xy, gr.alt);
     let tx = textureSampleGrad(normal_tex, tex_samp, p.zy, layer, dx.zy, dy.zy).xyz * 2.0 - 1.0;
     let ty = textureSampleGrad(normal_tex, tex_samp, p.xz, layer, dx.xz, dy.xz).xyz * 2.0 - 1.0;
     let tz = textureSampleGrad(normal_tex, tex_samp, p.xy, layer, dx.xy, dy.xy).xyz * 2.0 - 1.0;
@@ -124,6 +164,7 @@ fn triplanar(layer: i32, wp: vec3<f32>, scale: f32, gr: Grads, n: vec3<f32>) -> 
     l.albedo = a.rgb * tint(layer);
     l.height = a.a;
     l.normal = normalize(n + nx * w.x + ny * w.y + nz * w.z);
+    l.variance = toksvig(tx) * w.x + toksvig(ty) * w.y + toksvig(tz) * w.z;
     return l;
 }
 
@@ -135,6 +176,7 @@ fn blend(base: Layer, top: Layer, t: f32) -> Layer {
     o.albedo = mix(base.albedo, top.albedo, f);
     o.height = mix(base.height, top.height, f);
     o.normal = normalize(mix(base.normal, top.normal, f));
+    o.variance = mix(base.variance, top.variance, f);
     return o;
 }
 
@@ -162,7 +204,7 @@ fn t_schlick(n_dot_x: f32, k: f32) -> f32 {
 
 // Та же модель отражения, что у мешей (GGX, неметалл).
 fn t_brdf(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, albedo: vec3<f32>, roughness: f32) -> vec3<f32> {
-    let h = normalize(v + l);
+    let h = safe_half(v, l);
     let n_dot_l = max(dot(n, l), 0.0);
     let n_dot_v = max(dot(n, v), 1e-4);
     let n_dot_h = max(dot(n, h), 0.0);
@@ -218,6 +260,10 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
     // Крупный оттенок ломает повторяемость.
     let macro_scale = s / 64.0;
     let macro_tint = textureSampleGrad(albedo_tex, tex_samp, wp.xz * macro_scale, L_DETAIL, gr.dx.xz * macro_scale, gr.dy.xz * macro_scale).r * 2.0;
+    // Где брать вторую выборку плиток: плавный шум с периодом ~150 м.
+    let alt_scale = s / 151.0;
+    let alt_noise = textureSampleGrad(albedo_tex, tex_samp, wp.xz * alt_scale + vec2<f32>(0.5, 0.25), L_DETAIL, gr.dx.xz * alt_scale, gr.dy.xz * alt_scale).a;
+    gr.alt = smoothstep(0.3, 0.7, alt_noise);
 
     var m = planar(L_GRASS, wp, 0.25 * s, gr, n);
     m.albedo *= mix(vec3<f32>(1.0), vec3<f32>(1.12, 1.05, 0.8), smoothstep(0.55, 0.85, v));
@@ -229,6 +275,7 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
         m.albedo = mix(m.albedo, dune.albedo, desert);
         m.height = mix(m.height, dune.height, desert);
         m.normal = normalize(mix(m.normal, dune.normal, desert));
+        m.variance = mix(m.variance, dune.variance, desert);
     }
     let warm = mix(vec3<f32>(1.0), vec3<f32>(1.22, 0.96, 0.72), desert);
 
@@ -263,6 +310,7 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
         mixed.albedo = vec3<f32>(0.0);
         mixed.height = 0.0;
         mixed.normal = vec3<f32>(0.0);
+        mixed.variance = 0.0;
         for (var k = 0; k < 5; k += 1) {
             let wk = painted[k];
             if (wk > 0.004) {
@@ -270,11 +318,13 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
                 mixed.albedo += l.albedo * wk;
                 mixed.height += l.height * wk;
                 mixed.normal += l.normal * wk;
+                mixed.variance += l.variance * wk;
             }
         }
         let inv = 1.0 / paint_total;
         mixed.albedo *= inv;
         mixed.height *= inv;
+        mixed.variance *= inv;
         mixed.normal = normalize(mixed.normal + n * 1e-3);
         m = blend(m, mixed, clamp(paint_total, 0.0, 1.0));
     }
@@ -290,13 +340,21 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
     // Мокрое тёмное дно ниже уровня моря.
     albedo = mix(albedo * vec3<f32>(0.45, 0.6, 0.6), albedo, smoothstep(sea - 4.0, sea - 0.5, h));
 
-    let nn = m.normal;
     let ao = i.ao;
     let view = normalize(globals.camera_position.xyz - i.world);
-    // Блестят только мокрый берег и снег; трава, земля и скала матовые.
+    // Нормаль с картой деталей не смотрит от камеры (иначе против низкого солнца блик
+    // по Френелю зажигает одиночные белые пиксели на склонах и у берега).
+    let nn = facing_normal(m.normal, view);
+    // Блестят только мокрый берег и снег; трава, земля и скала матовые. Шероховатость
+    // растёт там, где карта деталей в пикселе разбросана (Токсвиг, см. `toksvig`):
+    // вдали мелкие наклоны не дают мерцающих точек. Антиалиасинг по производным
+    // нормали не используется — после ветвлений по слоям он стоил ~2.5 мс кадра
+    // на GTX 1050 Ti.
     let wet = 1.0 - smoothstep(sea, sea + 2.0, h);
     let snowy = smoothstep(snow_line, snow_line + 30.0, h) * (1.0 - desert);
-    let roughness = clamp(0.92 - 0.55 * wet - 0.4 * snowy, 0.3, 1.0);
+    let base_roughness = clamp(0.92 - 0.55 * wet - 0.4 * snowy, 0.3, 1.0);
+    let toksvig_roughness = sqrt(sqrt(min(pow(base_roughness, 4.0) + m.variance, 1.0)));
+    let roughness = toksvig_roughness;
 
     let to_sun = -normalize(globals.sun_direction.xyz);
     var shadow = 1.0;

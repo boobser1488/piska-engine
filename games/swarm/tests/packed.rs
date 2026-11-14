@@ -2,7 +2,7 @@
 //! Отдельный файл = отдельный процесс: установленный пак глобален для процесса.
 
 use engine::prelude::*;
-use swarm::flow::Game;
+use swarm::scripts::game_manager::Game;
 use swarm::ui::Screen;
 
 #[test]
