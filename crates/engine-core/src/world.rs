@@ -172,6 +172,9 @@ pub struct World {
     dispatch_ids: Vec<GameObjectId>,
     /// То же для сцен с порядком выполнения: пары «объект, номер компонента».
     dispatch_entries: Vec<(GameObjectId, u32)>,
+    /// `dt` фазы, которая идёт сейчас (`ctx.dt()`): шаг физики в фиксированной фазе,
+    /// `dt` из `update` / `late_update`; вне фаз — `time.delta`.
+    phase_dt: Option<f32>,
 }
 
 impl Default for World {
@@ -194,7 +197,21 @@ impl World {
             quit_requested: false,
             dispatch_ids: Vec::new(),
             dispatch_entries: Vec::new(),
+            phase_dt: None,
         }
+    }
+
+    /// Длительность текущего шага, которую видит `ctx.dt()`: в `on_fixed_update` и
+    /// во всём фиксированном шаге — шаг физики, в `on_update` / `on_late_update` — их
+    /// `dt`, в остальное время — [`Time::delta`].
+    pub fn phase_dt(&self) -> f32 {
+        self.phase_dt.unwrap_or(self.time.delta)
+    }
+
+    /// Задать `dt` фазы (`None` — вернуть `time.delta`). Так [`App::tick`](crate::app::App::tick)
+    /// помечает весь фиксированный шаг, включая колбэки физики.
+    pub fn set_phase_dt(&mut self, dt: Option<f32>) {
+        self.phase_dt = dt;
     }
 
     // ------------------------------------------------------------------
@@ -383,18 +400,24 @@ impl World {
     }
 
     pub fn fixed_update(&mut self, dt: f32) {
+        let outer = self.phase_dt.replace(dt);
         self.for_each_active(Hooks::FIXED_UPDATE, &mut |c, ctx| c.on_fixed_update(ctx, dt));
         self.flush_messages();
+        self.phase_dt = outer;
     }
 
     pub fn update(&mut self, dt: f32) {
+        let outer = self.phase_dt.replace(dt);
         self.for_each_active(Hooks::UPDATE, &mut |c, ctx| c.on_update(ctx, dt));
         self.flush_messages();
+        self.phase_dt = outer;
     }
 
     pub fn late_update(&mut self, dt: f32) {
+        let outer = self.phase_dt.replace(dt);
         self.for_each_active(Hooks::LATE_UPDATE, &mut |c, ctx| c.on_late_update(ctx, dt));
         self.flush_messages();
+        self.phase_dt = outer;
     }
 
     // ------------------------------------------------------------------
@@ -567,10 +590,12 @@ impl World {
     /// Заменить текущую сцену сценой из RON-текста. При ошибке текущая сцена не трогается.
     pub fn load_scene_str(&mut self, text: &str, origin: &str) -> Result<(), SceneError> {
         let data = SceneData::from_ron(text, origin)?;
+        // Каждый префаб — один раз на загрузку (serialize::CachingPrefabs).
+        let prefabs = serialize::CachingPrefabs::new(self.prefabs.as_ref());
         let mut resolved = data
             .objects
             .iter()
-            .map(|node| serialize::resolve_node(node, self.prefabs.as_ref(), 0))
+            .map(|node| serialize::resolve_node(node, &prefabs, 0))
             .collect::<Result<Vec<_>, _>>()?;
         // Ссылки на объекты, которых в файле нет, — `None` (переживают только ссылки на
         // «не уничтожаемые при загрузке» объекты).
@@ -609,10 +634,12 @@ impl World {
         origin: &str,
     ) -> Result<Vec<GameObjectId>, SceneError> {
         let data = SceneData::from_ron(text, origin)?;
+        // Каждый префаб — один раз на загрузку (serialize::CachingPrefabs).
+        let prefabs = serialize::CachingPrefabs::new(self.prefabs.as_ref());
         let mut resolved = data
             .objects
             .iter()
-            .map(|node| serialize::resolve_node(node, self.prefabs.as_ref(), 0))
+            .map(|node| serialize::resolve_node(node, &prefabs, 0))
             .collect::<Result<Vec<_>, _>>()?;
         // Та же сцена второй раз — новые номера, ссылки внутри неё — на её же объекты.
         self.prepare_copies(&mut resolved, origin);
@@ -780,6 +807,10 @@ impl World {
             scenes.pending.clear();
             scenes.additive.clear();
             scenes.loaded_name = None;
+        }
+        // Обучающие ошибки коротких форм: в новом запуске Play каждая снова покажется один раз.
+        if let Some(errors) = self.resources.get_mut::<crate::script::ScriptErrors>() {
+            errors.clear();
         }
         self.time.time_scale = 1.0;
     }

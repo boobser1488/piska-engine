@@ -151,11 +151,71 @@ pub(super) fn graphics(s: &mut SettingsUi<'_>, editor: &mut Editor) {
         0.5,
         tr_s(" m"),
     );
+    s.number(
+        tr_s("Shadow cascades"),
+        tr_s("Most cascades a scene's SoftShadows component may use: near shadows stay sharp, far ones cover the whole distance."),
+        &mut g.shadow_cascades,
+        d.shadow_cascades,
+        1..=4,
+        0.05,
+        "",
+    );
+    s.number(
+        tr_s("Soft shadow filter"),
+        tr_s("Best shadow edge filter for SoftShadows: 0 is a hard 3x3 filter, 1 is a soft edge, 2 adds contact hardening."),
+        &mut g.shadow_filter,
+        d.shadow_filter,
+        0..=2,
+        0.05,
+        "",
+    );
+    s.group(tr_s("Lights"));
+    s.number(
+        tr_s("Max lights"),
+        tr_s("Most point and spot lights a frame may use when the scene has a ManyLights component; the nearest to the camera come first."),
+        &mut g.max_lights,
+        d.max_lights,
+        4..=255,
+        0.2,
+        "",
+    );
+    s.number(
+        tr_s("Shadowed lights"),
+        tr_s("How many point and spot lights with a LightShadows component cast shadows; a point light costs six shadow passes, a spot light one."),
+        &mut g.light_shadows,
+        d.light_shadows,
+        0..=4,
+        0.05,
+        "",
+    );
+    s.number(
+        tr_s("Water detail"),
+        tr_s("Water with a WaterEffects component: 0 is waves and sun glint, 1 adds refraction, depth colour and shore foam, 2 adds scene reflections."),
+        &mut g.water_detail,
+        d.water_detail,
+        0..=2,
+        0.05,
+        "",
+    );
     s.group(tr_s("Post-processing"));
     s.toggle(tr_s("Bloom"), tr_s("Glow around bright pixels."), &mut g.bloom, d.bloom);
     s.number(tr_s("Bloom intensity"), tr_s("Multiplies the bloom strength set in the scene Environment."), &mut g.bloom_intensity, d.bloom_intensity, 0.0..=4.0, 0.01, "");
     s.number(tr_s("Bloom threshold"), tr_s("Brightness above which pixels glow."), &mut g.bloom_threshold, d.bloom_threshold, 0.0..=10.0, 0.01, "");
     s.number(tr_s("Fog density scale"), tr_s("Multiplies the fog density of the scene Environment; 0 turns fog off."), &mut g.fog_scale, d.fog_scale, 0.0..=4.0, 0.01, "");
+    s.toggle(tr_s("Ambient occlusion"), tr_s("Allows the AmbientOcclusion component: darker creases, corners and ground under objects."), &mut g.ambient_occlusion, d.ambient_occlusion);
+    s.toggle(tr_s("High quality bloom"), tr_s("Allows the 13-sample bloom of the PostQuality component: smoother glow, no flickering sparks."), &mut g.high_quality_bloom, d.high_quality_bloom);
+    s.toggle(tr_s("FXAA"), tr_s("Allows FXAA of the PostQuality component: smooths edges that MSAA misses."), &mut g.fxaa, d.fxaa);
+    s.group(tr_s("Performance"));
+    s.number(
+        tr_s("Render scale"),
+        tr_s("3D scene resolution relative to the window; 0.75 is much faster on weak GPUs, the interface stays sharp."),
+        &mut g.render_scale,
+        d.render_scale,
+        0.25..=2.0,
+        0.01,
+        "",
+    );
+    s.toggle(tr_s("Terrain detail"), tr_s("Anti-tiling second texture sample and triplanar rock on terrain; off is much cheaper."), &mut g.terrain_detail, d.terrain_detail);
 }
 
 /// Audio: громкость шин микшера при старте.

@@ -35,6 +35,8 @@ pub use engine_render as render;
 #[cfg(feature = "ui")]
 pub use engine_ui as ui;
 
+/// Готовые поведения (Add Component → Behaviours): `Mover`, `Follow`, `Platformer2D`…
+pub mod behaviours;
 #[cfg(feature = "cpp")]
 pub mod cpp_services;
 #[cfg(feature = "editor")]
@@ -43,6 +45,8 @@ pub mod editor_project;
 #[cfg(feature = "gamepad")]
 pub mod gamepad;
 mod game;
+/// 2D-экран для скриптов: `ctx.view_rect()`, `ctx.pointer_world()`, `ctx.pointer_held()`.
+pub mod screen;
 /// Язык сценариев Scenario. Нужна возможность `scenario`.
 #[cfg(feature = "scenario")]
 pub mod scenario;
@@ -57,7 +61,7 @@ pub mod web;
 #[cfg(target_os = "android")]
 pub mod android;
 
-pub use game::{game_assets, run_game, save_data, with_game_icon, BuildFn};
+pub use game::{build_game, game_assets, run_game, run_game_setup, save_data, with_game_icon, BuildFn};
 
 use engine_assets::{AssetDatabase, AssetScenes};
 use engine_core::app::App;
@@ -66,6 +70,9 @@ use engine_render::WindowConfig;
 pub mod prelude {
     pub use crate::EngineError;
     pub use engine_assets::{AlphaMode, AssetDatabase, AssetHandle, Guid, Material, Materials, Mesh, Texture};
+    // Свои шейдеры (docs/api/shaders.md).
+    pub use engine_assets::{ParamValue, Shader, ShaderParams};
+    pub use engine_render::{MaterialParams, PostEffect, ShaderParamExt, SpriteShader};
     #[cfg(feature = "audio")]
     #[allow(unused_imports)]
     pub use engine_audio::prelude::*;
@@ -73,8 +80,9 @@ pub mod prelude {
     #[allow(unused_imports)]
     pub use engine_ui::prelude::*;
     pub use engine_core::prelude::*;
+    pub use crate::screen::ScreenCtx;
     #[cfg(any(feature = "physics2d", feature = "physics3d"))]
-    pub use engine_physics::BodyType;
+    pub use engine_physics::{BodyType, PhysicsCtx};
     #[cfg(feature = "physics2d")]
     pub use engine_physics::{Collider2D, Physics2D, RaycastHit2D, Rigidbody2D, Shape2D};
     #[cfg(feature = "physics3d")]
@@ -90,7 +98,8 @@ pub mod prelude {
     pub use engine_core::settings::{FullscreenMode, GraphicsSettings, QualityLevel};
     pub use engine_render::{
         Background, Camera, ColorGrading, Environment, Fog, Light, LightKind, MeshRenderer, MeshShape, Projection,
-        SkyColors,
+        SkyColors, Sky, TimeOfDay, SoftShadows, ShadowFilter, AmbientOcclusion, Outline, PostQuality,
+        SpotLight, LightShadows, ManyLights, FillLight, WaterEffects,
         RenderStats,
         SpriteRenderer, WindowConfig,
     };
@@ -170,6 +179,7 @@ pub fn app() -> App {
     engine_render::register_components(&mut app.world.registry);
     #[cfg(any(feature = "physics2d", feature = "physics3d"))]
     engine_physics::register_components(&mut app.world.registry);
+    behaviours::register(&mut app.world.registry);
     #[cfg(feature = "gamepad")]
     app.add_subsystem(gamepad::GamepadSubsystem::new());
     // Ресурсы физики есть сразу, а не с первого кадра: игра настраивает гравитацию
@@ -283,6 +293,8 @@ pub fn load_scene(app: &mut App, path: &str) -> Result<(), EngineError> {
     let guid = database.handle::<engine_assets::SceneAsset>(path)?.guid();
     let text = database.read_text(guid)?;
     app.world.load_scene_str(&text, path)?;
+    // `ctx.reload_scene()` (рестарт уровня) перезагружает эту сцену.
+    app.world.scenes().set_loaded_name(path);
     Ok(())
 }
 
@@ -399,6 +411,51 @@ pub fn edit(app: App, mut config: engine_editor::EditorConfig) -> Result<(), Eng
         config.max_frames = frames;
     }
     let (width, height) = (config.width, config.height);
+    let mut editor = open_editor(app, config)?;
+
+    if let Ok(path) = std::env::var("ENGINE_SCREENSHOT") {
+        let image = engine_editor::capture(&mut editor, width, height, frames.unwrap_or(3) as u32)?;
+        image.save(&path).map_err(|e| EngineError::Image {
+            path: path.clone(),
+            reason: e.to_string(),
+        })?;
+        log::info!("editor screenshot saved to {path}");
+        return Ok(());
+    }
+
+    engine_editor::run(editor)?;
+    Ok(())
+}
+
+/// То же, что [`edit`], но приложение и конфигурация собираются уже за окном: сначала окно
+/// с заставкой («Loading the project…»), потом `build` читает ассеты и сцену, и редактор
+/// заменяет заставку. Не удалось собрать — на экране ошибка с текстом (а не зависшее или
+/// пустое окно). Все программы редактора движка (`editor_main!`, `piska-editor`) идут этим
+/// путём; [`edit`] остаётся как был.
+///
+/// Переменные окружения те же, что у [`edit`]; `ENGINE_SCREENSHOT` рисует без окна, поэтому
+/// там `build` выполняется сразу.
+#[cfg(feature = "editor")]
+pub fn edit_with(build: impl FnOnce() -> Result<(App, engine_editor::EditorConfig), EngineError> + 'static) -> Result<(), EngineError> {
+    if std::env::var("ENGINE_SCREENSHOT").is_ok() {
+        let (app, config) = build()?;
+        return edit(app, config);
+    }
+    let frames = std::env::var("ENGINE_FRAMES").ok().and_then(|v| v.parse::<u64>().ok());
+    engine_editor::run_with(move || {
+        let (app, mut config) = build().map_err(|e| engine_editor::EditorError::Other(e.to_string()))?;
+        if frames.is_some() {
+            config.max_frames = frames;
+        }
+        open_editor(app, config).map_err(|e| engine_editor::EditorError::Other(e.to_string()))
+    })?;
+    Ok(())
+}
+
+/// Редактор для приложения с тем, что делает запуск редактором игры: возобновление сеанса
+/// после Build, `ENGINE_PLAY`, `PISKA_BUILD_ON_START`.
+#[cfg(feature = "editor")]
+fn open_editor(app: App, config: engine_editor::EditorConfig) -> Result<engine_editor::Editor, EngineError> {
     let mut editor = engine_editor::Editor::new(app, config)?;
     if let Some(session) = engine_editor::session_from_args() {
         // Ошибка уже в консоли редактора; работаем дальше с тем, что загрузилось.
@@ -414,19 +471,7 @@ pub fn edit(app: App, mut config: engine_editor::EditorConfig) -> Result<(), Eng
         std::env::remove_var("PISKA_BUILD_ON_START");
         editor.apply(engine_editor::Action::Build);
     }
-
-    if let Ok(path) = std::env::var("ENGINE_SCREENSHOT") {
-        let image = engine_editor::capture(&mut editor, width, height, frames.unwrap_or(3) as u32)?;
-        image.save(&path).map_err(|e| EngineError::Image {
-            path: path.clone(),
-            reason: e.to_string(),
-        })?;
-        log::info!("editor screenshot saved to {path}");
-        return Ok(());
-    }
-
-    engine_editor::run(editor)?;
-    Ok(())
+    Ok(editor)
 }
 
 /// Включить лог: stderr + буфер в памяти, который читает консоль редактора; в

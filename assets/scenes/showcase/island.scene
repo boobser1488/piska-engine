@@ -7,6 +7,10 @@
             (kind: "Environment", fields: {"ambient": Float(0.26), "bloom": Float(0.1), "exposure": Float(1.05), "fog_density": Float(0.004), "shadow_distance": Float(110.0), "vignette": Float(0.28)}),
             (kind: "Fog", fields: {"height": Float(0.0), "height_falloff": Float(0.03), "start": Float(55.0)}),
             (kind: "SkyColors", fields: {"horizon": Color(0.95, 0.52, 0.3, 1.0), "zenith": Color(0.1, 0.18, 0.42, 1.0)}),
+            (kind: "SoftShadows"),
+            (kind: "Sky", fields: {"cloud_color": Color(1.0, 0.86, 0.78, 1.0), "clouds": Float(0.3)}),
+            (kind: "AmbientOcclusion"),
+            (kind: "PostQuality"),
             (kind: "ColorGrading", fields: {"contrast": Float(1.08), "saturation": Float(1.08), "shadows": Color(0.35, 0.12, 0.45, 1.0), "temperature": Float(0.12)}),
         ], children: [
             (name: "Sun", transform: (rotation: (-12.691, -67.109, 0.0)), components: [

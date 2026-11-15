@@ -591,6 +591,27 @@ pub(crate) fn install(vm: &mut Vm) -> u32 {
         let name = a.str(0)?.clone();
         Ok(Value::Bool(world(ctx)?.input.button_down(&name)))
     });
+    // Те же имена, что у коротких форм скриптов на Rust (`ctx.pressed` / `held` / `released`,
+    // `ctx.axis2`, `ctx.rand_range`): один словарь для обоих языков.
+    vm.register("pressed", |ctx, a| {
+        let name = a.str(0)?.clone();
+        Ok(Value::Bool(world(ctx)?.input.button_down(&name)))
+    });
+    vm.register("held", |ctx, a| {
+        let name = a.str(0)?.clone();
+        Ok(Value::Bool(world(ctx)?.input.button(&name)))
+    });
+    vm.register("released", |ctx, a| {
+        let name = a.str(0)?.clone();
+        Ok(Value::Bool(world(ctx)?.input.button_up(&name)))
+    });
+    vm.register("axis2", |ctx, a| {
+        let (x, y) = (a.str(0)?.clone(), a.str(1)?.clone());
+        let input = &world(ctx)?.input;
+        let v = engine_core::math::Vec2::new(input.axis(&x), input.axis(&y));
+        let v = if v.length_squared() > 1.0 { v.normalize() } else { v };
+        Ok(Value::Vec2(v.x, v.y))
+    });
     vm.register("mouse", |ctx, _| {
         let p = world(ctx)?.input.mouse_position();
         Ok(Value::Vec2(p.x, p.y))

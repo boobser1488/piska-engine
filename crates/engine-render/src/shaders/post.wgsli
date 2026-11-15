@@ -1,0 +1,49 @@
+// Свой эффект на весь экран (`//! kind: post`): всё, кроме функции пользователя.
+// Группа 0 — кадр, который эффект читает; группа 1 — время и параметры.
+
+@group(0) @binding(0) var scene_texture: texture_2d<f32>;
+@group(0) @binding(1) var scene_sampler: sampler;
+
+// Вход функции `post`.
+struct PostIn {
+    uv: vec2<f32>,               // 0..1 по экрану, (0, 0) — левый верхний угол
+    color: vec4<f32>,            // цвет кадра в этой точке
+    time: f32,
+    resolution: vec2<f32>,       // размер кадра в пикселях
+    texel_size: vec2<f32>,       // размер пикселя в UV
+    position: vec2<f32>,         // номер пикселя (x, y)
+};
+
+// Цвет кадра в любой точке (можно в условиях и циклах).
+fn scene(uv: vec2<f32>) -> vec4<f32> {
+    return textureSampleLevel(scene_texture, scene_sampler, uv, 0.0);
+}
+
+struct EnginePostVarying {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_post(@builtin(vertex_index) index: u32) -> EnginePostVarying {
+    let corner = vec2<f32>(f32((index << 1u) & 2u), f32(index & 2u));
+    var out: EnginePostVarying;
+    out.clip_position = vec4<f32>(corner * 2.0 - 1.0, 0.0, 1.0);
+    out.uv = vec2<f32>(corner.x, 1.0 - corner.y);
+    return out;
+}
+
+@fragment
+fn fs_post(in: EnginePostVarying) -> @location(0) vec4<f32> {
+    engine_load_params();
+    let size = vec2<f32>(textureDimensions(scene_texture));
+    var p: PostIn;
+    p.uv = in.uv;
+    p.color = scene(in.uv);
+    p.time = frame.time;
+    p.resolution = size;
+    p.texel_size = 1.0 / size;
+    p.position = in.clip_position.xy;
+    return post(p);
+}
+

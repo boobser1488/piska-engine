@@ -16,6 +16,8 @@ mod components;
 mod draw;
 mod events;
 mod layout;
+/// Короткие формы для скриптов: `ctx.ui_text("Score", ..)`, `ctx.ui_show(..)`, `ctx.clicked(..)`.
+mod script;
 mod system;
 mod text;
 pub mod theme;
@@ -28,6 +30,7 @@ pub use components::{
 };
 pub use events::{submit_message, UiContext, UiEvent, UiEventKind, UiEvents};
 pub use layout::{canvas_scale, resolve_rect, Rect};
+pub use script::UiCtx;
 pub use system::UiSystem;
 
 use engine_core::app::App;
@@ -42,6 +45,7 @@ pub mod prelude {
         TextAlign, Toggle, ToggleStyle, VerticalAlign,
     };
     pub use crate::events::{UiContext, UiEvent, UiEventKind, UiEvents};
+    pub use crate::script::UiCtx;
     pub use engine_assets::Font;
 }
 

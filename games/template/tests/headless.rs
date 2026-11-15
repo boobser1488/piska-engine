@@ -1,6 +1,7 @@
 //! Шаблон играет сам с собой без окна: звёзды падают, ловятся, игра кончается и
 //! начинается заново, рекорд сохраняется.
 
+use engine::behaviours::Spawner;
 use engine::prelude::*;
 use template::GameManager;
 
@@ -11,14 +12,21 @@ fn game(save: SaveData) -> App {
     template::build_with(save).expect("the template builds from its assets directory")
 }
 
-fn manager(app: &App) -> &GameManager {
-    let id = app.world.scene.find_by_name("Game").expect("Game object");
-    app.world.scene.get_component::<GameManager>(id).expect("GameManager")
+fn game_object(app: &App) -> GameObjectId {
+    app.world.scene.find_by_name("Game").expect("Game object")
 }
 
-fn manager_mut(app: &mut App) -> &mut GameManager {
-    let id = app.world.scene.find_by_name("Game").expect("Game object");
-    app.world.scene.get_component_mut::<GameManager>(id).expect("GameManager")
+fn manager(app: &App) -> &GameManager {
+    app.world.scene.get_component::<GameManager>(game_object(app)).expect("GameManager")
+}
+
+fn spawner(app: &App) -> &Spawner {
+    app.world.scene.get_component::<Spawner>(game_object(app)).expect("Spawner on Game")
+}
+
+fn spawner_mut(app: &mut App) -> &mut Spawner {
+    let id = game_object(app);
+    app.world.scene.get_component_mut::<Spawner>(id).expect("Spawner on Game")
 }
 
 fn text(app: &App, name: &str) -> String {
@@ -26,47 +34,90 @@ fn text(app: &App, name: &str) -> String {
     app.world.scene.get_component::<Text>(id).expect("Text").text.clone()
 }
 
+fn shown(app: &App, name: &str) -> bool {
+    let id = app.world.scene.find_by_name(name).unwrap_or_else(|| panic!("no `{name}`"));
+    app.world.scene.get(id).unwrap().active
+}
+
 fn stars(app: &App) -> usize {
     app.world.scene.find_all_by_tag("Star").len()
+}
+
+fn voices(app: &App) -> usize {
+    app.world.resources.get::<Audio>().expect("Audio").voice_count()
+}
+
+/// Звезда над корзиной: падает прямо в неё.
+fn drop_star_on_basket(app: &mut App) {
+    let basket = app.world.scene.find_by_name("Player").unwrap();
+    let above = app.world.scene.world_position(basket) + Vec3::new(0.0, 2.5, 0.0);
+    app.world.instantiate_at("prefabs/star.prefab", above, Quat::IDENTITY, None).unwrap();
+}
+
+/// Интерфейс целиком из сцены: тексты на месте, экран «Game over» спрятан.
+#[test]
+fn the_hud_from_the_scene_shows_score_lives_and_best() {
+    let mut app = game(SaveData::in_memory());
+    app.run_headless(2, DT);
+    assert_eq!(text(&app, "Score"), "Score: 0");
+    assert_eq!(text(&app, "Lives"), "Lives: 3");
+    assert_eq!(text(&app, "Best"), "Best: 0");
+    assert!(!shown(&app, "GameOverPanel"));
+    assert_eq!(text(&app, "Label"), "Play again");
+    let errors = app.world.resources.get::<ScriptErrors>().map(|e| e.messages().to_vec()).unwrap_or_default();
+    assert!(errors.is_empty(), "{errors:?}");
 }
 
 #[test]
 fn falling_stars_cost_lives_and_end_the_game() {
     let mut app = game(SaveData::in_memory());
     app.run_headless(2, DT);
-    assert_eq!(text(&app, "Lives"), "Lives: 3");
     assert!(!manager(&app).game_over);
 
     // Корзина стоит в центре; после интро (1.5 с) звёзды падают в случайных местах,
     // большинство мимо.
     app.run_headless(60 * 4, DT);
-    assert!(manager(&app).spawned >= 2, "stars spawn from the prefab");
+    assert!(spawner(&app).spawned >= 2, "stars spawn from the prefab");
     assert!(stars(&app) >= 1, "stars are falling");
 
     app.run_headless(60 * 20, DT);
     let state = manager(&app);
     assert!(state.game_over, "three missed stars end the game");
     assert_eq!(state.lives, 0);
+    assert_eq!(text(&app, "Lives"), "Lives: 0");
     assert_eq!(stars(&app), 0, "game over clears the sky");
-    let panel = app.world.scene.find_by_name("GameOverPanel").unwrap();
-    assert!(app.world.scene.get(panel).unwrap().active, "the game-over screen is shown");
+    assert!(!spawner(&app).enabled, "and stops the spawner");
+    assert!(shown(&app, "GameOverPanel"), "the game-over screen is shown");
     assert!(text(&app, "FinalScore").starts_with("Score: "));
 }
 
 #[test]
-fn a_star_above_the_basket_is_caught_and_the_best_score_is_saved() {
+fn a_star_above_the_basket_is_caught_with_a_sound_and_the_best_score_is_saved() {
     let backend = MemoryBackend::default();
     let mut app = game(SaveData::with_backend(backend.clone()));
-    manager_mut(&mut app).spawn_interval = 1000.0; // только своя звезда
-    app.run_headless(2, DT);
+    // Интро отыграло (и запасной запуск звёзд через 4 с тоже): короткие звуки кончились,
+    // звучит только музыка.
+    app.run_headless(60 * 5, DT);
+    // Дальше — только свои звёзды.
+    spawner_mut(&mut app).enabled = false;
+    for star in app.world.scene.find_all_by_tag("Star") {
+        app.world.scene.destroy(star);
+    }
+    let music = app.world.resources.get::<Audio>().unwrap().music_voice().expect("the music plays");
 
-    let basket = app.world.scene.find_by_name("Player").unwrap();
-    let above = app.world.scene.world_position(basket) + Vec3::new(0.0, 2.5, 0.0);
-    app.world.instantiate_at("prefabs/star.prefab", above, Quat::IDENTITY, None).unwrap();
-    app.run_headless(90, DT);
+    drop_star_on_basket(&mut app);
+    let mut before = voices(&app);
+    let mut frames = 0;
+    while manager(&app).score == 0 && frames < 120 {
+        before = voices(&app);
+        app.run_headless(1, DT);
+        frames += 1;
+    }
     assert_eq!(manager(&app).score, 1, "the star fell into the basket");
+    assert_eq!(voices(&app), before + 1, "catching plays sounds/catch.wav");
     assert_eq!(text(&app, "Score"), "Score: 1");
     assert_eq!(stars(&app), 0);
+    assert!(spawner(&app).interval < 1.0, "each point makes stars come faster");
 
     // Три промаха подряд — конец игры, рекорд 1 записан в сохранение.
     for x in [-6.0, 6.0, -8.0] {
@@ -78,23 +129,26 @@ fn a_star_above_the_basket_is_caught_and_the_best_score_is_saved() {
     let saved = backend.contents().expect("the best score was saved");
     assert!(saved.contains("best"), "{saved}");
 
-    // Enter — новая игра: жизни и счёт сброшены, экран «Game over» спрятан.
+    // Enter — новая игра: сцена загружается заново, жизни и счёт как в начале, экран
+    // «Game over» спрятан, рекорд прочитан из сохранения, музыка не начинается заново.
     app.world.input.set_key(Key::Enter, true);
     app.run_headless(1, DT);
     app.world.input.set_key(Key::Enter, false);
-    app.run_headless(1, DT);
+    app.run_headless(2, DT);
     let state = manager(&app);
     assert!(!state.game_over);
     assert_eq!((state.score, state.lives, state.best), (0, 3, 1));
-    let panel = app.world.scene.find_by_name("GameOverPanel").unwrap();
-    assert!(!app.world.scene.get(panel).unwrap().active);
+    assert!(!shown(&app, "GameOverPanel"));
     assert_eq!(text(&app, "Best"), "Best: 1");
+    assert_eq!(text(&app, "Lives"), "Lives: 3");
+    assert!(!spawner(&app).enabled, "the new round waits for the intro again");
+    assert_eq!(app.world.resources.get::<Audio>().unwrap().music_voice(), Some(music), "the music goes on");
 
     // Новый запуск читает рекорд из того же хранилища.
-    let again = game(SaveData::with_backend(backend));
-    let mut again = again;
+    let mut again = game(SaveData::with_backend(backend));
     again.run_headless(2, DT);
     assert_eq!(manager(&again).best, 1);
+    assert_eq!(text(&again, "Best"), "Best: 1");
 }
 
 /// Ассеты шаблона: каждая ссылка из сцены и префаба указывает на существующий ассет,
@@ -124,25 +178,61 @@ fn the_scenario_intro_counts_down_then_reacts_to_the_first_catch() {
     assert_eq!(text(&app, "Hint"), "2…");
     app.run_headless(30, DT);
     assert_eq!(text(&app, "Hint"), "1…");
-    assert_eq!(manager(&app).spawned, 0, "no stars during the countdown");
-    assert!(manager(&app).wait_for_intro);
+    assert_eq!(spawner(&app).spawned, 0, "no stars during the countdown");
+    assert!(!spawner(&app).enabled);
     app.run_headless(30, DT);
     assert_eq!(text(&app, "Hint"), "Лови!");
     app.run_headless(3, DT);
-    assert!(!manager(&app).wait_for_intro, "the intro sent Go");
+    assert!(spawner(&app).enabled, "the intro sent Go");
     app.run_headless(80, DT);
     assert!(text(&app, "Hint").starts_with("Корзина"), "{}", text(&app, "Hint"));
 
-    manager_mut(&mut app).spawn_interval = 1000.0;
-    let basket = app.world.scene.find_by_name("Player").unwrap();
-    let above = app.world.scene.world_position(basket) + Vec3::new(0.0, 2.5, 0.0);
-    app.world.instantiate_at("prefabs/star.prefab", above, Quat::IDENTITY, None).unwrap();
+    spawner_mut(&mut app).enabled = false;
+    for star in app.world.scene.find_all_by_tag("Star") {
+        app.world.scene.destroy(star);
+    }
+    drop_star_on_basket(&mut app);
     app.run_headless(90, DT);
     assert_eq!(manager(&app).score, 1);
     assert_eq!(text(&app, "Hint"), "Есть первая! Так держать");
     app.run_headless(150, DT);
-    let hint = app.world.scene.find_by_name("Hint").unwrap();
-    assert!(!app.world.scene.get(hint).unwrap().active, "the hint is hidden");
+    assert!(!shown(&app, "Hint"), "the hint is hidden");
     let errors = engine::scenario::take_errors(&mut app.world);
     assert!(errors.is_empty(), "{}", errors[0]);
+}
+
+/// Без интро (сценарий удалили или он с ошибкой) звёзды всё равно пойдут через 4 секунды.
+#[test]
+fn without_the_intro_stars_start_after_four_seconds() {
+    let mut app = game(SaveData::in_memory());
+    let id = game_object(&app);
+    app.world.scene.get_mut(id).unwrap().remove::<ScenarioRunner>();
+    app.run_headless(60 * 3, DT);
+    assert!(!spawner(&app).enabled);
+    app.run_headless(60 * 2, DT);
+    assert!(spawner(&app).enabled);
+}
+
+/// Корзина: клавиши, палец (мышь) и край экрана — готовое поведение `PlayerMove2D` из сцены.
+#[test]
+fn the_basket_follows_keys_and_the_finger_and_stays_on_screen() {
+    let mut app = game(SaveData::in_memory());
+    app.world.input.set_screen_size(Vec2::new(1280.0, 720.0));
+    app.run_headless(2, DT);
+    let basket = app.world.scene.find_by_name("Player").unwrap();
+    let x = |app: &App| app.world.scene.world_position(basket).x;
+
+    app.world.input.set_key(Key::D, true);
+    app.run_headless(30, DT);
+    app.world.input.set_key(Key::D, false);
+    assert!(x(&app) > 3.0, "D drives right: {}", x(&app));
+    let flipped = |app: &App| app.world.scene.get_component::<SpriteRenderer>(basket).unwrap().flip_x;
+    assert!(!flipped(&app));
+
+    // Палец у левого края: корзина едет туда, разворачивается и упирается в край экрана.
+    app.world.input.set_touch(1, Vec2::new(0.0, 600.0), TouchPhase::Began);
+    app.run_headless(150, DT);
+    let half_width = 6.0 * 1280.0 / 720.0;
+    assert!(flipped(&app));
+    assert!(x(&app) < -half_width + 1.0 && x(&app) > -half_width + 0.6, "stops at the edge: {}", x(&app));
 }

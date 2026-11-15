@@ -55,6 +55,16 @@ pub(crate) struct ViewportState {
     /// Правая кнопка зажата над видом Scene: режим полёта (WASD), буквы инструментов
     /// в это время не срабатывают.
     pub flying: bool,
+    /// Обзор правой кнопкой в 3D идёт: окно прячет курсор системы, а после — возвращает
+    /// его туда, где кнопку нажали.
+    pub looking: bool,
+    /// Сырое движение мыши (счёты датчика) с прошлого кадра вида, пока идёт обзор.
+    pub raw_motion: Vec2,
+    /// За этот обзор сырое движение уже приходило: дальше верим только ему (сдвиг курсора
+    /// нужен лишь там, где сырого нет, — например на удалённом рабочем столе).
+    pub raw_seen: bool,
+    /// Выровненное время кадра от окна (0 — неизвестно): на него летит камера.
+    pub frame_dt: f32,
     /// Текущая скорость полёта (плавный разгон к нужной).
     pub fly_velocity: Vec3,
     /// До какого времени (`ctx.input().time`) показывать скорость полёта после колеса.
@@ -74,6 +84,10 @@ impl Default for ViewportState {
             mesh_bounds: std::collections::HashMap::new(),
             box_select: None,
             flying: false,
+            looking: false,
+            raw_motion: Vec2::ZERO,
+            raw_seen: false,
+            frame_dt: 0.0,
             fly_velocity: Vec3::ZERO,
             fly_speed_shown_until: 0.0,
         }

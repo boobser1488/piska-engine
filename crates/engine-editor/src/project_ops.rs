@@ -24,6 +24,8 @@ pub(crate) enum Create {
     CppScript,
     ScenarioScript,
     Model,
+    /// Свой шейдер из шаблона (docs/api/shaders.md).
+    Shader(engine_assets::ShaderKind),
 }
 
 /// Команда окну Project.
@@ -545,6 +547,7 @@ impl Editor {
                 }
             }
             Create::Material => self.apply(Action::CreateMaterial { folder: folder.to_string() }),
+            Create::Shader(kind) => self.apply(Action::CreateShader { folder: folder.to_string(), kind }),
             Create::Model => self.apply(Action::CreateModel { folder: folder.to_string() }),
             Create::PrefabFromSelection => {
                 if let Some(id) = self.selection {

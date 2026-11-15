@@ -504,16 +504,16 @@ ENGINE_COMPONENT(Wobble);
 
 fn empty_lib(names: &Names, _three: bool, cpp: bool) -> String {
     let cpp_line = if cpp {
-        "    // Компоненты на C++ из cpp/ (build.rs → engine-cpp-build).\n    engine::add_static_cpp(&mut app, engine::cpp_scripts!())?;\n"
+        "    // Компоненты на C++ из cpp/ (build.rs → engine-cpp-build).\n    setup: |app| engine::add_static_cpp(app, engine::cpp_scripts!()),\n"
     } else {
         ""
     };
     format!(
         "//! {title} — игра на Piska Engine.\n\
          //!\n\
-         //! [`build`] собирает игру: компоненты, ассеты, стартовая сцена. `engine::game_main!`\n\
-         //! делает из неё программу для десктопа, браузера и Android, а\n\
-         //! `src/bin/{package}-editor.rs` открывает её в редакторе. Устройство крейта игры —\n\
+         //! `engine::game!` объявляет игру: имя, стартовую сцену, компоненты на Rust. Из этого\n\
+         //! получаются `build()` (её открывает `src/bin/{package}-editor.rs` в редакторе) и\n\
+         //! программа для десктопа, браузера и Android. Устройство крейта игры —\n\
          //! docs/api/export.md, компоненты и сцены — docs/api/gameplay.md.\n\
          //!\n\
          //! Пока в проекте нет своего кода на Rust (скрипты в `src/scripts/`) или C++, Piska Hub\n\
@@ -522,24 +522,15 @@ fn empty_lib(names: &Names, _three: bool, cpp: bool) -> String {
          //! соберёт программу редактора этого проекта.\n\n\
          /// Скрипты на Rust, созданные в редакторе (New Rust Script).\n\
          pub mod scripts;\n\n\
-         use engine::prelude::*;\n\n\
-         /// Имя игры: каталог сохранений на десктопе, ключ `localStorage` в браузере.\n\
-         pub const GAME_NAME: &str = \"{title}\";\n\n\
-         /// Зарегистрировать компоненты игры (сцена ссылается на них по имени).\n\
-         pub fn register(app: &mut App) {{\n\
-         \x20   scripts::register(app);\n\
-         }}\n\n\
-         /// Собрать игру.\n\
-         pub fn build() -> Result<App, EngineError> {{\n\
-         \x20   let mut app = engine::app();\n\
-         \x20   register(&mut app);\n\
+         // Игра: имя (заголовок окна, сохранения), стартовая сцена и свои компоненты на Rust\n\
+         // (`components: [Player, Enemy]`; скрипты из `src/scripts/` регистрируются сами).\n\
+         // Компоненту в этом файле нужна строка `use engine::prelude::*;`.\n\
+         engine::game! {{\n\
+         \x20   name: \"{title}\",\n\
+         \x20   scene: \"scenes/main.scene\",\n\
+         \x20   components: [],\n\
          {cpp_line}\
-         \x20   app.world.resources.insert(engine::save_data(GAME_NAME));\n\
-         \x20   engine::mount_assets(&mut app, engine::assets_dir!())?;\n\
-         \x20   engine::load_scene(&mut app, \"scenes/main.scene\")?;\n\
-         \x20   Ok(app)\n\
-         }}\n\n\
-         engine::game_main!(build, WindowConfig::titled(GAME_NAME).with_size(1280, 720));\n",
+         }}\n",
         title = names.title,
         package = names.package,
     )
@@ -706,18 +697,20 @@ fn starfall_files(names: &Names, cpp: bool, engine_root: &Path, files: &mut Vec<
     let rename = |text: &str| {
         text.replace("template::", &format!("{}::", names.lib))
             .replace("\"Piska Starfall\"", &format!("\"{}\"", names.title))
+            // Программы проекта в тестах (tests/subsystem.rs): `template`, `template-editor`.
+            .replace("CARGO_BIN_EXE_template", &format!("CARGO_BIN_EXE_{}", names.package))
     };
 
     let mut lib = rename(&read("src/lib.rs")?);
     if cpp {
-        let anchor = "    let mut app = engine::app();\n    register(&mut app);\n";
+        let anchor = "    components: [GameManager],\n"; // i18n-skip: строка кода шаблона, не текст интерфейса
         if !lib.contains(anchor) {
             return Err(missing());
         }
         lib = lib.replacen(
             anchor,
             &format!(
-                "{anchor}    // Компоненты на C++ из cpp/ (build.rs → engine-cpp-build).\n    engine::add_static_cpp(&mut app, engine::cpp_scripts!())?;\n"
+                "{anchor}    // Компоненты на C++ из cpp/ (build.rs → engine-cpp-build).\n    setup: |app| engine::add_static_cpp(app, engine::cpp_scripts!()),\n"
             ),
             1,
         );
@@ -815,7 +808,7 @@ fn readme(names: &Names, new: &NewProject, in_workspace: bool) -> String {
          | запустить игру | `cargo run -p {package}` |\n\
          | тесты без окна | `cargo test -p {package}` |\n\n\
          ## Что где\n\n\
-         * `src/lib.rs` — компоненты и `build()`: собирает игру, подключает ассеты, загружает сцену.\n\
+         * `src/lib.rs` — `engine::game!` (имя, стартовая сцена, компоненты) и компоненты на Rust.\n\
          * `src/scripts/` — скрипты на Rust из редактора (Assets → New Rust Script…); `mod.rs` пишет редактор.\n\
          * `src/bin/{package}-editor.rs` — программа редактора этой игры.\n\
          * `assets/` — сцены, спрайты, звуки; рядом с каждым файлом `.meta` с GUID (храните их в git).\n\

@@ -47,7 +47,6 @@ impl Hub {
         }
         // Папка или файл проекта, брошенные на окно, идут в импорт.
         self.drop_files(ctx);
-        let step = self.startup_step();
         // Окно снова в фокусе — файлы могли поменять в другой программе: обход в фоне.
         if ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(true)))) {
             self.refresh();
@@ -104,17 +103,6 @@ impl Hub {
         if self.busy() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
-        // Заставка запуска поверх всего: знак, имя, версия и настоящий текущий шаг.
-        if let Some(splash) = self.splash.as_mut() {
-            splash.show(
-                ctx,
-                &engine_editor::kit::window::paint_engine_mark,
-                engine_editor::kit::i18n::brand::HUB_NAME,
-                &format!("{} {}", engine_editor::kit::i18n::brand::ENGINE_NAME, env!("CARGO_PKG_VERSION")),
-                step.as_deref(),
-            );
-        }
-        self.themed = true;
     }
 
     /// Тема и масштаб; `true` — шрифты только что поставлены (кадр рисовать рано).
@@ -126,16 +114,18 @@ impl Hub {
         // Тема ставится в каждый новый контекст (окно, снимок) и заново при смене акцента.
         let key = Id::new("hub-style-accent");
         let applied: Option<usize> = ctx.data(|d| d.get_temp(key));
+        // Шрифты могла поставить заставка запуска: тогда этот кадр рисовать не рано.
+        let fonts_new = !theme::fonts_installed(ctx);
         if applied.is_none() {
             // Новый контекст (окно или снимок): текстуры прежнего ему не годятся.
             self.textures.clear();
         }
         if applied != Some(self.prefs.accent) {
-            theme::apply(ctx, applied.is_none());
+            theme::apply(ctx, true);
             theme::set_density(ctx, theme::Density::Comfortable);
             ctx.data_mut(|d| d.insert_temp(key, self.prefs.accent));
         }
-        applied.is_none()
+        fonts_new
     }
 
     pub(crate) fn push(&mut self, action: HubAction) {
@@ -610,7 +600,7 @@ impl Hub {
                 };
                 let open = buttons
                     .add_enabled_ui(can_open, |ui| {
-                        widgets::button(ui, id.with("open"), None, tr_s("Open"), selected || row.hovered())
+                        widgets::button(ui, id.with("open"), None, tr_s("Open"), true)
                     })
                     .inner;
                 if open.on_hover_text(open_tooltip).clicked() {
@@ -749,7 +739,7 @@ impl Hub {
             self.more_menu(&buttons, &more, listed);
             if listed.info.is_ok() {
                 let open = buttons
-                    .add_enabled_ui(can_open, |ui| widgets::button(ui, id.with("open"), None, tr_s("Open"), selected || card.hovered()))
+                    .add_enabled_ui(can_open, |ui| widgets::button(ui, id.with("open"), None, tr_s("Open"), true))
                     .inner;
                 if open.clicked() {
                     self.push(HubAction::Open(listed.path.clone()));

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use engine_core::math::{Color, Vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::{AssetHandle, AssetType, Guid, Texture};
+use crate::{AssetHandle, AssetType, Guid, Shader, ShaderParams, Texture};
 
 /// Как материал обращается с прозрачностью (альфой базового цвета × текстуры).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -71,6 +71,11 @@ pub struct Material {
     pub unlit: bool,
     /// Dev-сетка в метрах поверх материала — для прототипов уровней.
     pub grid: bool,
+    /// Свой шейдер (`.shader`, вид `surface` или `unlit`; `docs/api/shaders.md`). Пусто —
+    /// стандартный материал.
+    pub shader: AssetHandle<Shader>,
+    /// Значения параметров своего шейдера; чего нет — по умолчанию из `.shader`.
+    pub shader_params: ShaderParams,
 }
 
 impl Default for Material {
@@ -98,6 +103,8 @@ impl Default for Material {
             receive_shadows: true,
             unlit: false,
             grid: false,
+            shader: AssetHandle::none(),
+            shader_params: ShaderParams::default(),
         }
     }
 }
@@ -213,7 +220,19 @@ impl Material {
         self
     }
 
-    /// Все текстуры материала (пустые слоты пропускаются).
+    /// Свой шейдер (`.shader`) — см. `docs/api/shaders.md`.
+    pub fn shader(mut self, shader: AssetHandle<Shader>) -> Self {
+        self.shader = shader;
+        self
+    }
+
+    /// Значение параметра своего шейдера: `.param("amount", 0.5)`.
+    pub fn param(mut self, name: &str, value: impl Into<crate::ParamValue>) -> Self {
+        self.shader_params.set(name, value);
+        self
+    }
+
+    /// Все текстуры материала (пустые слоты пропускаются), включая параметры шейдера.
     pub fn textures(&self) -> impl Iterator<Item = Guid> + '_ {
         [
             self.base_color_texture,
@@ -225,6 +244,7 @@ impl Material {
         .into_iter()
         .filter(|t| !t.is_none())
         .map(|t| t.guid())
+        .chain(self.shader_params.textures())
     }
 
     /// Разобрать текст `.material`. Отсутствующие поля получают значения по умолчанию.
@@ -268,6 +288,9 @@ struct MaterialFile {
     receive_shadows: bool,
     unlit: bool,
     grid: bool,
+    /// GUID `.shader` строкой (пусто — стандартный материал).
+    shader: String,
+    shader_params: ShaderParams,
 }
 
 impl Default for MaterialFile {
@@ -314,6 +337,8 @@ impl From<&Material> for MaterialFile {
             receive_shadows: m.receive_shadows,
             unlit: m.unlit,
             grid: m.grid,
+            shader: if m.shader.is_none() { String::new() } else { m.shader.guid().to_string() },
+            shader_params: m.shader_params.clone(),
         }
     }
 }
@@ -343,6 +368,8 @@ impl From<MaterialFile> for Material {
             receive_shadows: f.receive_shadows,
             unlit: f.unlit,
             grid: f.grid,
+            shader: Guid::parse(f.shader.trim()).map_or(AssetHandle::none(), AssetHandle::from_guid),
+            shader_params: f.shader_params,
         }
     }
 }
@@ -425,7 +452,9 @@ mod tests {
             .cutout(0.3)
             .double_sided(true)
             .unlit(true)
-            .shadows(false, false);
+            .shadows(false, false)
+            .shader(AssetHandle::from_guid(Guid(0x5ade)))
+            .param("amount", 0.25);
         let text = material.to_ron();
         assert!(text.contains("alpha_mode: Cutout"), "{text}");
         assert!(text.contains(&Guid(0x1234).to_string()), "{text}");

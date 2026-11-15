@@ -129,6 +129,14 @@ pub(crate) const PAGES: &[PageDef] = &[
     },
     PageDef {
         scope: SettingsScope::Preferences,
+        id: "code-editor",
+        title: n_("Code Editor"),
+        icon: Icon::Code,
+        about: n_("Text, typing, saving and the checks of the Code tab. Kept for this user."),
+        draw: crate::code_prefs::page,
+    },
+    PageDef {
+        scope: SettingsScope::Preferences,
         id: "build-tools",
         title: n_("Build & Tools"),
         icon: Icon::Build,
@@ -658,6 +666,13 @@ impl Editor {
 
     fn settings_window(&mut self, ctx: &egui::Context, scope: SettingsScope) {
         if !self.settings_open(scope) {
+            return;
+        }
+        // Кадр смены масштаба интерфейса и следующий за ним: экран в точках ещё меняется, и
+        // окно, нарисованное сейчас, на следующем кадре перескочило бы. Оно появляется, когда
+        // размер экрана устоялся.
+        if crate::window_kit::zoom_settling(ctx) {
+            ctx.request_repaint();
             return;
         }
         if scope == SettingsScope::Project {

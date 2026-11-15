@@ -39,15 +39,6 @@ impl Default for Indent {
 }
 
 impl Indent {
-    /// Один уровень отступа текстом.
-    pub fn unit(self) -> String {
-        if self.tabs {
-            "\t".to_string()
-        } else {
-            " ".repeat(self.size.max(1))
-        }
-    }
-
     pub fn label(self) -> String {
         if self.tabs {
             trf!("Tabs: {n}", n = self.size)
@@ -63,6 +54,8 @@ pub(crate) struct FileFormat {
     pub line_ending: LineEnding,
     pub bom: bool,
     pub indent: Indent,
+    /// Отступ виден по самому файлу или задан `.editorconfig` (иначе — из настроек).
+    pub indent_known: bool,
     /// `.editorconfig`: добавить перевод строки в конец при сохранении.
     pub final_newline: Option<bool>,
     /// `.editorconfig`: убрать пробелы в концах строк при сохранении.
@@ -82,7 +75,8 @@ pub(crate) fn read(path: &Path) -> Result<(String, FileFormat), String> {
     let lf = text.matches('\n').count() - crlf;
     let line_ending = if crlf > lf { LineEnding::CrLf } else { LineEnding::Lf };
     let text = text.replace("\r\n", "\n");
-    let mut format = FileFormat { line_ending, bom, indent: detect_indent(&text), ..FileFormat::default() };
+    let indent_known = text.lines().any(|l| l.starts_with([' ', '\t']) && !l.trim().is_empty());
+    let mut format = FileFormat { line_ending, bom, indent: detect_indent(&text), indent_known, ..FileFormat::default() };
     apply_editorconfig(path, &mut format);
     Ok((text, format))
 }
@@ -205,7 +199,10 @@ pub(crate) fn apply_editorconfig(path: &Path, format: &mut FileFormat) {
             let Some((key, value)) = line.split_once('=') else { continue };
             let value = value.trim().to_ascii_lowercase();
             match key.trim().to_ascii_lowercase().as_str() {
-                "indent_style" => format.indent.tabs = value == "tab",
+                "indent_style" => {
+                    format.indent.tabs = value == "tab";
+                    format.indent_known = true;
+                }
                 "indent_size" => {
                     if let Ok(n) = value.parse::<usize>() {
                         format.indent.size = n.clamp(1, 16);
@@ -279,7 +276,7 @@ mod tests {
     fn indentation_is_detected() {
         assert_eq!(detect_indent("fn a() {\n  b();\n  if x {\n    c();\n  }\n}\n"), Indent { tabs: false, size: 2 });
         assert_eq!(detect_indent("fn a() {\n    b();\n}\n"), Indent { tabs: false, size: 4 });
-        assert_eq!(detect_indent("void a() {\n\tb();\n\tc();\n}\n").tabs, true);
+        assert!(detect_indent("void a() {\n\tb();\n\tc();\n}\n").tabs);
         assert_eq!(detect_indent(""), Indent::default());
     }
 

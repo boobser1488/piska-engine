@@ -548,8 +548,9 @@ impl Physics3D {
     // Запросы
     // ------------------------------------------------------------------
 
-    /// Unity: `Physics.Raycast`. Триггеры игнорируются; `ignore` — обычно сам стреляющий.
-    /// Видит мир на момент последнего шага физики.
+    /// Unity: `Physics.Raycast`. Триггеры игнорируются; `ignore` — обычно сам стреляющий:
+    /// луч идёт от его имени и не видит слоёв, с которыми его слой не сталкивается по
+    /// матрице слоёв (Project Settings → Physics 3D). Видит мир на момент последнего шага.
     pub fn raycast(
         &self,
         origin: Vec3,
@@ -562,6 +563,9 @@ impl Physics3D {
         let mut filter = rp::QueryFilter::default().exclude_sensors();
         if let Some(entry) = ignore.and_then(|id| self.entries.get(&id)) {
             filter = filter.exclude_rigid_body(entry.body);
+            if !self.layer_matrix.is_default() {
+                filter = filter.groups(self.groups_for(entry.layer, u32::MAX));
+            }
         }
         let (collider, hit) =
             self.query
@@ -603,14 +607,20 @@ impl Physics3D {
         if !filter.include_triggers {
             query = query.exclude_sensors();
         }
+        // Запрос от имени объекта `ignore` видит только слои, с которыми его слой
+        // сталкивается по матрице слоёв (матрица по умолчанию — всё, как раньше).
+        let mut membership = rp::Group::ALL;
+        let mut mask = filter.layer_mask;
         if let Some(entry) = filter.ignore.and_then(|id| self.entries.get(&id)) {
             query = query.exclude_rigid_body(entry.body);
+            if !self.layer_matrix.is_default() {
+                let own = self.groups_for(entry.layer, u32::MAX);
+                membership = own.memberships;
+                mask &= own.filter.bits();
+            }
         }
-        if filter.layer_mask != u32::MAX {
-            query = query.groups(rp::InteractionGroups::new(
-                rp::Group::ALL,
-                rp::Group::from_bits_truncate(filter.layer_mask),
-            ));
+        if mask != u32::MAX || membership != rp::Group::ALL {
+            query = query.groups(rp::InteractionGroups::new(membership, rp::Group::from_bits_truncate(mask)));
         }
         query
     }

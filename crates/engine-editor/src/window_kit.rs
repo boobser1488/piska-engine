@@ -136,6 +136,37 @@ fn title_bar(ui: &mut egui::Ui, id: Id, title: &str, icon: Option<TitleIcon<'_>>
     close
 }
 
+/// Отметить, что масштаб интерфейса только что запросили сменить на `target`
+/// (`set_zoom_factor`; egui применит его со следующего кадра). Тот же масштаб — не смена.
+pub fn note_zoom_change(ctx: &egui::Context, target: f32) {
+    if (ctx.zoom_factor() - target).abs() < 1e-3 {
+        return;
+    }
+    let now = ctx.input(|i| i.time);
+    // (время кадра смены, время последнего виденного кадра, сколько кадров прошло)
+    ctx.data_mut(|d| d.insert_temp(Id::new("kit_zoom_change"), (now, now, 0_u32)));
+}
+
+/// Идёт кадр смены масштаба или следующий за ним (все их проходы): размер экрана в точках
+/// ещё не устоялся, окно, нарисованное сейчас, на следующем кадре перескочило бы.
+pub fn zoom_settling(ctx: &egui::Context) -> bool {
+    let key = Id::new("kit_zoom_change");
+    let Some((changed, last, frames)) = ctx.data(|d| d.get_temp::<(f64, f64, u32)>(key)) else { return false };
+    let now = ctx.input(|i| i.time);
+    let frames = if now != last { frames + 1 } else { frames };
+    ctx.data_mut(|d| d.insert_temp(key, (changed, now, frames)));
+    frames <= 1
+}
+
+/// Смещение левого верхнего угла окна размера `size` (с рамкой), стоящего по центру экрана
+/// со сдвигом [`window_offset`]. Окна ставятся углом, а не центром: egui добавляет поля рамки
+/// к размеру только с третьего кадра, и окно с якорем по центру сдвигалось бы на половину
+/// полей (строка, прочитанная в первом кадре, уезжала из-под указателя).
+pub fn centered_corner(ctx: &egui::Context, id: Id, size: Vec2) -> Vec2 {
+    let screen = ctx.screen_rect();
+    (screen.center() - size * 0.5 - screen.min).round() + window_offset(ctx, id)
+}
+
 /// Не дать заголовку уйти за край окна программы: поправить смещение по прошлому кадру.
 fn clamp_offset(ctx: &egui::Context, id: Id) {
     let Some(layout) = last_layout(ctx, id) else { return };
@@ -340,7 +371,7 @@ impl<'a> ToolWindow<'a> {
             .resizable(resizable)
             .default_size(default_size)
             .min_size(min_size)
-            .anchor(Align2::CENTER_CENTER, window_offset(ctx, id))
+            .anchor(Align2::LEFT_TOP, centered_corner(ctx, id, default_size + Vec2::splat(SP_L * 2.0)))
             .frame(window_frame(&ctx.style()))
             .show(ctx, |ui| {
                 let top = ui.min_rect().top();
@@ -476,90 +507,7 @@ pub fn busy_indicator(ui: &mut egui::Ui, label: &str, fraction: Option<f32>) -> 
     response
 }
 
-/// Тонкая полоса прогресса: с долей — заполнена до неё, без — бегущий отрезок.
-pub fn paint_progress(painter: &egui::Painter, bar: Rect, fraction: Option<f32>, time: f64, alpha: f32) {
-    let fade = |c: Color32| c.gamma_multiply(alpha);
-    painter.rect_filled(bar, 1.0, fade(theme::BG_FIELD));
-    let segment = match fraction {
-        Some(f) => Rect::from_min_max(bar.min, pos2(bar.left() + bar.width() * f.clamp(0.0, 1.0), bar.bottom())),
-        None => {
-            let t = (time * 0.9).fract() as f32;
-            let eased = t * t * (3.0 - 2.0 * t);
-            let width = bar.width() * 0.3;
-            let x = bar.left() - width + (bar.width() + width) * eased;
-            Rect::from_min_max(pos2(x.max(bar.left()), bar.top()), pos2((x + width).min(bar.right()), bar.bottom()))
-        }
-    };
-    if segment.width() > 0.0 {
-        painter.rect_filled(segment, 1.0, fade(theme::accent()));
-    }
-}
-
-/// Заставка загрузки программы (редактор, Piska Hub, Piska Modeler): знак, имя, версия,
-/// **настоящий** текущий шаг и бегущая полоса; держится, пока идёт работа (не короче
-/// [`LoadingScreen::MIN_SECONDS`], если её вообще было видно), растворяется и ввод не
-/// перехватывает.
-#[derive(Clone, Debug, Default)]
-pub struct LoadingScreen {
-    started: Option<f64>,
-    fading_since: Option<f64>,
-    done: bool,
-}
-
-impl LoadingScreen {
-    pub const MIN_SECONDS: f64 = 0.6;
-    pub const MAX_SECONDS: f64 = 30.0;
-    pub const FADE_SECONDS: f64 = 0.3;
-
-    /// Заставка ещё на экране.
-    pub fn visible(&self) -> bool {
-        !self.done
-    }
-
-    /// Нарисовать кадр заставки поверх всего. `step` — что делается сейчас (`None` —
-    /// загрузка кончилась). `mark` рисует знак программы в квадрате с прозрачностью.
-    pub fn show(
-        &mut self,
-        ctx: &egui::Context,
-        mark: &dyn Fn(&egui::Painter, Rect, f32),
-        name: &str,
-        version: &str,
-        step: Option<&str>,
-    ) {
-        if self.done {
-            return;
-        }
-        let now = ctx.input(|i| i.time);
-        let started = *self.started.get_or_insert(now);
-        let elapsed = now - started;
-        if self.fading_since.is_none() && ((step.is_none() && elapsed >= Self::MIN_SECONDS) || elapsed >= Self::MAX_SECONDS) {
-            self.fading_since = Some(now);
-        }
-        let alpha = match self.fading_since {
-            Some(since) => 1.0 - ((now - since) / Self::FADE_SECONDS).clamp(0.0, 1.0) as f32,
-            None => 1.0,
-        };
-        if alpha <= 0.0 {
-            self.done = true;
-            return;
-        }
-        ctx.request_repaint();
-        let screen = ctx.screen_rect();
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("loading_screen")));
-        let fade = |c: Color32| c.gamma_multiply(alpha);
-        painter.rect_filled(screen, 0.0, fade(theme::BG_APP));
-        let center = screen.center() - vec2(0.0, 24.0);
-        let square = Rect::from_center_size(center - vec2(0.0, 28.0), vec2(48.0, 48.0));
-        mark(&painter, square, alpha);
-        painter.text(pos2(center.x, square.bottom() + 18.0), Align2::CENTER_CENTER, name, theme::strong(theme::FONT_HEADING), fade(TEXT_STRONG));
-        if let Some(step) = step {
-            painter.text(pos2(center.x, square.bottom() + 38.0), Align2::CENTER_CENTER, step, theme::caption(), fade(TEXT_MUTED));
-        }
-        let bar = Rect::from_center_size(pos2(center.x, square.bottom() + 58.0), vec2(180.0, 2.0));
-        paint_progress(&painter, bar, None, elapsed, alpha);
-        painter.text(pos2(center.x, screen.bottom() - 20.0), Align2::CENTER_CENTER, version, theme::caption(), fade(theme::TEXT_DISABLED));
-    }
-}
+pub use crate::boot::{paint_progress, LoadingScreen};
 
 /// Своя полоса заголовка окна (Preferences, Project Settings рисуют её сами): область
 /// `rect` тянут — окно `id` едет, двойной щелчок — в центр. Окно должно стоять по

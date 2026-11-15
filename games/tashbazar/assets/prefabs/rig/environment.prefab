@@ -37,6 +37,41 @@
             },
         ),
         (
+            kind: "SoftShadows",
+            fields: {
+                "blend": Float(0.15),
+                "cascades": Int(3),
+                "enabled": Bool(true),
+                "filter": Enum("ContactHardening"),
+                "softness": Float(2.0),
+                "split": Float(0.75),
+            },
+        ),
+        (
+            kind: "Sky",
+            fields: {
+                "cloud_color": Color(1.0, 0.98, 0.95, 1.0),
+                "cloud_scale": Float(1.0),
+                "cloud_speed": Float(3.0),
+                "clouds": Float(0.3),
+                "enabled": Bool(true),
+                "moon": Bool(true),
+                "scattering": Float(1.0),
+                "stars": Float(1.0),
+                "sun_glow": Float(1.0),
+                "sun_size": Float(0.7),
+            },
+        ),
+        (
+            kind: "AmbientOcclusion",
+            fields: {
+                "bias": Float(0.03),
+                "enabled": Bool(true),
+                "intensity": Float(0.5),
+                "radius": Float(0.6),
+            },
+        ),
+        (
             kind: "ColorGrading",
             fields: {
                 "contrast": Float(1.06),

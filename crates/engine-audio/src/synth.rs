@@ -1174,6 +1174,56 @@ pub mod music {
     }
 }
 
+/// Имена встроенных звуков: их можно играть без `add_clip` — `ctx.play("sfx:coin")`,
+/// `ctx.music("music:calm")`, `play("sfx:jump")` в Scenario, `clip_name` у `AudioSource`.
+/// `sfx:<имя>` — функция из [`sfx`], `music:<имя>` — из [`music`].
+pub const BUILTIN: &[&str] = &[
+    "sfx:jump",
+    "sfx:land",
+    "sfx:coin",
+    "sfx:powerup",
+    "sfx:hit",
+    "sfx:hurt",
+    "sfx:laser",
+    "sfx:explosion",
+    "sfx:blip",
+    "sfx:ui_click",
+    "sfx:ui_hover",
+    "sfx:ui_confirm",
+    "sfx:ui_error",
+    "sfx:footstep",
+    "sfx:win",
+    "sfx:lose",
+    "music:adventure",
+    "music:calm",
+];
+
+/// Встроенный звук по имени из [`BUILTIN`] (`"sfx:coin"` → [`sfx::coin`]); другое имя — `None`.
+/// [`Audio`](crate::Audio) зовёт её сама, когда клипа с таким именем не регистрировали.
+pub fn builtin(name: &str) -> Option<AudioClip> {
+    Some(match name {
+        "sfx:jump" => sfx::jump(),
+        "sfx:land" => sfx::land(),
+        "sfx:coin" => sfx::coin(),
+        "sfx:powerup" => sfx::powerup(),
+        "sfx:hit" => sfx::hit(),
+        "sfx:hurt" => sfx::hurt(),
+        "sfx:laser" => sfx::laser(),
+        "sfx:explosion" => sfx::explosion(),
+        "sfx:blip" => sfx::blip(),
+        "sfx:ui_click" => sfx::ui_click(),
+        "sfx:ui_hover" => sfx::ui_hover(),
+        "sfx:ui_confirm" => sfx::ui_confirm(),
+        "sfx:ui_error" => sfx::ui_error(),
+        "sfx:footstep" => sfx::footstep(),
+        "sfx:win" => sfx::win(),
+        "sfx:lose" => sfx::lose(),
+        "music:adventure" => music::adventure(),
+        "music:calm" => music::calm(),
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

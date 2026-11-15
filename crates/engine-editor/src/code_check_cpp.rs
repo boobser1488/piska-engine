@@ -70,13 +70,11 @@ pub(crate) fn check(text: &str) -> Vec<Diagnostic> {
                             .hint(tr_s("every `#else` / `#elif` belongs to an `#if`, `#ifdef` or `#ifndef` above it")),
                     ),
                 },
-                "endif" => {
-                    if conditions.pop().is_none() {
-                        out.push(
-                            Diagnostic::error(tr_s("`#endif` without `#if`"), directive.range.clone())
-                                .hint(tr_s("delete it, or add the `#if` / `#ifdef` it closes")),
-                        );
-                    }
+                "endif" if conditions.pop().is_none() => {
+                    out.push(
+                        Diagnostic::error(tr_s("`#endif` without `#if`"), directive.range.clone())
+                            .hint(tr_s("delete it, or add the `#if` / `#ifdef` it closes")),
+                    );
                 }
                 _ => {}
             }
@@ -149,11 +147,9 @@ pub(crate) fn check(text: &str) -> Vec<Diagnostic> {
             i += 1;
             while i < bytes.len() {
                 let b = bytes[i];
-                if b.is_ascii_alphanumeric() || b == b'.' || b == b'_' {
-                    i += 1;
-                } else if b == b'\'' && bytes.get(i + 1).is_some_and(u8::is_ascii_alphanumeric) {
-                    i += 1;
-                } else if (b == b'+' || b == b'-') && matches!(bytes[i - 1], b'e' | b'E' | b'p' | b'P') {
+                let digit_separator = b == b'\'' && bytes.get(i + 1).is_some_and(u8::is_ascii_alphanumeric);
+                let exponent_sign = (b == b'+' || b == b'-') && matches!(bytes[i - 1], b'e' | b'E' | b'p' | b'P');
+                if b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || digit_separator || exponent_sign {
                     i += 1;
                 } else {
                     break;

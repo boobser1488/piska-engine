@@ -1118,6 +1118,8 @@ impl UiSystem {
         let scene = &mut world.scene;
         if scene.get_component::<Button>(id).is_some_and(|b| b.interactable) {
             self.emit(world, events, id, UiEventKind::Click, Value::Nil, None);
+            // Хук `on_click` скриптов на самой кнопке (короткая форма сообщения о клике).
+            world.dispatch_hook(id, Hooks::CLICK, |c, ctx| c.on_click(ctx));
             return;
         }
         if let Some(toggle) = scene.get_component_mut::<Toggle>(id) {

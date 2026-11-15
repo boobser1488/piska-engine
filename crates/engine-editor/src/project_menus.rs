@@ -61,6 +61,19 @@ pub(crate) fn create_items(ui: &mut egui::Ui, cmds: &mut Vec<Cmd>, cx: &MenuCx, 
         if menu_item(tr_s("Material")).icon(Icon::Sphere).show(ui) {
             create(Create::Material);
         }
+        theme::submenu(ui, Icon::Code, tr_s("Shader"), |ui| {
+            let kinds = [
+                (engine_assets::ShaderKind::Surface, tr_s("Surface Shader")),
+                (engine_assets::ShaderKind::Unlit, tr_s("Unlit Shader")),
+                (engine_assets::ShaderKind::Sprite, tr_s("Sprite Shader")),
+                (engine_assets::ShaderKind::Post, tr_s("Post Effect")),
+            ];
+            for (kind, label) in kinds {
+                if menu_item(label).icon(Icon::Code).show(ui) {
+                    create(Create::Shader(kind));
+                }
+            }
+        });
         theme::menu_separator(ui);
         if menu_item(tr_s("Rust Script…")).icon(Icon::Script).show(ui) {
             create(Create::RustScript);

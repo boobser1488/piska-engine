@@ -10,9 +10,8 @@ use crate::i18n::{tr_s, trf};
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::Path;
-use std::sync::Arc;
 
-use crate::code_diagnostics::{ceil_char, did_you_mean, word_at, Diagnostic, LineIndex, Severity};
+use crate::code_diagnostics::{ceil_char, did_you_mean, word_at, Diagnostic, LineIndex};
 
 /// Что проверка знает о проекте: компоненты реестра и их поля.
 #[derive(Clone, Debug, Default)]
@@ -34,6 +33,8 @@ pub(crate) enum CheckKind {
     Json,
     Toml,
     Wgsl,
+    /// Свой шейдер (`.shader`): собирается так же, как его собирает движок.
+    Shader,
 }
 
 impl CheckKind {
@@ -50,25 +51,11 @@ impl CheckKind {
             "json" => CheckKind::Json,
             "toml" => CheckKind::Toml,
             "wgsl" => CheckKind::Wgsl,
+            "shader" => CheckKind::Shader,
             _ => return None,
         })
     }
 
-    /// Имя проверки для строки состояния.
-    pub fn label(self) -> &'static str {
-        match self {
-            CheckKind::Rust => tr_s("Rust syntax"),
-            CheckKind::Cpp => tr_s("C++ syntax"),
-            CheckKind::Scenario => tr_s("Scenario compiler"),
-            CheckKind::Ron => "RON",
-            CheckKind::Scene => tr_s("scene schema"),
-            CheckKind::Prefab => tr_s("prefab schema"),
-            CheckKind::Material => tr_s("material schema"),
-            CheckKind::Json => "JSON",
-            CheckKind::Toml => "TOML",
-            CheckKind::Wgsl => tr_s("WGSL validator"),
-        }
-    }
 }
 
 /// Проверить файл по его расширению. Пустой список — ошибок нет (или проверки нет).
@@ -97,6 +84,7 @@ pub(crate) fn check_file(path: &Path, text: &str, schema: &Schema) -> Vec<Diagno
         Some(CheckKind::Json) => json(text),
         Some(CheckKind::Toml) => toml(text),
         Some(CheckKind::Wgsl) => wgsl(path, text),
+        Some(CheckKind::Shader) => shader(text),
     };
     let index = LineIndex::new(text);
     for d in &mut out {
@@ -358,14 +346,49 @@ fn toml(text: &str) -> Vec<Diagnostic> {
     }
 }
 
+/// Вариант шейдера из строки `// piska:variant <группа> [default]` в начале файла: файлы
+/// одной группы — взаимоисключающие замены друг друга (движок приклеивает ровно один,
+/// renderer/variant.rs). Возвращает (группа, вариант по умолчанию).
+fn wgsl_variant(text: &str) -> Option<(String, bool)> {
+    text.lines().take(12).find_map(|line| {
+        let rest = line.trim().strip_prefix("// piska:variant ")?;
+        let mut words = rest.split_whitespace();
+        let group = words.next()?.to_string();
+        Some((group, words.any(|w| w == "default")))
+    })
+}
+
 fn wgsl(path: &Path, text: &str) -> Vec<Diagnostic> {
-    // Шейдеры движка собираются из кусков: `common.wgsl` + файл. Если рядом есть
-    // `common.wgsl` и файл без него не разбирается, проверяем склейку.
-    let common = path
-        .parent()
-        .map(|dir| dir.join("common.wgsl"))
-        .filter(|common| common.is_file() && path.file_name().is_some_and(|n| n != "common.wgsl"))
-        .and_then(|common| std::fs::read_to_string(common).ok());
+    // Шейдеры движка собираются из кусков: `common.wgsl`, `shadow.wgsl`… + файл. Если файл
+    // сам по себе не разбирается, проверяем склейку с соседними «библиотечными» файлами
+    // (без точек входа `@vertex` / `@fragment` / `@compute`), `common.wgsl` — первым. Из
+    // каждой группы вариантов (`// piska:variant`) берётся один файл — как при сборке
+    // шейдера: сам проверяемый файл, если он из этой группы, иначе вариант по умолчанию.
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let own_group = wgsl_variant(text).map(|(group, _)| group);
+    let common = path.parent().and_then(|dir| {
+        let mut parts: Vec<(bool, String, String)> = std::fs::read_dir(dir)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "wgsl") && p.file_name().is_some_and(|n| n.to_string_lossy() != name))
+            .filter_map(|p| {
+                let text = std::fs::read_to_string(&p).ok()?.replace("\r\n", "\n");
+                let library = !["@vertex", "@fragment", "@compute"].iter().any(|e| text.contains(e));
+                let chosen = match wgsl_variant(&text) {
+                    Some((group, default)) => default && own_group.as_deref() != Some(group.as_str()),
+                    None => true,
+                };
+                let file = p.file_name()?.to_string_lossy().into_owned();
+                (library && chosen).then(|| (file != "common.wgsl", file, text))
+            })
+            .collect();
+        if parts.is_empty() {
+            return None;
+        }
+        parts.sort();
+        Some(parts.into_iter().map(|(_, _, t)| t).collect::<Vec<_>>().join("\n"))
+    });
     let mut result = wgsl_once(text, 0);
     if !result.is_empty() {
         if let Some(common) = common {
@@ -438,10 +461,28 @@ fn wgsl_once(text: &str, offset: usize) -> Vec<Diagnostic> {
     }
 }
 
-/// Пустая схема (для файлов без реестра) — общая, чтобы не собирать её каждый раз.
-pub(crate) fn empty_schema() -> Arc<Schema> {
-    static EMPTY: std::sync::OnceLock<Arc<Schema>> = std::sync::OnceLock::new();
-    EMPTY.get_or_init(|| Arc::new(Schema::default())).clone()
+/// Свой шейдер: сборка и проверка `engine_render::shaders` (та же, что в игре), ошибки —
+/// на строках пользователя; «did you mean» — с исправлением.
+fn shader(text: &str) -> Vec<Diagnostic> {
+    engine_render::shaders::check(text)
+        .into_iter()
+        .map(|found| {
+            let mut d = Diagnostic::error(found.message, found.range.clone());
+            for note in found.notes {
+                let better = note.strip_prefix("did you mean `").and_then(|rest| rest.strip_suffix("`?")).map(str::to_string);
+                d = d.note(note);
+                if let Some(better) = better {
+                    // Подчёркнуто всё выражение (`in.uvv`) — заменяем только последнее слово.
+                    let range = found.range.clone();
+                    let word_start = text[range.clone()].rfind(|c: char| !(c.is_alphanumeric() || c == '_')).map_or(range.start, |i| range.start + i + 1);
+                    if word_start < range.end {
+                        d = d.fix(trf!("Change to `{better}`", better = better), word_start..range.end, &better);
+                    }
+                }
+            }
+            d
+        })
+        .collect()
 }
 
 /// Сводка для строки состояния: «3 errors, 1 warning».
@@ -452,11 +493,6 @@ pub(crate) fn summary(errors: usize, warnings: usize) -> String {
         (0, w) => crate::i18n::trn!("{n} warning", "{n} warnings", w),
         (e, w) => format!("{}, {}", crate::i18n::trn!("{n} error", "{n} errors", e), crate::i18n::trn!("{n} warning", "{n} warnings", w)),
     }
-}
-
-/// Самая важная диагностика списка (для значка строки состояния).
-pub(crate) fn worst(diagnostics: &[Diagnostic]) -> Option<Severity> {
-    diagnostics.iter().map(|d| d.severity).min()
 }
 
 #[cfg(test)]
@@ -544,6 +580,29 @@ mod tests {
         let text = "fn f() -> f32 { return vec2<f32>(1.0); }";
         let d = check("a.wgsl", text);
         assert_eq!(d.len(), 1, "{d:?}");
-        assert!(d[0].range.start > 0);
+        assert!(d[0].range.end <= text.len() && !d[0].message.is_empty());
+    }
+
+    /// Шейдер из кусков с вариантами (`// piska:variant`): из группы берётся один файл —
+    /// сам проверяемый или вариант по умолчанию; два варианта с одинаковыми функциями не
+    /// дают ложной ошибки «повторное определение».
+    #[test]
+    fn wgsl_variant_groups_are_joined_one_file_at_a_time() {
+        let dir = std::env::temp_dir().join(format!("piska_wgsl_variants_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str, text: &str| std::fs::write(dir.join(name), text).unwrap();
+        write("common.wgsl", "struct G { x: f32 };\n@group(0) @binding(0) var<uniform> g: G;\n");
+        write("light_off.wgsl", "// piska:variant light default\nfn light() -> f32 { return 0.0; }\n");
+        write("light_on.wgsl", "// piska:variant light\nfn light() -> f32 { return g.x; }\n");
+        let entry = "@fragment fn fs() -> @location(0) vec4<f32> { return vec4<f32>(light()); }";
+        write("main.wgsl", entry);
+        let schema = Schema::default();
+        assert!(check_file(&dir.join("main.wgsl"), entry, &schema).is_empty(), "{:?}", check_file(&dir.join("main.wgsl"), entry, &schema));
+        let on = std::fs::read_to_string(dir.join("light_on.wgsl")).unwrap();
+        assert!(check_file(&dir.join("light_on.wgsl"), &on, &schema).is_empty());
+        // Настоящая ошибка в варианте по-прежнему видна.
+        let broken = "// piska:variant light\nfn light() -> f32 { return g.y; }\n";
+        assert_eq!(check_file(&dir.join("light_on.wgsl"), broken, &schema).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

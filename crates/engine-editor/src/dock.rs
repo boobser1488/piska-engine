@@ -37,12 +37,16 @@ pub enum Panel {
     Code,
     Project,
     Console,
+    /// Ошибки и предупреждения кода (проверка при наборе и компилятор).
+    ErrorList,
+    /// Find in Files и Find All References.
+    FindResults,
     Profiler,
 }
 
 impl Panel {
     /// Все окна в порядке меню Window.
-    pub const ALL: [Panel; 8] = [
+    pub const ALL: [Panel; 10] = [
         Panel::Scene,
         Panel::Game,
         Panel::Code,
@@ -50,6 +54,8 @@ impl Panel {
         Panel::Inspector,
         Panel::Project,
         Panel::Console,
+        Panel::ErrorList,
+        Panel::FindResults,
         Panel::Profiler,
     ];
 
@@ -63,6 +69,8 @@ impl Panel {
             Panel::Code => tr_s("Code"),
             Panel::Project => tr_s("Project"),
             Panel::Console => tr_s("Console"),
+            Panel::ErrorList => tr_s("Error List"),
+            Panel::FindResults => tr_s("Find Results"),
             Panel::Profiler => tr_s("Profiler"),
         }
     }
@@ -76,6 +84,8 @@ impl Panel {
             Panel::Code => Icon::Code,
             Panel::Project => Icon::Folder,
             Panel::Console => Icon::Console,
+            Panel::ErrorList => Icon::Error,
+            Panel::FindResults => Icon::Search,
             Panel::Profiler => Icon::Chart,
         }
     }
@@ -90,6 +100,8 @@ impl Panel {
             Panel::Code => "code",
             Panel::Project => "project",
             Panel::Console => "console",
+            Panel::ErrorList => "error-list",
+            Panel::FindResults => "find-results",
             Panel::Profiler => "profiler",
         }
     }
@@ -102,7 +114,9 @@ impl Panel {
     fn group(self) -> &'static [Panel] {
         match self {
             Panel::Scene | Panel::Game | Panel::Code => &[Panel::Scene, Panel::Game, Panel::Code],
-            Panel::Project | Panel::Console | Panel::Profiler => &[Panel::Project, Panel::Console, Panel::Profiler],
+            Panel::Project | Panel::Console | Panel::ErrorList | Panel::FindResults | Panel::Profiler => {
+                &[Panel::Project, Panel::Console, Panel::ErrorList, Panel::FindResults, Panel::Profiler]
+            }
             Panel::Hierarchy => &[Panel::Hierarchy],
             Panel::Inspector => &[Panel::Inspector],
         }
@@ -144,7 +158,7 @@ impl LayoutPreset {
     fn desc(self) -> LayoutDesc {
         use Panel::*;
         let views = || leaf(&[Scene, Game, Code]);
-        let bottom = || leaf(&[Project, Console, Profiler]);
+        let bottom = || leaf(&[Project, Console, ErrorList, FindResults, Profiler]);
         let main = match self {
             LayoutPreset::Default => split_h(
                 0.19,
@@ -154,7 +168,7 @@ impl LayoutPreset {
             LayoutPreset::TwoByThree => split_h(
                 0.42,
                 split_v(0.5, leaf(&[Scene, Code]), leaf(&[Game, Profiler])),
-                split_h(0.27, leaf(&[Hierarchy]), split_h(0.52, leaf(&[Project, Console]), leaf(&[Inspector]))),
+                split_h(0.27, leaf(&[Hierarchy]), split_h(0.52, leaf(&[Project, Console, ErrorList, FindResults]), leaf(&[Inspector]))),
             ),
             LayoutPreset::Tall => split_h(
                 0.5,
@@ -166,7 +180,7 @@ impl LayoutPreset {
                 split_v(
                     0.62,
                     views(),
-                    split_h(0.3, leaf(&[Hierarchy]), split_h(0.55, leaf(&[Project, Profiler]), leaf(&[Console]))),
+                    split_h(0.3, leaf(&[Hierarchy]), split_h(0.55, leaf(&[Project, Profiler]), leaf(&[Console, ErrorList, FindResults]))),
                 ),
                 leaf(&[Inspector]),
             ),
@@ -683,7 +697,7 @@ impl DockLayout {
                 let (split, fraction) = match panel {
                     Panel::Hierarchy => (Split::Left, 0.2),
                     Panel::Inspector => (Split::Right, 0.76),
-                    Panel::Project | Panel::Console | Panel::Profiler => (Split::Below, 0.7),
+                    Panel::Project | Panel::Console | Panel::ErrorList | Panel::FindResults | Panel::Profiler => (Split::Below, 0.7),
                     Panel::Scene | Panel::Game | Panel::Code => (Split::Right, 0.3),
                 };
                 main.split(NodeIndex::root(), split, fraction, Node::leaf(panel));
@@ -950,6 +964,8 @@ struct Viewer<'a> {
     active: HashSet<Panel>,
     focused: Option<Panel>,
     badge: Option<(usize, Color32)>,
+    /// Число ошибок (или предупреждений) кода на вкладке Error List.
+    error_badge: Option<(usize, Color32)>,
     maximized: bool,
     requests: Requests,
     placed: Vec<Placed>,
@@ -1036,7 +1052,11 @@ impl TabViewer for Viewer<'_> {
     type Tab = Panel;
 
     fn title(&mut self, tab: &mut Panel) -> egui::WidgetText {
-        let badge = if *tab == Panel::Console { self.badge } else { None };
+        let badge = match *tab {
+            Panel::Console => self.badge,
+            Panel::ErrorList => self.error_badge,
+            _ => None,
+        };
         tab_title(*tab, badge).into()
     }
 
@@ -1058,6 +1078,8 @@ impl TabViewer for Viewer<'_> {
             Panel::Code => crate::code::show(editor, ui),
             Panel::Project => crate::project::show(editor, ui),
             Panel::Console => crate::console::show(editor, ui),
+            Panel::ErrorList => crate::error_list::show(editor, ui),
+            Panel::FindResults => crate::find_in_files::show(editor, ui),
             Panel::Profiler => crate::profiler::show(editor, ui),
         }
         self.area_button(ui, panel, body);
@@ -1072,7 +1094,14 @@ impl TabViewer for Viewer<'_> {
         self.tab_rects.push((panel, rect));
 
         // Иконка — в начале подписи (место под неё оставлено отступом).
-        let job = tab_title(panel, if panel == Panel::Console { self.badge } else { None });
+        let job = tab_title(
+            panel,
+            match panel {
+                Panel::Console => self.badge,
+                Panel::ErrorList => self.error_badge,
+                _ => None,
+            },
+        );
         let width = ctx.fonts(|fonts| fonts.layout_job(job)).size().x;
         let active = self.active.contains(&panel);
         let focused = self.focused == Some(panel);
@@ -1171,6 +1200,15 @@ impl Editor {
             None
         };
 
+        let (code_errors, code_warnings, _) = self.code_problem_counts();
+        let error_badge = if code_errors > 0 {
+            Some((code_errors, theme::ERROR))
+        } else if code_warnings > 0 {
+            Some((code_warnings, theme::WARN))
+        } else {
+            None
+        };
+
         let maximized = self.dock.maximized.filter(|panel| self.dock.is_open(*panel));
         self.dock.maximized = maximized;
         let mut state = match maximized {
@@ -1210,6 +1248,7 @@ impl Editor {
             active,
             focused,
             badge,
+            error_badge,
             maximized: maximized.is_some(),
             requests: Requests::default(),
             placed: Vec::new(),

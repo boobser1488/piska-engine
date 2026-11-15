@@ -154,6 +154,7 @@ impl Editor {
         if item(tr_s("Keyboard Shortcuts")).icon(Icon::Text).shortcut(&self.shortcut_text("shortcuts-help")).show(ui) {
             self.shortcuts_help_open = true;
         }
+        crate::cheat_sheet::menu_item(ui);
         let doc = self.doc_file("editor.md");
         if item(tr_s("Editor Manual"))
             .icon(Icon::File)
@@ -188,6 +189,7 @@ impl Editor {
         self.shortcuts_window(ctx);
         self.getting_started_window(ctx);
         self.modeler_missing_window(ctx);
+        crate::cheat_sheet::window(self, ctx);
     }
 
     fn shortcuts_window(&mut self, ctx: &egui::Context) {

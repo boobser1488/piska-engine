@@ -27,7 +27,10 @@ fn install_through_fake(scenario: Scenario) -> (Hands, Installer, std::sync::Arc
         assert!(hands.has_text("Administrator Rights"), "the elevation dialog explains first");
         hands.click(&mut installer, "dialog-ok");
     }
-    assert_eq!(installer.page, Page::Installing);
+    // Поддельный скрипт без пауз успевает закончить установку уже за кадры щелчка: страница к этому
+    // моменту «Installing» или уже «Finish» — проверка не зависит от скорости машины (раньше тут
+    // стояло только `Installing`, и тест иногда падал).
+    assert!(matches!(installer.page, Page::Installing | Page::Finish), "the install has started, the page is {:?}", installer.page);
     (hands, installer, log)
 }
 

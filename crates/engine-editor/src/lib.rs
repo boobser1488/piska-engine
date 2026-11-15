@@ -22,18 +22,45 @@
 #![forbid(unsafe_code)]
 
 mod add_menu;
+mod boot;
 mod catalog;
+/// Help → Scripting Cheat Sheet.
+pub mod cheat_sheet;
 mod code;
 // Вкладка Code: проверка синтаксиса, ошибки компилятора, Error List (W15).
-// `code_checks.rs` и `code_view.rs` (живая проверка при наборе и её отрисовка) написаны, но ещё не
-// подключены: им нужны поля `CodeState`, которых пока нет. Объявить вместе с ними.
+mod code_buffer;
+mod code_close;
 mod code_cargo;
+mod code_checks;
+mod code_complete;
+mod code_edit;
+mod code_find;
+mod code_format;
+mod code_highlight;
+mod code_recovery;
+mod code_rename;
+mod code_menu;
+mod code_nav;
+mod code_symbols;
+mod code_keys;
+mod code_prefs;
+#[cfg(test)]
+mod code_tests;
+#[cfg(test)]
+mod code_tests2;
+#[cfg(test)]
+mod code_tests3;
+mod code_tree;
+mod code_view;
+mod code_widget;
 mod code_check_cpp;
 mod code_check_data;
 mod code_check_rust;
 mod code_diagnostics;
 mod code_files;
 mod console;
+mod error_list;
+mod find_in_files;
 mod controls;
 mod metrics;
 mod build_tools;
@@ -52,11 +79,15 @@ mod icons;
 /// Один редактор на проект: метка с номером процесса (её проверяет Piska Hub).
 pub mod instance;
 mod lines;
+mod look_trace;
 mod inspector;
 mod inspector_multi;
 mod inspector_prefab;
 mod inspector_refs;
 mod material_editor;
+mod shader_params_ui;
+#[cfg(test)]
+mod shader_tests;
 mod modeler_link;
 mod profiler;
 mod project;
@@ -73,6 +104,8 @@ mod runner;
 mod rust_scripts;
 mod scenarios;
 mod scene_picker;
+/// Заготовки нового скрипта на Rust (окно «New Rust Script»).
+pub mod script_templates;
 mod script_order;
 mod selection;
 mod settings;
@@ -86,10 +119,12 @@ mod ui;
 mod undo_history;
 mod window_kit;
 mod view3d;
+mod warmup;
 mod viewport;
 
 pub use build_tools::{DoctorReport, ToolCheck};
 pub use code::{BuildCommand, BuildStatus};
+pub use code_prefs::{CodePrefs, Keymap as CodeKeymap};
 pub use dock::{DockSide, LayoutAction, LayoutPreset, Panel};
 pub use export::{ExportPlatform, ExportSettings, SERVE_PORT};
 pub use egui;
@@ -105,7 +140,9 @@ pub use shortcuts::{CommandDef, KeyBinding, Keymap, COMMANDS};
 pub use preview::PreviewStats;
 pub use profiler::FrameTimings;
 pub use scene_picker::SceneEntry;
-pub use runner::run;
+pub use runner::{boot_editor, run, run_with, run_with_progress};
+pub use boot::{Boot, BootState, LoadingScreen, Progress, Task};
+pub use warmup::{GpuWarmup, UiPainter, WindowGpu};
 pub use rust_scripts::{remove_stale_executables, session_from_args, Relaunch, SESSION_ARG, SESSION_ENV};
 pub use state::{Action, BottomTab, ChromeRects, Editor, EditorConfig, Mode, Tool, ViewTab};
 pub use view3d::Orbit3D;
@@ -129,6 +166,10 @@ pub mod kit {
     /// Замер интерфейса после кадра: виджеты, рамки, сводка нарушений.
     pub mod metrics {
         pub use crate::metrics::*;
+    }
+    /// Запуск программы с заставкой, фоновые работы с ходом и строка прогресса.
+    pub mod boot {
+        pub use crate::boot::*;
     }
     /// Иконки, нарисованные фигурами.
     pub mod icons {

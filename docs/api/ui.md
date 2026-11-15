@@ -8,6 +8,24 @@ HUD, главное меню, пауза, настройки — в стиле U
 (`engine_ui::install`). Пример целиком: `crates/engine/examples/ui_demo.rs`
 (`cargo run --example ui_demo`).
 
+**Интерфейс в файле сцены.** HUD и экраны удобнее собирать в редакторе (GameObject → UI) и
+хранить в `.scene`, как любые объекты: тогда скрипт только меняет тексты и показывает
+панели — `ctx.ui_text("Score", …)`, `ctx.ui_show("GameOverPanel")`, `ctx.clicked("restart")`.
+Всё, что строят конструкторы `scene.ui_*` ниже, сохраняется в сцену и загружается обратно
+без потерь (тест `ui_round_trips_through_ron_scenes` в `crates/engine/tests/ui.rs`). Пример — `games/template/assets/scenes/main.scene`
+(объект `HUD`): поля, которых нет в файле, берут значения по умолчанию, поэтому запись
+короткая:
+
+```ron
+(
+    name: "Score",
+    components: [
+        (kind: "RectTransform", fields: { "size": Vec2(320.0, 42.0) }),
+        (kind: "Text", fields: { "text": Str("Score: 0"), "size": Float(30.0), "bold": Bool(true) }),
+    ],
+),
+```
+
 ## Быстрый старт
 
 ```rust

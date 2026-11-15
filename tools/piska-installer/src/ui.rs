@@ -229,7 +229,6 @@ impl Installer {
             });
         self.dialogs(ctx);
         self.keys(ctx);
-        self.splash_ui(ctx);
         for action in self.take_actions() {
             self.apply(action);
         }
@@ -266,10 +265,12 @@ impl Installer {
         let key = Id::new("installer-style");
         let applied: Option<bool> = ctx.data(|d| d.get_temp(key));
         if applied.is_none() {
+            // Шрифты могла поставить заставка запуска: тогда этот кадр рисовать не рано.
+            let fonts_new = !theme::fonts_installed(ctx);
             theme::apply(ctx, true);
             theme::set_density(ctx, theme::Density::Comfortable);
             ctx.data_mut(|d| d.insert_temp(key, true));
-            return true;
+            return fonts_new;
         }
         false
     }
@@ -1608,29 +1609,6 @@ impl Installer {
         for a in actions {
             self.push(a);
         }
-    }
-
-    // -----------------------------------------------------------------------
-    // Заставка
-    // -----------------------------------------------------------------------
-
-    /// Показывать заставку при первых кадрах (оконный запуск).
-    pub fn enable_splash(&mut self, ctx: &egui::Context) {
-        ctx.data_mut(|d| d.insert_temp(Id::new("installer-splash"), kit::LoadingScreen::default()));
-    }
-
-    fn splash_ui(&mut self, ctx: &egui::Context) {
-        let id = Id::new("installer-splash");
-        let Some(mut screen) = ctx.data(|d| d.get_temp::<kit::LoadingScreen>(id)) else {
-            return;
-        };
-        if !screen.visible() {
-            return;
-        }
-        // Заставка держится, пока скрипты извлекаются и запускается проверка (первые кадры).
-        let step = (ctx.input(|i| i.time) < 0.4).then_some(tr_s("Preparing the installer scripts…"));
-        screen.show(ctx, &kit::paint_engine_mark, &trf!("{engine} Setup", engine = brand::ENGINE_NAME), env!("CARGO_PKG_VERSION"), step);
-        ctx.data_mut(|d| d.insert_temp(id, screen));
     }
 }
 

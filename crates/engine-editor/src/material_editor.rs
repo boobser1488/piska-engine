@@ -44,6 +44,7 @@ const UNDO_LIMIT: usize = 100;
 
 const TEXTURE: FieldMeta = FieldMeta { variants: &[], asset_kind: n_("Texture") };
 const MATERIAL: FieldMeta = FieldMeta { variants: &[], asset_kind: n_("Material") };
+const SHADER: FieldMeta = FieldMeta { variants: &[], asset_kind: n_("Shader") };
 
 /// Поля встроенного материала `MeshRenderer` (раздел «Inline material (legacy)»).
 const INLINE_FIELDS: [&str; 8] = ["color", "texture", "metallic", "roughness", "emissive", "tiling", "grid", "cast_shadows"];
@@ -348,6 +349,21 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) -> bool {
         egui::Frame::none().inner_margin(egui::Margin::symmetric(theme::SP_L, 0.0)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = 4.0;
+            // Свой шейдер (docs/api/shaders.md) и его параметры.
+            section(ui, tr_s("Shader"));
+            edited |= property(ui, tr_s("Shader"), tr_s("A custom shader (.shader of kind surface or unlit); empty — the standard material"), |ui| {
+                let mut text = if material.shader.is_none() { String::new() } else { material.shader.guid().to_string() };
+                let changed = asset_widget(ui, &mut text, SHADER, &assets, &mut filter, ("material_shader", guid));
+                if changed {
+                    material.shader = Guid::parse(&text).map_or(AssetHandle::none(), AssetHandle::from_guid);
+                }
+                changed
+            });
+            if !material.shader.is_none() {
+                let database = editor.app.world.resources.get::<AssetDatabase>();
+                let shader = material.shader.guid();
+                edited |= crate::shader_params_ui::field_ui(ui, database, shader, &mut material.shader_params, &assets, &mut filter, ("material_params", guid));
+            }
             let thumbs = &mut editor.material_editor.texture_thumbs;
             let mut slot = |ui: &mut egui::Ui, label: &str, doc: &str, handle: &mut AssetHandle<Texture>, salt: &str| {
                 property(ui, label, doc, |ui| texture_slot(ui, handle, &assets, &mut filter, thumbs, root.as_deref(), salt))

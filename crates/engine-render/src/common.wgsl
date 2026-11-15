@@ -18,6 +18,20 @@ struct Globals {
     shadow_params: vec4<f32>,  // x — тени включены, y — тексель (uv), z — сдвиг по нормали (м), w — bias глубины
     counts: vec4<f32>,         // x — число точечных источников; yzw — туман: начало (м), спад с высотой (1/м), высота
     points: array<PointLight, 4>,
+    // Каскады теней (shadow.wgsl, `SoftShadows`): матрицы и данные слоёв.
+    cascade_view_proj: array<mat4x4<f32>, 4>,
+    cascade_data: array<vec4<f32>, 4>, // x — дальняя граница (глубина вида), y — сдвиг по нормали, z — смещение глубины, w — глубина карты (м)
+    cascade_params: vec4<f32>,         // x — число каскадов (0 — одна карта, как раньше), y — доля перехода, z — фильтр, w — мягкость (тексели)
+    // Небо (`Sky`, atmosphere.rs); sky_sun.x = 0 — небо как раньше.
+    sky_sun: vec4<f32>,                // x — включено, y — cos радиуса диска, z — ореол, w — рассеяние
+    sky_clouds: vec4<f32>,             // x — покрытие, yz — сдвиг ветром, w — масштаб
+    sky_cloud_color: vec4<f32>,        // rgb — цвет облаков, w — звёзды
+    sky_night: vec4<f32>,              // x — луна, y — время (с), z — дешёвый рельеф (пресет Low)
+    // Лампы (lights.wgsl, вариант «с лампами»; без него не читаются).
+    cluster: vec4<f32>,                // xy — размер сцены (пиксели), z — ближняя глубина слоёв, w — масштаб логарифма слоя
+    lights_info: vec4<f32>,            // x — ламп в кадре, y — тексель атласа теней ламп (uv)
+    fill_sky: vec4<f32>,               // rgb — верх заполняющего света, w — включён
+    fill_ground: vec4<f32>,            // rgb — низ (отражённый от земли свет)
 };
 
 // Параметры экземпляра меша приходят вторым вершинным буфером (шаг — экземпляр):
@@ -55,6 +69,35 @@ fn sky_color(dir: vec3<f32>) -> vec3<f32> {
     color += sun * (pow(toward_sun, 8.0) * 0.05 + pow(toward_sun, 64.0) * 0.14);
     let below = clamp(-dir.y * 4.0, 0.0, 1.0);
     return mix(color, globals.sky_horizon.rgb * 0.5, below);
+}
+
+// Рассеяние (компонент `Sky`): светлая дымка у горизонта днём, тёплая полоса заката на
+// стороне солнца и мягкий ореол Ми вокруг него. Только для фона неба (sky.wgsl): туман и
+// ambient его не получают — передний план сохраняет контраст и насыщенность.
+fn sky_scattering(dir: vec3<f32>, up: f32) -> vec3<f32> {
+    let to_sun = -normalize(globals.sun_direction.xyz);
+    let strength = globals.sky_sun.w;
+    let elevation = to_sun.y;
+    let day = smoothstep(0.0, 0.25, elevation);
+    let low_sun = (1.0 - smoothstep(0.0, 0.35, abs(elevation))) * smoothstep(-0.08, 0.02, elevation);
+    let horizon = pow(1.0 - up, 6.0);
+    let flat_dir = normalize(vec3<f32>(dir.x, 0.0, dir.z) + vec3<f32>(1e-4, 0.0, 0.0));
+    let flat_sun = normalize(vec3<f32>(to_sun.x, 0.0, to_sun.z) + vec3<f32>(1e-4, 0.0, 0.0));
+    let side = max(dot(flat_dir, flat_sun), 0.0);
+    let toward = max(dot(dir, to_sun), 0.0);
+    // Сила рассеяния следует за яркостью солнца: слабый «лунный» направленный свет
+    // ночной сцены не делает небо дневным.
+    let sun_luma = dot(globals.sun_color.rgb * globals.sun_color.a, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let lit = clamp(sun_luma / 2.0, 0.0, 1.0);
+    // Дневная дымка: горизонт светлее и чуть голубее.
+    var add = vec3<f32>(0.45, 0.55, 0.65) * horizon * day * 0.2 * lit;
+    // Закат: оранжево-розовая полоса у горизонта на стороне солнца.
+    add += vec3<f32>(1.0, 0.42, 0.16) * horizon * pow(side, 2.0) * low_sun * 1.1 * lit;
+    add += vec3<f32>(0.6, 0.25, 0.35) * pow(1.0 - up, 3.0) * low_sun * 0.25 * lit;
+    // Ореол Ми: ярче у низкого солнца.
+    let sun = globals.sun_color.rgb * globals.sun_color.a;
+    add += sun * pow(toward, 24.0) * (0.04 + 0.08 * low_sun) * globals.sky_sun.z;
+    return add * strength;
 }
 
 // Туман растворяет даль в цвет неба у горизонта (край земли не виден). До `counts.y`

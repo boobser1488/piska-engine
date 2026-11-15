@@ -25,6 +25,11 @@
 // включены обе; игра без физики (или с одной её половиной) не линкует лишний Rapier.
 #[cfg(feature = "3d")]
 mod physics3d;
+/// Короткие формы для скриптов: `ctx.velocity()`, `ctx.raycast(..)`, `ctx.grounded()`.
+#[cfg(any(feature = "2d", feature = "3d"))]
+mod script;
+#[cfg(any(feature = "2d", feature = "3d"))]
+pub use script::PhysicsCtx;
 
 #[cfg(feature = "3d")]
 pub use physics3d::{
@@ -361,8 +366,9 @@ impl Physics2D {
         )
     }
 
-    /// Unity: `Physics2D.Raycast`. Триггеры игнорируются; `ignore` — обычно сам стреляющий.
-    /// Видит мир на момент последнего шага физики.
+    /// Unity: `Physics2D.Raycast`. Триггеры игнорируются; `ignore` — обычно сам стреляющий:
+    /// луч идёт от его имени и не видит слоёв, с которыми его слой не сталкивается по
+    /// матрице слоёв (Project Settings → Physics 2D). Видит мир на момент последнего шага.
     pub fn raycast(
         &self,
         origin: Vec2,
@@ -378,6 +384,9 @@ impl Physics2D {
         let mut filter = rp::QueryFilter::default().exclude_sensors();
         if let Some(entry) = ignore.and_then(|id| self.entries.get(&id)) {
             filter = filter.exclude_rigid_body(entry.body);
+            if !self.layer_matrix.is_default() {
+                filter = filter.groups(self.groups(entry.layer, u32::MAX));
+            }
         }
         let (collider, hit) = self.query.cast_ray_and_get_normal(
             &self.bodies,

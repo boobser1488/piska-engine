@@ -1,0 +1,341 @@
+// Свой шейдер поверхности (`//! kind: surface` и `unlit`): всё, кроме функции пользователя.
+// Перед этим куском — common.wgsl, вариант теней и ламп (как у стандартного шейдера мешей,
+// renderer/variant.rs) и helpers.wgsli; после — параметры (shaders/mod.rs) и код
+// пользователя. Освещение, тени, туман — те же формулы, что в mesh.wgsl: функция,
+// возвращающая `default_surface(in)`, рисует как стандартный материал (тест
+// `default_surface_matches_the_standard_material`).
+
+// ---------------- то, что видит пользователь ----------------
+
+// Вход функции `surface` / `unlit`.
+struct SurfaceIn {
+    uv: vec2<f32>,               // UV меша с тайлингом и сдвигом материала
+    world_position: vec3<f32>,
+    world_normal: vec3<f32>,     // нормаль грани (без карты нормалей), к зрителю у двусторонних
+    view_dir: vec3<f32>,         // от точки к камере, единичный
+    color: vec4<f32>,            // цвет материала × оттенок объекта (`tint`)
+    time: f32,                   // секунды с запуска
+    screen_uv: vec2<f32>,        // 0..1 по экрану, (0, 0) — левый верхний угол
+    object_position: vec3<f32>,  // точка в осях объекта от его опоры (м)
+    front_facing: bool,
+    // Что дал бы стандартный материал (то же возвращает `default_surface(in)`):
+    albedo: vec3<f32>,
+    alpha: f32,
+    normal: vec3<f32>,           // с картой нормалей
+    metallic: f32,
+    roughness: f32,
+    emissive: vec3<f32>,
+    occlusion: f32,
+};
+
+// Результат функции `surface`: из него движок считает свет, тени и туман.
+struct Surface {
+    albedo: vec3<f32>,
+    alpha: f32,
+    normal: vec3<f32>,           // мировая, единичная
+    metallic: f32,
+    roughness: f32,
+    emissive: vec3<f32>,         // яркость больше 1 даёт блум
+    occlusion: f32,              // 1 — без затенения
+};
+
+fn default_surface(in: SurfaceIn) -> Surface {
+    return Surface(in.albedo, in.alpha, in.normal, in.metallic, in.roughness, in.emissive, in.occlusion);
+}
+
+// Вход необязательной функции `vertex` (сдвиг вершин; действует и в тенях).
+struct VertexIn {
+    position: vec3<f32>,         // в осях объекта
+    normal: vec3<f32>,           // в осях объекта
+    uv: vec2<f32>,
+    world_position: vec3<f32>,
+    world_normal: vec3<f32>,
+    object_origin: vec3<f32>,    // мировая точка опоры объекта
+    time: f32,
+};
+
+struct VertexOut {
+    world_position: vec3<f32>,
+    world_normal: vec3<f32>,
+    uv: vec2<f32>,
+};
+
+fn default_vertex(in: VertexIn) -> VertexOut {
+    return VertexOut(in.world_position, in.world_normal, in.uv);
+}
+
+// Свет сцены для своих расчётов (мультяшный свет, `unlit` со своим освещением).
+// Направление на солнце (единичное).
+fn sun_direction() -> vec3<f32> {
+    return -normalize(globals.sun_direction.xyz);
+}
+
+// Цвет солнца × яркость.
+fn sun_color() -> vec3<f32> {
+    return globals.sun_color.rgb;
+}
+
+// Доля солнечного света в точке с учётом теней: 1 — на свету, 0 — в тени.
+fn sun_visibility(in: SurfaceIn) -> f32 {
+    return select(1.0, sun_shadow(in.world_position, in.world_normal), material.flags.y > 0.5);
+}
+
+// Рассеянный свет неба для нормали (как у стандартного материала).
+fn sky_ambient(normal: vec3<f32>) -> vec3<f32> {
+    return fill_ambient(normal, ambient_light(normal));
+}
+
+// Материал (как в mesh.wgsl): текстуры стандартного материала доступны и пользователю.
+struct MaterialParams {
+    uv: vec4<f32>,
+    factors: vec4<f32>,
+    flags: vec4<f32>,
+};
+@group(1) @binding(0) var<uniform> material: MaterialParams;
+@group(1) @binding(1) var material_sampler: sampler;
+@group(1) @binding(2) var base_texture: texture_2d<f32>;
+@group(1) @binding(3) var metallic_roughness_texture: texture_2d<f32>;
+@group(1) @binding(4) var normal_texture: texture_2d<f32>;
+@group(1) @binding(5) var emissive_texture: texture_2d<f32>;
+@group(1) @binding(6) var occlusion_texture: texture_2d<f32>;
+
+// ---------------- движок ----------------
+
+struct EngineSurfaceVarying {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) world_position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) @interpolate(perspective, centroid) uv: vec2<f32>,
+    @location(3) @interpolate(flat) base_color: vec4<f32>,
+    @location(4) @interpolate(flat) emissive: vec4<f32>,
+    @location(5) @interpolate(flat) params: vec4<f32>,
+    @location(6) tangent: vec4<f32>,
+    // Точка и нормаль в осях объекта (см. mesh.wgsl). Если пользователь читает
+    // `object_position`, точка — без мировой опоры (ENGINE_OBJECT_SPACE).
+    @location(7) tile_position: vec3<f32>,
+    @location(8) tile_normal: vec3<f32>,
+};
+
+fn engine_surface_vertex(
+    position: vec3<f32>,
+    normal: vec3<f32>,
+    uv: vec2<f32>,
+    tangent: vec4<f32>,
+    instance: Instance,
+    view_proj: mat4x4<f32>,
+) -> EngineSurfaceVarying {
+    var out: EngineSurfaceVarying;
+    let model = mat4x4<f32>(instance.model_0, instance.model_1, instance.model_2, instance.model_3);
+    var normal_matrix = mat3x3<f32>(instance.normal_0.xyz, instance.normal_1.xyz, instance.normal_2.xyz);
+    // Проход теней не передаёт матрицу нормалей — там хватает матрицы модели.
+    if (dot(instance.normal_0.xyz, instance.normal_0.xyz) == 0.0) {
+        normal_matrix = mat3x3<f32>(model[0].xyz, model[1].xyz, model[2].xyz);
+    }
+    let origin = model[3].xyz;
+    var vin: VertexIn;
+    vin.position = position;
+    vin.normal = normal;
+    vin.uv = uv;
+    vin.world_position = (model * vec4<f32>(position, 1.0)).xyz;
+    vin.world_normal = normal_matrix * normal;
+    vin.object_origin = origin;
+    vin.time = frame.time;
+    let moved = vertex(vin);
+    out.world_position = moved.world_position;
+    out.clip_position = view_proj * vec4<f32>(moved.world_position, 1.0);
+    out.normal = moved.world_normal;
+    out.uv = moved.uv;
+    out.base_color = instance.base_color;
+    out.emissive = instance.emissive;
+    out.params = instance.params;
+    out.tangent = vec4<f32>((model * vec4<f32>(tangent.xyz, 0.0)).xyz, tangent.w);
+    let ax = model[0].xyz / max(length(model[0].xyz), 1e-8);
+    let ay = model[1].xyz / max(length(model[1].xyz), 1e-8);
+    let az = model[2].xyz / max(length(model[2].xyz), 1e-8);
+    let from_origin = moved.world_position - origin;
+    let local = vec3<f32>(dot(ax, from_origin), dot(ay, from_origin), dot(az, from_origin));
+    out.tile_position = select(local + origin, local, ENGINE_OBJECT_SPACE);
+    out.tile_normal = vec3<f32>(dot(ax, out.normal), dot(ay, out.normal), dot(az, out.normal));
+    return out;
+}
+
+@vertex
+fn vs_surface(
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(13) tangent: vec4<f32>,
+    instance: Instance,
+) -> EngineSurfaceVarying {
+    engine_load_params();
+    return engine_surface_vertex(position, normal, uv, tangent, instance, globals.view_proj);
+}
+
+@vertex
+fn vs_surface_shadow(
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(13) tangent: vec4<f32>,
+    instance: Instance,
+) -> EngineSurfaceVarying {
+    engine_load_params();
+    return engine_surface_vertex(position, normal, uv, tangent, instance, globals.light_view_proj);
+}
+
+fn engine_distribution_ggx(n_dot_h: f32, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let a2 = a * a;
+    let d = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+    return a2 / (PI * d * d);
+}
+
+fn engine_geometry_schlick(n_dot_x: f32, k: f32) -> f32 {
+    return n_dot_x / (n_dot_x * (1.0 - k) + k);
+}
+
+fn engine_brdf(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, albedo: vec3<f32>, metallic: f32, roughness: f32) -> vec3<f32> {
+    let h = safe_half(v, l);
+    let n_dot_l = max(dot(n, l), 0.0);
+    let n_dot_v = max(dot(n, v), 1e-4);
+    let n_dot_h = max(dot(n, h), 0.0);
+    let v_dot_h = max(dot(v, h), 0.0);
+    let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+    let fresnel_term = f0 + (1.0 - f0) * pow(1.0 - v_dot_h, 5.0);
+    let k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
+    let specular = engine_distribution_ggx(n_dot_h, roughness)
+        * engine_geometry_schlick(n_dot_l, k) * engine_geometry_schlick(n_dot_v, k)
+        * fresnel_term / (4.0 * n_dot_l * n_dot_v + 1e-4);
+    let diffuse = (1.0 - fresnel_term) * (1.0 - metallic) * albedo / PI;
+    return (diffuse + specular) * n_dot_l;
+}
+
+fn engine_material_color(in: EngineSurfaceVarying, side: f32, uv: vec2<f32>) -> vec4<f32> {
+    let by_uv = textureSample(base_texture, material_sampler, uv);
+    let tile = in.params.z;
+    let n = normalize(in.tile_normal) * side;
+    let p = in.tile_position / max(tile, 1e-3);
+    var weight = pow(abs(n), vec3<f32>(4.0));
+    weight /= (weight.x + weight.y + weight.z);
+    let along_x = textureSample(base_texture, material_sampler, vec2<f32>(p.z, -p.y));
+    let along_y = textureSample(base_texture, material_sampler, p.xz);
+    let along_z = textureSample(base_texture, material_sampler, vec2<f32>(p.x, -p.y));
+    let triplanar = along_x * weight.x + along_y * weight.y + along_z * weight.z;
+    return select(by_uv, triplanar, tile > 0.0);
+}
+
+fn engine_mapped_normal(in: EngineSurfaceVarying, n: vec3<f32>, uv: vec2<f32>, side: f32) -> vec3<f32> {
+    let texel = textureSample(normal_texture, material_sampler, uv).xyz * 2.0 - 1.0;
+    let strength = material.factors.x;
+    let t_raw = in.tangent.xyz - n * dot(n, in.tangent.xyz);
+    let t = t_raw / max(length(t_raw), 1e-6);
+    let b = cross(n, t) * select(1.0, -1.0, in.tangent.w < 0.0) * side;
+    let mapped = normalize(t * texel.x * strength + b * texel.y * strength + n * max(texel.z, 1e-3));
+    return select(n, mapped, strength > 0.0);
+}
+
+fn engine_grid_lines(uv: vec2<f32>, cell: f32, width: f32) -> f32 {
+    let p = uv / cell;
+    let d = abs(fract(p - 0.5) - 0.5) / max(fwidth(p), vec2<f32>(1e-4));
+    return 1.0 - clamp(min(d.x, d.y) - width, 0.0, 1.0);
+}
+
+// Вход пользователя: всё, что стандартный материал посчитал бы для этой точки. Выборки
+// текстур — здесь, в общем потоке управления (до кода пользователя).
+fn engine_surface_input(in: EngineSurfaceVarying, front: bool) -> SurfaceIn {
+    let side = select(-1.0, 1.0, front);
+    let geometric = normalize(in.normal) * side;
+    let uv = in.uv * material.uv.xy + material.uv.zw;
+    let texel = engine_material_color(in, side, uv);
+    let n = engine_mapped_normal(in, geometric, uv, side);
+    let surface_texel = textureSample(metallic_roughness_texture, material_sampler, uv);
+    let glow = textureSample(emissive_texture, material_sampler, uv);
+    let occlusion = mix(1.0, textureSample(occlusion_texture, material_sampler, uv).r, material.factors.y);
+    let axis = abs(n);
+    var grid_uv = in.world_position.xy;
+    if (axis.x > axis.y && axis.x > axis.z) {
+        grid_uv = in.world_position.zy;
+    } else if (axis.y > axis.z) {
+        grid_uv = in.world_position.xz;
+    }
+    let grid = 0.16 * engine_grid_lines(grid_uv, 0.25, 0.0) + 0.34 * engine_grid_lines(grid_uv, 1.0, 0.5);
+    var s: SurfaceIn;
+    s.uv = uv;
+    s.world_position = in.world_position;
+    s.world_normal = geometric;
+    s.view_dir = normalize(globals.camera_position.xyz - in.world_position);
+    s.color = in.base_color;
+    s.time = frame.time;
+    s.screen_uv = in.clip_position.xy * frame.screen.zw;
+    s.object_position = select(vec3<f32>(0.0), in.tile_position, ENGINE_OBJECT_SPACE);
+    s.front_facing = front;
+    s.albedo = in.base_color.rgb * texel.rgb * (1.0 - grid * in.params.w);
+    s.alpha = in.base_color.a * texel.a;
+    s.normal = n;
+    s.metallic = clamp(in.params.x * surface_texel.b, 0.0, 1.0);
+    s.roughness = clamp(in.params.y * surface_texel.g, 0.045, 1.0);
+    s.emissive = in.emissive.rgb * glow.rgb;
+    s.occlusion = occlusion;
+    return s;
+}
+
+@fragment
+fn fs_surface(in: EngineSurfaceVarying, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    engine_load_params();
+    let input = engine_surface_input(in, front);
+    let s = engine_custom_surface(input);
+    let geometric = input.world_normal;
+    let n = normalize(s.normal);
+    let albedo = s.albedo;
+    let metallic = clamp(s.metallic, 0.0, 1.0);
+    let roughness = clamp(s.roughness, 0.045, 1.0);
+    let occlusion = s.occlusion;
+    let v = input.view_dir;
+
+    let to_sun = -normalize(globals.sun_direction.xyz);
+    let shadow = select(1.0, sun_shadow(in.world_position, geometric), material.flags.y > 0.5);
+    var color = engine_brdf(n, v, to_sun, albedo, metallic, roughness) * globals.sun_color.rgb * shadow;
+    let point_count = i32(globals.counts.x);
+    for (var i = 0; i < point_count; i += 1) {
+        let light = globals.points[i];
+        let to_light = light.position_range.xyz - in.world_position;
+        let distance = length(to_light);
+        let reach = clamp(1.0 - distance / max(light.position_range.w, 1e-3), 0.0, 1.0);
+        let falloff = reach * reach / (1.0 + distance * distance);
+        color += engine_brdf(n, v, to_light / max(distance, 1e-4), albedo, metallic, roughness) * light.color.rgb * falloff;
+    }
+    if (EXTENDED_LIGHTS) {
+        let cell = light_cell(in.clip_position, in.world_position);
+        let receive = material.flags.y > 0.5;
+        for (var k = 0u; k < 16u; k += 1u) {
+            let index = cell_light(cell, k);
+            if (index == 255u) {
+                break;
+            }
+            let lamp = local_light(index, in.world_position, geometric, receive);
+            color += engine_brdf(n, v, lamp.direction, albedo, metallic, roughness) * lamp.radiance;
+        }
+    }
+    color += fill_ambient(n, ambient_light(n)) * albedo * (1.0 - metallic) * occlusion;
+    let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+    let reflection = sky_color(reflect(-v, n)) * globals.sky_zenith.w * 2.0;
+    color += reflection * f0 * (1.0 - roughness * 0.75) * occlusion;
+    color = select(color, albedo, ENGINE_UNLIT || material.flags.x > 0.5);
+    color += s.emissive;
+    if (material.flags.w > 0.5 && material.flags.w < 1.5 && s.alpha < material.factors.z) {
+        discard;
+    }
+    let out_alpha = select(1.0, s.alpha, material.flags.w > 1.5);
+    return vec4<f32>(apply_fog(color, in.world_position), out_alpha);
+}
+
+// Тень: тот же сдвиг вершин и тот же `discard` / вырез, что в кадре.
+@fragment
+fn fs_surface_shadow(in: EngineSurfaceVarying, @builtin(front_facing) front: bool) {
+    engine_load_params();
+    let s = engine_custom_surface(engine_surface_input(in, front));
+    let cutoff = select(material.factors.z, 0.5, material.flags.w > 1.5);
+    if (material.flags.w > 0.5 && s.alpha < cutoff) {
+        discard;
+    }
+}

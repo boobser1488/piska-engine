@@ -292,8 +292,10 @@ impl Audio {
         self.clips.remove(name).is_some()
     }
 
+    /// Есть ли клип с таким именем: зарегистрированный (`add_clip`) или встроенный
+    /// (`"sfx:coin"`, `"music:calm"` — список в [`synth::BUILTIN`](crate::synth::BUILTIN)).
     pub fn has_clip(&self, name: &str) -> bool {
-        self.clips.contains_key(name)
+        self.clips.contains_key(name) || crate::synth::BUILTIN.contains(&name)
     }
 
     pub fn clip(&self, name: &str) -> Option<Arc<AudioClip>> {
@@ -319,13 +321,23 @@ impl Audio {
                 if name.is_empty() {
                     return None;
                 }
-                let found = self.clips.get(&name).cloned();
+                let mut found = self.clips.get(&name).cloned();
+                if found.is_none() {
+                    // Встроенный звук (`"sfx:coin"`): синтезируется при первом обращении и
+                    // запоминается под своим именем — дальше это тот же клип (музыка не
+                    // перезапускается, если её включают снова).
+                    if let Some(clip) = crate::synth::builtin(&name) {
+                        let clip = Arc::new(clip);
+                        self.clips.insert(name.clone(), Arc::clone(&clip));
+                        found = Some(clip);
+                    }
+                }
                 if found.is_none() {
                     self.warn_once(
                         format!("name:{name}"),
                         format!(
-                            "audio clip `{name}` is not registered. Call `audio.add_clip(\"{name}\", clip)` first{}",
-                            did_you_mean_clip(&name, self.clips.keys().map(String::as_str))
+                            "audio clip `{name}` is not registered. Call `audio.add_clip(\"{name}\", clip)` first, use a file path (\"sounds/hit.wav\") or a built-in sound (\"sfx:coin\", \"music:calm\"){}",
+                            did_you_mean_clip(&name, self.clips.keys().map(String::as_str).chain(crate::synth::BUILTIN.iter().copied()))
                         ),
                     );
                 }

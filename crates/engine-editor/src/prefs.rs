@@ -55,6 +55,8 @@ pub struct Preferences {
     pub project_ui: crate::project_nav::ProjectPrefs,
     /// Переназначенные горячие клавиши (Preferences → Shortcuts), только отличия.
     pub shortcuts: crate::shortcuts::Keymap,
+    /// Вкладка Code (Preferences → Code Editor).
+    pub code: crate::code_prefs::CodePrefs,
 
     // --- General ---
     /// Язык интерфейса (Preferences → General → Language; общий для редактора, хаба и
@@ -151,6 +153,7 @@ impl Default for Preferences {
             recent_scenes: Vec::new(),
             project_ui: Default::default(),
             shortcuts: Default::default(),
+            code: Default::default(),
             language: None,
             undo_limit: 100,
             autosave_on_play: false,
@@ -314,6 +317,7 @@ impl Preferences {
                     }
                 }
                 other if other.starts_with("pj_") => prefs.project_ui.set(other, value),
+                other if other.starts_with("code_") => prefs.code.set(other, value),
                 other if other.starts_with("shortcut.") => prefs.shortcuts.parse_entry(&other["shortcut.".len()..], value),
                 "language" => prefs.language = engine_i18n::Language::from_code(value),
                 "undo_limit" => set_num(&mut prefs.undo_limit, value, 1, 10_000),
@@ -375,6 +379,7 @@ impl Preferences {
         ));
         text.push_str(&self.project_ui.to_text());
         text.push_str(&self.shortcuts.to_text());
+        text.push_str(&self.code.to_text());
         let mut line = |key: &str, value: String| text.push_str(&format!("    {key}: {value},\n"));
         line("language", self.language.map_or("auto", |l| l.code()).to_string());
         line("undo_limit", self.undo_limit.to_string());
@@ -532,6 +537,7 @@ impl crate::state::Editor {
         console.error_pause = prefs.console_error_pause;
         console.set_max(prefs.console_max);
         self.profiler.set_history(prefs.profiler_history);
+        self.apply_code_prefs();
     }
 
     /// Перед входом в Play: автосохранение сцены и очистка Console (если включены).

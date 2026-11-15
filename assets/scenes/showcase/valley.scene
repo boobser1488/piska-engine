@@ -6,6 +6,10 @@
         (name: "Lighting", components: [
             (kind: "Environment", fields: {"ambient": Float(0.45), "bloom": Float(0.05), "fog_density": Float(0.001), "shadow_distance": Float(260.0), "vignette": Float(0.2)}),
             (kind: "Fog", fields: {"height_falloff": Float(0.004), "start": Float(120.0)}),
+            (kind: "SoftShadows"),
+            (kind: "Sky", fields: {"clouds": Float(0.35)}),
+            (kind: "AmbientOcclusion"),
+            (kind: "PostQuality"),
             (kind: "ColorGrading", fields: {"contrast": Float(1.05), "saturation": Float(1.12), "temperature": Float(0.04)}),
         ], children: [
             (name: "Sun", transform: (rotation: (-42.625, -94.399, 0.0)), components: [

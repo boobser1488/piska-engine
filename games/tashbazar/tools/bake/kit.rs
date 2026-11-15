@@ -575,6 +575,12 @@ impl Lab {
         self.add(env, Environment { ambient: 0.5, fog_density: 0.0022, exposure: 1.0, bloom: 0.035, vignette: 0.16, shadow_distance: 70.0 });
         self.add(env, SkyColors { enabled: true, zenith: Color::rgb(0.16, 0.36, 0.74), horizon: Color::rgb(0.80, 0.78, 0.70), blend: 0.9 });
         self.add(env, Fog { enabled: true, start: 35.0, height: 0.0, height_falloff: 0.03 });
+        // Новая графика движка (docs/api/graphics.md): каскадные мягкие тени — длинные улицы
+        // в тени до конца, небо с солнцем и облаками, затенение щелей у стен и ящиков.
+        // Пресет качества игрока по-прежнему ограничивает всё это (Low — без теней и AO).
+        self.add(env, SoftShadows::default());
+        self.add(env, Sky { clouds: 0.3, cloud_speed: 3.0, ..Sky::default() });
+        self.add(env, AmbientOcclusion { intensity: 0.5, ..AmbientOcclusion::default() });
         self.add(
             env,
             ColorGrading {

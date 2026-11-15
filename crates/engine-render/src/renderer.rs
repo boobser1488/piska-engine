@@ -20,7 +20,7 @@ use crate::components::{
 };
 use crate::grid::SceneGrid;
 use crate::draw2d::{
-    push_quad, sprite_corners, sprite_uv, Blend, CameraBasis, DrawRun, SpriteVertex, TexRef,
+    push_quad, sprite_corners, sprite_uv, Blend, CameraBasis, DrawRun, SpriteVertex, TexRef, QUAD_VERTICES,
 };
 use crate::particles::{ParticleBlend, ParticleShape};
 use crate::post::{PostChain, PostSettings, HDR_FORMAT};
@@ -35,12 +35,16 @@ fn finite_or(value: f32, fallback: f32) -> f32 {
 }
 
 mod batch;
+mod custom;
 mod frame;
 mod grid_pass;
+mod lights_pass;
 mod material;
 mod overlay_pass;
 mod terrain_pass;
+mod variant;
 mod walk;
+mod water_pass;
 
 pub use terrain_pass::TerrainStats;
 
@@ -59,6 +63,8 @@ const SHADOW_SIZE: u32 = 2048;
 /// Сглаживание краёв: 4 выборки на пиксель (MSAA).
 const SAMPLES: u32 = 4;
 const MAX_POINT_LIGHTS: usize = 4;
+use crate::soft_shadows::{fit_cascades, Cascade, CascadeSetup, SoftShadows, MAX_CASCADES};
+use crate::lights::{LightFrame, LightSetup, LightShadows, LocalLight, SpotLight};
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -83,6 +89,17 @@ struct Globals {
     shadow_params: [f32; 4],
     counts: [f32; 4],
     points: [[f32; 8]; MAX_POINT_LIGHTS],
+    cascade_view_proj: [[f32; 16]; MAX_CASCADES],
+    cascade_data: [[f32; 4]; MAX_CASCADES],
+    cascade_params: [f32; 4],
+    sky_sun: [f32; 4],
+    sky_clouds: [f32; 4],
+    sky_cloud_color: [f32; 4],
+    sky_night: [f32; 4],
+    cluster: [f32; 4],
+    lights_info: [f32; 4],
+    fill_sky: [f32; 4],
+    fill_ground: [f32; 4],
 }
 
 struct GpuTexture {
@@ -161,6 +178,16 @@ pub struct RenderStats {
     /// Сколько разных групп привязок материалов создано (одна на набор текстур и общих
     /// параметров материала).
     pub material_bind_groups: u32,
+    /// Из `extract_ms` — обход сцены: мировые матрицы, отсечение, сбор мешей и спрайтов, мс.
+    pub walk_ms: f32,
+    /// Отправка команд кадра в очередь GPU (`queue.submit`), мс.
+    pub submit_ms: f32,
+    /// Смены состояния в проходах мешей, теней и спрайтов: конвейер, группа привязок,
+    /// вершинный / индексный буфер.
+    pub state_changes: u32,
+    /// Байт, загруженных на GPU за кадр (вершины спрайтов, экземпляры мешей, параметры
+    /// кадра); без однократной загрузки текстур и мешей.
+    pub upload_bytes: u64,
 }
 
 /// Откуда и как смотреть на мир в этом кадре. Обычно её даёт камера сцены
@@ -317,9 +344,27 @@ pub struct Renderer {
     globals_buffer: wgpu::Buffer,
     /// Только параметры кадра — для спрайтов, неба и прохода теней.
     globals_bind_group: wgpu::BindGroup,
-    /// Параметры кадра + карта теней — для мешей.
-    lit_bind_group: wgpu::BindGroup,
+    /// Параметры кадра + карта теней — для мешей и рельефа, по варианту шейдера
+    /// (renderer/variant.rs: одна карта или каскады).
+    lit_binds: Vec<Option<wgpu::BindGroup>>,
+    /// Вариант шейдера мешей и рельефа этого кадра.
+    frame_variant: usize,
+    /// Карта теней для чтения (все слои).
     shadow_view: wgpu::TextureView,
+    /// Слои карты теней — цели проходов теней (слой 0 — одна карта без каскадов).
+    shadow_layers: Vec<wgpu::TextureView>,
+    shadow_sampler: wgpu::Sampler,
+    lit_layouts: Vec<wgpu::BindGroupLayout>,
+    globals_layout: wgpu::BindGroupLayout,
+    /// Параметры кадра для прохода теней каждого каскада (своя `light_view_proj`).
+    cascade_globals: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
+    /// Параметры кадра для граней теней ламп (своя `light_view_proj`).
+    face_globals: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
+    /// Текстуры ламп (lights.rs) — с первого кадра «с лампами».
+    lights_gpu: Option<lights_pass::LightsGpu>,
+    /// Лампы кадра: сбор при обходе и раскладка по кластерам (буферы переиспользуются).
+    local_lights: Vec<LocalLight>,
+    light_frame: LightFrame,
 
     /// Экземпляры мешей кадра (второй вершинный буфер).
     instance_buffer: wgpu::Buffer,
@@ -357,6 +402,8 @@ pub struct Renderer {
 
     sprite_vertices: wgpu::Buffer,
     sprite_capacity: usize,
+    /// Индексы квадов (0 1 2 0 2 3 со сдвигом 4 на квад), на `sprite_capacity / 4` квадов.
+    quad_indices: wgpu::Buffer,
     /// Рабочие буферы спрайтов: переиспользуются от кадра к кадру без аллокаций.
     sprite_scratch: SpriteScratch,
     /// Многовыборочные цвет и глубина под размер цели.
@@ -368,6 +415,18 @@ pub struct Renderer {
     grid: grid_pass::GridPass,
     /// Рельефы и вода, см. terrain_pass.rs.
     terrain: terrain_pass::TerrainPass,
+    /// Вода с эффектами (`WaterEffects`), см. water_pass.rs.
+    water: water_pass::WaterPass,
+    /// Счётчик смен состояния кадра (`RenderStats::state_changes`); проходы получают
+    /// `&self`, поэтому атомарный.
+    state_changes: std::sync::atomic::AtomicU32,
+    /// AO и контур (post_fx.rs) — создаются при первом кадре, где они нужны.
+    post_fx: Option<crate::post_fx::PostFx>,
+    fx_supported: bool,
+    /// Растёт при каждом пересоздании многовыборочной глубины (группы эффектов — заново).
+    depth_generation: u32,
+    /// Свои шейдеры (`.shader`, renderer/custom.rs) — создаются при первом из них.
+    custom: Option<Box<custom::CustomShaders>>,
 }
 
 /// Буферы, которые спрайтовая часть кадра заполняет заново, но не пересоздаёт.
@@ -429,11 +488,10 @@ impl Renderer {
             label: Some("sprite shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("sprite.wgsl").into()),
         });
+        // Вариант 0 (одна карта теней); остальные — при первом кадре, которому нужны.
         let mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("mesh shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                concat!(include_str!("common.wgsl"), include_str!("mesh.wgsl")).into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(variant::mesh_source(0).into()),
         });
         let sky_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sky and shadow shader"),
@@ -456,28 +514,7 @@ impl Renderer {
             label: Some("globals layout"),
             entries: &[uniform_entry(0, false)],
         });
-        let lit_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("globals + shadow map layout"),
-            entries: &[
-                uniform_entry(0, false),
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
-                    count: None,
-                },
-            ],
-        });
+        let lit_layouts: Vec<wgpu::BindGroupLayout> = (0..variant::COUNT).map(|v| variant::lit_layout(&device, v)).collect();
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("texture layout"),
             entries: &[
@@ -515,22 +552,8 @@ impl Renderer {
             }],
         });
 
-        // Карта теней солнца.
-        let shadow_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("shadow map"),
-            size: wgpu::Extent3d {
-                width: SHADOW_SIZE,
-                height: SHADOW_SIZE,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let shadow_view = shadow_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Карта теней солнца: массив слоёв (каскады), пока каскадов нет — один слой.
+        let (shadow_view, shadow_layers) = create_shadow_maps(&device, 1);
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("shadow sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -538,24 +561,9 @@ impl Renderer {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..wgpu::SamplerDescriptor::default()
         });
-        let lit_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("globals + shadow map"),
-            layout: &lit_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: globals_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&shadow_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
-                },
-            ],
-        });
+        let shadow_views = variant::ShadowViews { all: &shadow_view, first: &shadow_layers[0], sampler: &shadow_sampler, lights: None };
+        let lit_binds: Vec<Option<wgpu::BindGroup>> =
+            (0..variant::COUNT).map(|v| variant::lit_bind_group(&device, &lit_layouts[v], v, &globals_buffer, &shadow_views)).collect();
 
         let depth_state = |write: bool, compare: wgpu::CompareFunction| wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
@@ -640,15 +648,12 @@ impl Renderer {
             device: &device,
             mesh_shader: &mesh_shader,
             sky_shader: &sky_shader,
-            lit_layout: &lit_layout,
+            lit_layout: &lit_layouts[0],
             globals_layout: &globals_layout,
             vertex: mesh_vertex_layout.clone(),
-            instance: instance_layout(&INSTANCE_ATTRIBUTES),
             instance_model: instance_layout(&INSTANCE_MODEL_ATTRIBUTES),
             instance_cutout: instance_layout(&material::INSTANCE_CUTOUT_ATTRIBUTES),
-            hdr_format: HDR_FORMAT,
             depth_format: DEPTH_FORMAT,
-            samples: SAMPLES,
         });
 
         // --- тени: только глубина, со смещением против «акне» ---
@@ -774,13 +779,18 @@ impl Renderer {
         };
         let soft_disc = disc(&|d| (1.0 - d * d).max(0.0).powi(2));
         let hard_disc = disc(&|d| (1.0 - d) * 16.0);
-        let post = PostChain::new(&device, format);
+        let post = PostChain::new(&device, &queue, format);
+        // Эффекты по глубине читают многовыборочную глубину — в WebGL2 так нельзя (там лимиты
+        // `downlevel_webgl2_defaults`, без storage-буферов): эффекты молча выключены.
+        let fx_supported = device.limits().max_storage_buffers_per_shader_stage > 0;
         let overlay = overlay_pass::OverlayPass::new(&device, format, &texture_layout);
         let grid = grid_pass::GridPass::new(&device, &globals_layout);
-        let terrain = terrain_pass::TerrainPass::new(&device, &lit_layout, &globals_layout);
+        let terrain = terrain_pass::TerrainPass::new(&device, &lit_layouts[0], &globals_layout);
+        let water = water_pass::WaterPass::new(&device);
 
-        let sprite_capacity = 6 * 256;
+        let sprite_capacity = QUAD_VERTICES * 256;
         let sprite_vertices = create_sprite_buffer(&device, sprite_capacity);
+        let quad_indices = create_quad_indices(&device, sprite_capacity / QUAD_VERTICES);
 
         let instance_capacity = 256;
         let instance_buffer = create_instance_buffer(&device, instance_capacity);
@@ -796,8 +806,18 @@ impl Renderer {
             sky_pipeline,
             globals_buffer,
             globals_bind_group,
-            lit_bind_group,
+            lit_binds,
+            frame_variant: 0,
             shadow_view,
+            shadow_layers,
+            shadow_sampler,
+            lit_layouts,
+            globals_layout,
+            cascade_globals: Vec::new(),
+            face_globals: Vec::new(),
+            lights_gpu: None,
+            local_lights: Vec::new(),
+            light_frame: LightFrame::default(),
             instance_buffer,
             instance_capacity,
             mesh_scratch: MeshScratch::default(),
@@ -823,13 +843,65 @@ impl Renderer {
             failed_meshes: HashSet::new(),
             sprite_vertices,
             sprite_capacity,
+            quad_indices,
             sprite_scratch: SpriteScratch::default(),
             depth: None,
             warned_no_camera: false,
             overlay,
             grid,
             terrain,
+            water,
+            state_changes: std::sync::atomic::AtomicU32::new(0),
+            post_fx: None,
+            fx_supported,
+            depth_generation: 0,
+            custom: None,
         }
+    }
+
+    /// Карта теней не меньше чем из `layers` слоёв (каскады); пересоздаётся один раз.
+    fn ensure_shadow_layers(&mut self, layers: usize) {
+        if self.shadow_layers.len() >= layers {
+            return;
+        }
+        let (view, each) = create_shadow_maps(&self.device, MAX_CASCADES as u32);
+        self.shadow_view = view;
+        self.shadow_layers = each;
+        self.rebuild_lit_binds();
+    }
+
+    /// Группы привязок освещённых шейдеров всех вариантов (после смены карты теней или
+    /// текстур ламп).
+    fn rebuild_lit_binds(&mut self) {
+        let views = variant::ShadowViews {
+            all: &self.shadow_view,
+            first: &self.shadow_layers[0],
+            sampler: &self.shadow_sampler,
+            lights: self.lights_gpu.as_ref().map(|l| l.views()),
+        };
+        self.lit_binds = (0..variant::COUNT)
+            .map(|v| variant::lit_bind_group(&self.device, &self.lit_layouts[v], v, &self.globals_buffer, &views))
+            .collect();
+    }
+
+    /// Собрать конвейеры варианта шейдера мешей и рельефа, если их ещё нет
+    /// (renderer/variant.rs).
+    fn ensure_variant(&mut self, variant: usize) {
+        if self.mesh_pass.pipelines[variant].is_none() {
+            let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("mesh shader variant"),
+                source: wgpu::ShaderSource::Wgsl(variant::mesh_source(variant).into()),
+            });
+            self.mesh_pass.pipelines[variant] =
+                Some(material::main_pipelines(&self.device, &module, &self.lit_layouts[variant], &self.mesh_pass.layout));
+        }
+        self.terrain.ensure_variant(&self.device, variant, &self.lit_layouts[variant]);
+        self.frame_variant = variant;
+    }
+
+    /// Учесть `n` смен состояния в статистике кадра.
+    fn count_state(&self, n: u32) {
+        self.state_changes.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn device(&self) -> &wgpu::Device {
@@ -853,6 +925,7 @@ impl Renderer {
         self.meshes.retain(|key, _| matches!(key, MeshKey::Shape(_)));
         self.failed_meshes.clear();
         self.mesh_pass.clear();
+        self.forget_custom_binds();
     }
 
     /// Вид из камеры сцены: активная камера с наибольшим приоритетом.
@@ -1043,7 +1116,7 @@ impl Renderer {
         if self.depth.as_ref().is_some_and(|(_, _, existing)| *existing == size) {
             return;
         }
-        let texture = |label, format| {
+        let texture = |label, format, extra: wgpu::TextureUsages| {
             self.device
                 .create_texture(&wgpu::TextureDescriptor {
                     label: Some(label),
@@ -1056,14 +1129,16 @@ impl Renderer {
                     sample_count: SAMPLES,
                     dimension: wgpu::TextureDimension::D2,
                     format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | extra,
                     view_formats: &[],
                 })
                 .create_view(&wgpu::TextureViewDescriptor::default())
         };
-        let color = texture("msaa color", HDR_FORMAT);
-        let depth = texture("msaa depth", DEPTH_FORMAT);
+        let readable = if self.fx_supported { wgpu::TextureUsages::TEXTURE_BINDING } else { wgpu::TextureUsages::empty() };
+        let color = texture("msaa color", HDR_FORMAT, wgpu::TextureUsages::empty());
+        let depth = texture("msaa depth", DEPTH_FORMAT, readable);
         self.depth = Some((color, depth, size));
+        self.depth_generation = self.depth_generation.wrapping_add(1);
     }
 
     /// Нарисовать мир в `target` глазами камеры сцены. Мир только читается.
@@ -1106,6 +1181,8 @@ impl Renderer {
             converted = CameraView { view_proj: crate::depth::to_reversed_depth(view.view_proj), ..*view };
             &converted
         };
+        // Свои шейдеры: файлы, изменённые на диске, — перечитать (горячая перезагрузка).
+        self.poll_custom_shaders();
         let extract_clock = Stopwatch::start();
         let assets = world.resources.get::<AssetDatabase>();
         let scene = &world.scene;
@@ -1129,6 +1206,17 @@ impl Renderer {
         let runtime_materials = world.resources.get::<Materials>();
         let mut frame_materials = FrameMaterials::default();
 
+        // Лампы (lights.rs): нужен ли вариант «с лампами» и сколько ламп брать.
+        let light_setup = {
+            let g = world.resources.get::<GraphicsSettings>();
+            LightSetup::of(scene, g.map_or(255, |g| g.max_lights), g.map_or(2, |g| g.light_shadows))
+        };
+        let mut local_lights = std::mem::take(&mut self.local_lights);
+        local_lights.clear();
+        // Свои шейдеры спрайтов: без компонента `SpriteShader` в сцене спрайты их не ищут.
+        let sprite_shaders = scene.count_with::<crate::SpriteShader>() > 0;
+        // Значения своего шейдера у отдельных объектов (`MaterialParams`) — так же.
+        let material_params = scene.count_with::<crate::MaterialParams>() > 0;
         let mut walk = SceneWalk::new(scene, std::mem::take(&mut self.walk_stack));
         while let Some((_, object)) = walk.next() {
             let parts = RenderParts::of(object);
@@ -1151,6 +1239,19 @@ impl Renderer {
                     LightKind::Directional => {}
                     LightKind::Point => {
                         let position = matrix.w_axis.truncate();
+                        if light_setup.extended {
+                            let spot = object.get::<SpotLight>().map(LocalLight::spot_cone);
+                            let shadows = object.get::<LightShadows>().filter(|s| s.enabled).map(|s| finite_or(s.bias, 0.03).clamp(0.0, 1.0));
+                            local_lights.push(LocalLight {
+                                position,
+                                range: light.range.max(0.01),
+                                color,
+                                direction: matrix.transform_vector3(Vec3::NEG_Z).normalize_or(Vec3::NEG_Z),
+                                spot,
+                                shadows,
+                                distance2: position.distance_squared(view.position),
+                            });
+                        }
                         points.push((
                             position.distance_squared(view.position),
                             [
@@ -1182,13 +1283,18 @@ impl Renderer {
                     let inset = self.cached_inset(&mut insets, guid, assets);
                     let start = scratch.raw.len() as u32;
                     push_quad(&mut scratch.raw, corners, sprite_uv(sprite, inset), sprite.color.to_array());
+                    let blend = if sprite_shaders {
+                        object.get::<crate::SpriteShader>().and_then(|s| self.sprite_shader_bind(s, assets)).map_or(Blend::Alpha, Blend::Custom)
+                    } else {
+                        Blend::Alpha
+                    };
                     scratch.runs.push(DrawRun {
                         sort_key: (sprite.sorting_layer, sprite.order),
                         depth: corners[0].z,
                         texture: guid.map_or(TexRef::White, TexRef::Asset),
-                        blend: Blend::Alpha,
+                        blend,
                         start,
-                        len: 6,
+                        len: QUAD_VERTICES as u32,
                     });
                     scratch.bounds.push((min, max));
                 } else {
@@ -1293,7 +1399,8 @@ impl Renderer {
                     }
                 }
                 if mesh.uses_material_assets() {
-                    let object = MaterialObject { mesh, key, mesh_id, matrix, visible, world_bounds };
+                    let params = if material_params { Self::object_params(object) } else { None };
+                    let object = MaterialObject { mesh, key, mesh_id, matrix, visible, world_bounds, params };
                     self.push_material_parts(&mut frame.items, &mut frame_materials, object, assets, runtime_materials);
                     continue;
                 }
@@ -1323,6 +1430,7 @@ impl Renderer {
             }
         }
         stats.world_matrices = walk.computed;
+        stats.walk_ms = extract_clock.ms();
         self.walk_stack = walk.into_stack();
         let mut environment = environment.unwrap_or_default();
         // Качество графики (Project Settings → Graphics, `ctx.set_quality`): ресурс читается
@@ -1370,6 +1478,8 @@ impl Renderer {
             .lerp(Vec3::new(0.95, 0.50, 0.25), sunset * 0.7);
         // Свои цвета неба сцены (компонент `SkyColors`, sky_colors.rs).
         let (sky_zenith, sky_horizon) = crate::sky_colors::SkyColors::apply(scene, sky_zenith, sky_horizon);
+        // Небо `Sky` (atmosphere.rs): солнце, рассеяние, облака, луна; без компонента — нули.
+        let sky = crate::atmosphere::Sky::shader_params(scene, world.time.elapsed, true);
 
         let caster_bounds = frame
             .items
@@ -1416,9 +1526,49 @@ impl Renderer {
             shadow_params = [1.0, 1.0 / SHADOW_SIZE as f32, texel * 1.6 + 0.01, 0.0006];
         }
 
+        // Каскады (`SoftShadows`): только для перспективной камеры; иначе — одна карта.
+        let (max_cascades, max_filter) = quality_shadow_caps(graphics);
+        let cascades: Option<(CascadeSetup, Vec<Cascade>)> = if shadows {
+            SoftShadows::setup(scene, max_cascades, max_filter).and_then(|setup| {
+                let casters = caster_bounds.unwrap_or((Vec3::ZERO, Vec3::ZERO));
+                fit_cascades(view.view_proj, view.position, sun_direction, &setup, environment.shadow_distance, casters, SHADOW_SIZE)
+                    .map(|list| (setup, list))
+            })
+        } else {
+            None
+        };
+        if let Some((_, list)) = &cascades {
+            self.ensure_shadow_layers(list.len());
+        }
+        // Лампы: раскладка по кластерам, тени ламп, текстуры на GPU.
+        if light_setup.extended {
+            self.light_frame.build(&mut local_lights, view.view_proj, &light_setup);
+            let mut rebuild = false;
+            if self.lights_gpu.is_none() {
+                self.lights_gpu = Some(lights_pass::LightsGpu::new(&self.device));
+                rebuild = true;
+            }
+            if !self.light_frame.shadow_faces.is_empty() {
+                rebuild |= self.lights_gpu.as_mut().is_some_and(|l| l.ensure_atlas(&self.device));
+            }
+            if rebuild {
+                self.rebuild_lit_binds();
+            }
+        } else {
+            self.light_frame.shadow_faces.clear();
+            self.light_frame.light_count = 0;
+        }
+        self.local_lights = local_lights;
+        // Вариант шейдера: без каскадов — одна карта (дешевле, как до `SoftShadows`);
+        // лампы — только если сцена их просит.
+        let cascade_bit = if cascades.is_some() { variant::CASCADES } else { 0 };
+        let lights_bit = if light_setup.extended { variant::LIGHTS } else { 0 };
+        self.ensure_variant(cascade_bit | lights_bit);
+
         points.sort_by(|a, b| a.0.total_cmp(&b.0));
         let mut point_data = [[0.0; 8]; MAX_POINT_LIGHTS];
-        let point_count = points.len().min(MAX_POINT_LIGHTS);
+        // С лампами (lights.rs) все точечные идут через кластеры, четыре uniform-лампы не нужны.
+        let point_count = if light_setup.extended { 0 } else { points.len().min(MAX_POINT_LIGHTS) };
         for (slot, (_, data)) in point_data.iter_mut().zip(&points) {
             *slot = *data;
         }
@@ -1461,7 +1611,62 @@ impl Renderer {
 
         // Тени: только те, кто попадает в объём солнца (остальные в карту не пишут).
         frame.shadow_batches.clear();
-        if shadows {
+        for batches in &mut frame.cascade_batches {
+            batches.clear();
+        }
+        if let Some((_, list)) = &cascades {
+            while frame.cascade_batches.len() < list.len() {
+                frame.cascade_batches.push(Vec::new());
+            }
+            for (index, cascade) in list.iter().enumerate() {
+                let light_frustum = Frustum::from_view_proj(cascade.view_proj);
+                frame.order.clear();
+                frame.order.extend((0..frame.items.len() as u32).filter(|&i| {
+                    let item = &frame.items[i as usize];
+                    item.casts_shadows && light_frustum.intersects_aabb(item.world_bounds.0, item.world_bounds.1)
+                }));
+                {
+                    let items = &frame.items;
+                    frame.order.sort_by_key(|&i| {
+                        let item = &items[i as usize];
+                        let bind = if item.shadow == SHADOW_CUTOUT { item.bind } else { 0 };
+                        (item.shadow, item.mesh_id, item.part, bind)
+                    });
+                }
+                build_batches(&frame.items, &frame.order, &mut frame.instances, &mut frame.cascade_batches[index], true);
+                stats.shadow_casters += frame.order.len() as u32;
+            }
+        }
+        // Грани теней ламп: заслонители в пирамиде грани и в шаре лампы.
+        for batches in &mut frame.face_batches {
+            batches.clear();
+        }
+        while frame.face_batches.len() < self.light_frame.shadow_faces.len() {
+            frame.face_batches.push(Vec::new());
+        }
+        for (index, face) in self.light_frame.shadow_faces.iter().enumerate() {
+            let face_frustum = Frustum::from_view_proj(face.view_proj);
+            let (center, radius) = (face.position, face.range);
+            frame.order.clear();
+            frame.order.extend((0..frame.items.len() as u32).filter(|&i| {
+                let item = &frame.items[i as usize];
+                let (min, max) = item.world_bounds;
+                item.casts_shadows
+                    && center.clamp(min, max).distance_squared(center) <= radius * radius
+                    && face_frustum.intersects_aabb(min, max)
+            }));
+            {
+                let items = &frame.items;
+                frame.order.sort_by_key(|&i| {
+                    let item = &items[i as usize];
+                    let bind = if item.shadow == SHADOW_CUTOUT { item.bind } else { 0 };
+                    (item.shadow, item.mesh_id, item.part, bind)
+                });
+            }
+            build_batches(&frame.items, &frame.order, &mut frame.instances, &mut frame.face_batches[index], true);
+            stats.shadow_casters += frame.order.len() as u32;
+        }
+        if cascades.is_none() && shadows {
             let light_frustum = Frustum::from_view_proj(light_view_proj);
             frame.order.clear();
             frame.order.extend((0..frame.items.len() as u32).filter(|&i| {
@@ -1515,7 +1720,7 @@ impl Renderer {
         }
         let order = self.batcher.build(&scratch.runs, &scratch.rects, &mut scratch.batches);
         let vertex_count: usize = scratch.runs.iter().map(|run| run.len as usize).sum();
-        let quad_count = vertex_count as u32 / 6;
+        let quad_count = (vertex_count / QUAD_VERTICES) as u32;
         stats.extract_ms = extract_clock.ms();
 
         // ---------------- 5. Данные на GPU ----------------
@@ -1525,6 +1730,7 @@ impl Renderer {
         if vertex_count > self.sprite_capacity {
             self.sprite_capacity = vertex_count.next_power_of_two();
             self.sprite_vertices = create_sprite_buffer(&self.device, self.sprite_capacity);
+            self.quad_indices = create_quad_indices(&self.device, self.sprite_capacity / QUAD_VERTICES);
         }
         let byte_count = (vertex_count * std::mem::size_of::<SpriteVertex>()) as u64;
         if let Some(size) = wgpu::BufferSize::new(byte_count) {
@@ -1539,6 +1745,21 @@ impl Renderer {
                 }
             }
         }
+        // Масштаб разрешения сцены (`GraphicsSettings::render_scale`): сцена — в меньшую
+        // (или большую) цель, сведение кадра растягивает её до `target`.
+        let scale = graphics.map_or(1.0, |g| finite_or(g.render_scale, 1.0).clamp(0.25, 2.0));
+        let (scene_width, scene_height) = if (scale - 1.0).abs() < 1e-3 {
+            (width, height)
+        } else {
+            (((width as f32 * scale).round() as u32).max(1), ((height as f32 * scale).round() as u32).max(1))
+        };
+        let (fill_sky, fill_ground) = match &light_setup.fill {
+            Some(fill) => {
+                let (up, down) = crate::lights::fill_colors(fill, sky_zenith, sky_horizon, sun_direction, sun_color);
+                (up.extend(1.0).to_array(), down.extend(0.0).to_array())
+            }
+            None => ([0.0; 4], [0.0; 4]),
+        };
         let globals = Globals {
             view_proj: view.view_proj.to_cols_array(),
             inv_view_proj: view.view_proj.inverse().to_cols_array(),
@@ -1551,9 +1772,56 @@ impl Renderer {
             shadow_params,
             counts: [point_count as f32, fog_shape[0], fog_shape[1], fog_shape[2]],
             points: point_data,
+            cascade_view_proj: [[0.0; 16]; MAX_CASCADES],
+            cascade_data: [[0.0; 4]; MAX_CASCADES],
+            cascade_params: [0.0; 4],
+            sky_sun: sky.sun,
+            sky_clouds: sky.clouds,
+            sky_cloud_color: sky.cloud_color,
+            sky_night: [
+                sky.night[0],
+                sky.night[1],
+                // Дешёвый рельеф на пресете Low (terrain.wgsl).
+                if graphics.is_some_and(|g| !g.terrain_detail) { 1.0 } else { 0.0 },
+                sky.night[3],
+            ],
+            cluster: crate::lights::cluster_params(scene_width, scene_height),
+            lights_info: [self.light_frame.light_count as f32, 1.0 / crate::lights::ATLAS_SIZE as f32, 0.0, 0.0],
+            fill_sky,
+            fill_ground,
         };
+        let mut globals = globals;
+        if let Some((setup, list)) = &cascades {
+            for (i, cascade) in list.iter().enumerate() {
+                globals.cascade_view_proj[i] = cascade.view_proj.to_cols_array();
+                globals.cascade_data[i] = cascade.data;
+            }
+            globals.cascade_params = [list.len() as f32, setup.blend, setup.filter as f32, setup.softness];
+        }
         self.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
+        // Проход теней каждого каскада читает свою матрицу из `light_view_proj`.
+        if let Some((_, list)) = &cascades {
+            while self.cascade_globals.len() < list.len() {
+                let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("cascade globals"),
+                    size: std::mem::size_of::<Globals>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("cascade globals"),
+                    layout: &self.globals_layout,
+                    entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }],
+                });
+                self.cascade_globals.push((buffer, bind));
+            }
+            for (cascade, (buffer, _)) in list.iter().zip(&self.cascade_globals) {
+                let own = Globals { light_view_proj: cascade.view_proj.to_cols_array(), ..globals };
+                self.queue.write_buffer(buffer, 0, bytemuck::bytes_of(&own));
+                stats.upload_bytes += std::mem::size_of::<Globals>() as u64;
+            }
+        }
         let post_settings = view.post.unwrap_or(PostSettings {
             enabled: true,
             exposure: environment.exposure,
@@ -1570,10 +1838,74 @@ impl Renderer {
             self.queue
                 .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&frame.instances));
         }
+        stats.upload_bytes += byte_count
+            + std::mem::size_of::<Globals>() as u64
+            + std::mem::size_of_val(frame.instances.as_slice()) as u64;
+        // Лампы: текстуры кадра и параметры кадра каждой грани тени.
+        if light_setup.extended {
+            if let Some(gpu) = &self.lights_gpu {
+                stats.upload_bytes += gpu.upload(&self.queue, &self.light_frame);
+            }
+            while self.face_globals.len() < self.light_frame.shadow_faces.len() {
+                let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("light shadow face globals"),
+                    size: std::mem::size_of::<Globals>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("light shadow face globals"),
+                    layout: &self.globals_layout,
+                    entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }],
+                });
+                self.face_globals.push((buffer, bind));
+            }
+            for (face, (buffer, _)) in self.light_frame.shadow_faces.iter().zip(&self.face_globals) {
+                let own = Globals { light_view_proj: face.view_proj.to_cols_array(), ..globals };
+                self.queue.write_buffer(buffer, 0, bytemuck::bytes_of(&own));
+                stats.upload_bytes += std::mem::size_of::<Globals>() as u64;
+            }
+        }
+        self.state_changes.store(0, std::sync::atomic::Ordering::Relaxed);
+
+        // Свои шейдеры: время кадра, конвейеры частей мешей для варианта кадра.
+        self.prepare_custom(world, &frame.items, scene_width, scene_height);
 
         // ---------------- 6. Проходы ----------------
-        self.ensure_targets(width, height);
-        self.post.resize(&self.device, width, height);
+        self.ensure_targets(scene_width, scene_height);
+        self.post.resize(&self.device, scene_width, scene_height);
+        // AO и контур (компоненты `AmbientOcclusion`, `Outline`) — только для вида из камеры
+        // сцены; пресет Low затенение не делает, Medium — 8 выборок, High — 12.
+        let quality = graphics.map(|g| g.quality);
+        let ao_samples = match (graphics.is_none_or(|g| g.ambient_occlusion), quality) {
+            (false, _) => 0,
+            (true, Some(engine_core::settings::QualityLevel::Low | engine_core::settings::QualityLevel::Medium)) => 8,
+            _ => 12,
+        };
+        let scene_post = view.post.is_none();
+        let fx = if self.fx_supported && scene_post {
+            crate::post_fx::FxSettings::from_scene(scene, ao_samples)
+        } else {
+            crate::post_fx::FxSettings::default()
+        };
+        let (fxaa, hq_bloom) = if scene_post {
+            let (fxaa, hq) = crate::post_fx::PostQuality::settings(scene, graphics.is_none_or(|g| g.high_quality_bloom));
+            (fxaa && graphics.is_none_or(|g| g.fxaa), hq)
+        } else {
+            (false, false)
+        };
+        // Вода с эффектами: с кадром под водой (не WebGL2, детализация не Low) проход сцены
+        // делится на два (water_pass.rs).
+        let water_fx = !self.terrain.water_fx.is_empty();
+        let water_scene = water_fx && self.fx_supported && self.terrain.water_fx.iter().any(|w| w.detail[0] > 0.5);
+        if water_fx {
+            self.water.ensure_pipeline(&self.device, &self.globals_layout, water_scene);
+        }
+        if water_scene {
+            if let Some((_, depth, _)) = self.depth.as_ref() {
+                self.water.scene_copy(&self.device, [scene_width, scene_height], depth, self.depth_generation);
+            }
+        }
         let (Some((color_view, depth_view, _)), Some(hdr_view)) =
             (self.depth.as_ref(), self.post.scene_target())
         else {
@@ -1589,12 +1921,36 @@ impl Renderer {
                 label: Some("frame"),
             });
 
-        if shadows {
+        if let Some((_, list)) = &cascades {
+            for (index, cascade) in list.iter().enumerate() {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("sun shadow cascade"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.shadow_layers[index],
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                let globals_bind = &self.cascade_globals[index].1;
+                let draws = self.draw_shadow_batches_with(&mut pass, globals_bind, &frame.items, &frame.cascade_batches[index]);
+                draw_calls += draws;
+                stats.shadow_draw_calls += draws;
+                let terrain_calls = self.terrain.draw_shadows(&mut pass, globals_bind, cascade.view_proj);
+                draw_calls += terrain_calls;
+                stats.shadow_draw_calls += terrain_calls;
+            }
+        } else if shadows {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("sun shadows"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_view,
+                    view: &self.shadow_layers[0],
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -1612,14 +1968,43 @@ impl Renderer {
             stats.shadow_draw_calls += terrain_calls;
         }
 
+        // Тени ламп: все грани — плитки одного атласа, один проход.
+        if let (false, Some(atlas)) = (self.light_frame.shadow_faces.is_empty(), self.lights_gpu.as_ref().and_then(|l| l.atlas())) {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("light shadows"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: atlas,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            let tile = crate::lights::TILE_SIZE as f32;
+            for (index, face) in self.light_frame.shadow_faces.iter().enumerate() {
+                pass.set_viewport(face.origin.0 as f32, face.origin.1 as f32, tile, tile, 0.0, 1.0);
+                let globals_bind = &self.face_globals[index].1;
+                let draws = self.draw_shadow_batches_with(&mut pass, globals_bind, &frame.items, &frame.face_batches[index]);
+                draw_calls += draws;
+                stats.shadow_draw_calls += draws;
+                let terrain_calls = self.terrain.draw_shadows(&mut pass, globals_bind, face.view_proj);
+                draw_calls += terrain_calls;
+                stats.shadow_draw_calls += terrain_calls;
+            }
+        }
+
         {
             let clear = view.clear_color;
+            // С водой, читающей кадр, первая часть прохода сводится в копию кадра и
+            // сохраняет многовыборочный цвет — вторая продолжит его.
+            let split = water_scene.then(|| self.water.scene_view()).flatten();
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("scene"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     // Рисуем в многовыборочную текстуру, итог сводится в `target`.
                     view: color_view,
-                    resolve_target: Some(hdr_view),
+                    resolve_target: Some(split.unwrap_or(hdr_view)),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: clear.r as f64,
@@ -1627,7 +2012,7 @@ impl Renderer {
                             b: clear.b as f64,
                             a: clear.a as f64,
                         }),
-                        store: wgpu::StoreOp::Discard,
+                        store: if split.is_some() { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard },
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -1635,7 +2020,8 @@ impl Renderer {
                     depth_ops: Some(wgpu::Operations {
                         // Обратная глубина: «дальше всего» — ноль.
                         load: wgpu::LoadOp::Clear(crate::depth::FAR_DEPTH),
-                        store: wgpu::StoreOp::Discard,
+                        // Эффекты по глубине и вода читают её после прохода.
+                        store: if fx.any() || split.is_some() { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard },
                     }),
                     stencil_ops: None,
                 }),
@@ -1654,7 +2040,10 @@ impl Renderer {
             draw_calls += draws;
             triangles += tris;
 
-            let (terrain_calls, terrain_triangles) = self.terrain.draw(&mut pass, &self.lit_bind_group);
+            let (terrain_calls, terrain_triangles) = match &self.lit_binds[self.frame_variant] {
+                Some(lit) => self.terrain.draw(&mut pass, lit, self.frame_variant),
+                None => (0, 0),
+            };
             draw_calls += terrain_calls;
             triangles += terrain_triangles.min(u32::MAX as u64) as u32;
 
@@ -1667,6 +2056,27 @@ impl Renderer {
                 draw_calls += 1;
             }
 
+            // Вторая часть прохода: многовыборочный цвет продолжается, глубина — только чтение
+            // (вода читает её как текстуру).
+            if split.is_some() {
+                drop(pass);
+                pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("scene after water copy"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: color_view,
+                        resolve_target: Some(hdr_view),
+                        ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Discard },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: depth_view,
+                        depth_ops: None,
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+            }
+
             // Полупрозрачные меши: после непрозрачных и сетки, от дальних к ближним.
             let (draws, tris) = self.draw_mesh_batches(&mut pass, &frame.items, &frame.blend_batches);
             draw_calls += draws;
@@ -1674,19 +2084,32 @@ impl Renderer {
 
             // Вода: прозрачная, после всего непрозрачного.
             draw_calls += self.terrain.draw_water(&self.device, &self.queue, &mut pass, &self.globals_bind_group);
+            if water_fx {
+                draw_calls += self.water.draw(&self.device, &self.queue, &mut pass, &self.globals_bind_group, &self.terrain.water_fx, water_scene);
+            }
 
             if !scratch.batches.is_empty() {
                 pass.set_bind_group(0, &self.globals_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.sprite_vertices.slice(..));
+                pass.set_index_buffer(self.quad_indices.slice(..), wgpu::IndexFormat::Uint32);
+                self.count_state(3);
                 let mut current: Option<Blend> = None;
                 for (texture, blend, range) in &scratch.batches {
                     if current != Some(*blend) {
                         current = Some(*blend);
-                        pass.set_pipeline(match blend {
-                            Blend::Alpha => &self.sprite_pipeline,
-                            Blend::Additive => &self.sprite_additive_pipeline,
-                        });
+                        match blend {
+                            Blend::Alpha => pass.set_pipeline(&self.sprite_pipeline),
+                            Blend::Additive => pass.set_pipeline(&self.sprite_additive_pipeline),
+                            // Свой шейдер (renderer/custom.rs); не собран — обычный спрайт.
+                            Blend::Custom(id) => {
+                                if !self.bind_custom_sprites(&mut pass, *id) {
+                                    pass.set_pipeline(&self.sprite_pipeline);
+                                }
+                            }
+                        }
+                        self.count_state(1);
                     }
+                    self.count_state(1);
                     let gpu_texture = match texture {
                         TexRef::White => &self.white,
                         TexRef::Soft => &self.soft_disc,
@@ -1694,10 +2117,31 @@ impl Renderer {
                         TexRef::Asset(guid) => self.textures.get(guid).unwrap_or(&self.missing),
                     };
                     pass.set_bind_group(1, &gpu_texture.bind_group, &[]);
-                    pass.draw(range.clone(), 0..1);
+                    // Вершины квадов по 4 → индексы по 6.
+                    let quads = range.start / QUAD_VERTICES as u32..range.end / QUAD_VERTICES as u32;
+                    pass.draw_indexed(quads.start * 6..quads.end * 6, 0, 0..1);
                     draw_calls += 1;
                 }
             }
+        }
+        // Эффекты по глубине: AO (половинное разрешение) и контур — в текстуру для сведения.
+        let compose = crate::post::ComposeFx {
+            ao: fx.ao[1] > 0.0,
+            outline: fx.outline_color,
+            outline_strength: if fx.outline[3] > 0.5 { fx.outline_strength } else { 0.0 },
+            high_quality_bloom: hq_bloom,
+            fxaa,
+        };
+        if fx.any() {
+            if let Some((_, depth_view, _)) = self.depth.as_ref() {
+                let post_fx = self.post_fx.get_or_insert_with(|| crate::post_fx::PostFx::new(&self.device, &self.queue));
+                post_fx.resize(&self.device, scene_width, scene_height, depth_view, self.depth_generation);
+                post_fx.run(&self.queue, &mut encoder, &fx, view.view_proj, view.position);
+            }
+            let output = self.post_fx.as_ref().and_then(|p| p.output());
+            self.post.set_fx(&self.device, compose, output.map(|v| (v, self.depth_generation)));
+        } else {
+            self.post.set_fx(&self.device, compose, None);
         }
         // Цветокоррекция сцены (компонент `ColorGrading`, grading.rs) — только для вида,
         // который берёт пост-обработку из сцены.
@@ -1705,13 +2149,20 @@ impl Renderer {
             None => crate::grading::ColorGrading::scene_params(scene),
             Some(_) => crate::grading::GradingParams::OFF,
         });
-        self.post
-            .run(&self.queue, &mut encoder, target, post_settings);
+        // Свои эффекты камеры (`PostEffect`, renderer/custom.rs) — вокруг сведения кадра.
+        let effects = view.overlay
+            && self.run_post_effects(world, &mut encoder, target, [width, height], [scene_width, scene_height], post_settings);
+        if !effects {
+            self.post.run(&self.queue, &mut encoder, target, post_settings);
+        }
         // Экранный слой (игровой интерфейс) — поверх пост-обработки, см. overlay.rs.
         if view.overlay {
             draw_calls += self.draw_overlay(world, &mut encoder, target, width, height);
         }
+        let submit_clock = Stopwatch::start();
         self.queue.submit(Some(encoder.finish()));
+        stats.submit_ms = submit_clock.ms();
+        stats.state_changes = self.state_changes.load(std::sync::atomic::Ordering::Relaxed);
 
         self.sprite_scratch = scratch;
         self.mesh_scratch = frame;
@@ -1876,6 +2327,60 @@ pub fn read_texture(
     buffer.unmap();
     image::RgbaImage::from_raw(width, height, pixels)
         .ok_or_else(|| RenderError::Capture("readback size mismatch".to_string()))
+}
+
+/// Сколько каскадов и какой фильтр теней разрешают настройки графики
+/// (`GraphicsSettings::shadow_cascades` / `shadow_filter`; без ресурса — как High).
+fn quality_shadow_caps(graphics: Option<&GraphicsSettings>) -> (u32, u32) {
+    graphics.map_or((4, 2), |g| (g.shadow_cascades.clamp(1, MAX_CASCADES as u32), g.shadow_filter.min(2)))
+}
+
+/// Карта теней из `layers` слоёв: вид для чтения шейдерами и виды слоёв для записи.
+fn create_shadow_maps(device: &wgpu::Device, layers: u32) -> (wgpu::TextureView, Vec<wgpu::TextureView>) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("shadow map"),
+        size: wgpu::Extent3d {
+            width: SHADOW_SIZE,
+            height: SHADOW_SIZE,
+            depth_or_array_layers: layers,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let all = texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+    let each = (0..layers)
+        .map(|layer| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+                ..Default::default()
+            })
+        })
+        .collect();
+    (all, each)
+}
+
+/// Индексный буфер на `quads` квадов: (0 1 2) (0 2 3) для каждых четырёх вершин.
+fn create_quad_indices(device: &wgpu::Device, quads: usize) -> wgpu::Buffer {
+    let indices: Vec<u32> = (0..quads.max(1) as u32)
+        .flat_map(|q| {
+            let b = q * QUAD_VERTICES as u32;
+            [b, b + 1, b + 2, b, b + 2, b + 3]
+        })
+        .collect();
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("quad indices"),
+        contents: bytemuck::cast_slice(&indices),
+        usage: wgpu::BufferUsages::INDEX,
+    })
 }
 
 fn create_sprite_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {

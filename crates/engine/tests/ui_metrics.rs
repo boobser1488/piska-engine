@@ -1,7 +1,8 @@
 //! Замер интерфейса редактора по всем экранам, которые достижимы без окна (`kit::metrics`,
 //! правила плотности [`Rules::compact`]) — в масштабе 100 / 125 / 150 %, на английском и
 //! русском: главная раскладка (Hierarchy, Scene, Inspector, Project), Inspector каждого
-//! объекта сцены, Project списком и сеткой, Console, Profiler, вкладки Game и Code, окна
+//! объекта сцены, Project списком и сеткой, Console, Profiler, вкладки Game и Code (и Code с
+//! ошибками), Error List, Find Results, окна
 //! Build, Undo History, Getting Started, Shortcuts, Open Scene, New Scene, Export Project File
 //! и каждая страница Preferences (в том числе Build Tools) и Project Settings.
 //!
@@ -17,13 +18,13 @@
 use engine::editor::egui;
 use engine::editor::kit::i18n::{self, Language};
 use engine::editor::kit::metrics::{self, Report, Rules};
-use engine::editor::{Action, BottomTab, Editor, EditorConfig, SettingsScope, ViewTab};
+use engine::editor::{Action, BottomTab, Editor, EditorConfig, LayoutAction, Panel, SettingsScope, ViewTab};
 
 #[path = "../examples/platformer/scripts.rs"]
 mod scripts;
 
 const ASSETS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets");
-const PREFS: [&str; 7] = ["general", "appearance", "scene-view", "game-view", "console", "build-tools", "shortcuts"];
+const PREFS: [&str; 8] = ["general", "appearance", "scene-view", "game-view", "console", "code-editor", "build-tools", "shortcuts"];
 const PROJECT: [&str; 10] = ["player", "build", "physics2d", "physics3d", "tags-and-layers", "input", "time", "graphics", "audio", "script-order"];
 
 fn editor(scale: f32, language: Language) -> Editor {
@@ -57,6 +58,20 @@ struct Run {
     states: usize,
 }
 
+/// Щелчок правой кнопкой в `at`: открывает контекстное меню.
+fn right_click(ctx: &egui::Context, editor: &mut Editor, time: &mut f64, at: egui::Pos2) {
+    let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE };
+    frame(ctx, editor, time, vec![egui::Event::PointerMoved(at)]);
+    frame(ctx, editor, time, vec![button(true)]);
+    frame(ctx, editor, time, vec![button(false)]);
+}
+
+fn escape(ctx: &egui::Context, editor: &mut Editor, time: &mut f64) {
+    let key = |pressed| egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed, repeat: false, modifiers: egui::Modifiers::NONE };
+    frame(ctx, editor, time, vec![key(true), key(false), egui::Event::PointerGone]);
+    frame(ctx, editor, time, Vec::new());
+}
+
 impl Run {
     /// Замерить экран: несколько кадров, сводка последнего; `states` — ещё и состояния.
     fn measure(&mut self, ctx: &egui::Context, editor: &mut Editor, time: &mut f64, screen: &str, states: bool) {
@@ -77,6 +92,7 @@ impl Run {
 #[test]
 fn editor_screens_measure_up() {
     let mut run = Run { total: Report::default(), screens: 0, states: 0 };
+    let mut menus = 0;
     for language in [Language::English, Language::Russian] {
         for scale in [1.0_f32, 1.25, 1.5] {
             let states = scale != 1.25;
@@ -92,6 +108,27 @@ fn editor_screens_measure_up() {
                 run.measure(&ctx, &mut editor, &mut time, &format!("{tag} inspector/{i}"), states && i == 1);
             }
             editor.apply(Action::Select(None));
+            // Контекстные меню: строка Hierarchy и сцена в окне Project.
+            if let Some(first) = ids.first() {
+                let row = ctx.read_response(Editor::hierarchy_row_id(*first)).map(|r| r.rect.center());
+                if let Some(at) = row {
+                    let layers = ctx.memory(|m| m.layer_ids().count());
+                    right_click(&ctx, &mut editor, &mut time, at);
+                    run.measure(&ctx, &mut editor, &mut time, &format!("{tag} hierarchy-context-menu"), false);
+                    // Меню — новый слой поверх окна.
+                    menus += usize::from(ctx.memory(|m| m.layer_ids().count()) > layers);
+                    escape(&ctx, &mut editor, &mut time);
+                }
+            }
+            editor.set_project_list_view(true);
+            frame(&ctx, &mut editor, &mut time, Vec::new());
+            if let Some(at) = editor.project_row_id("scenes").and_then(|id| ctx.read_response(id)).map(|r| r.rect.center()) {
+                let layers = ctx.memory(|m| m.layer_ids().count());
+                right_click(&ctx, &mut editor, &mut time, at);
+                run.measure(&ctx, &mut editor, &mut time, &format!("{tag} project-context-menu"), false);
+                menus += usize::from(ctx.memory(|m| m.layer_ids().count()) > layers);
+                escape(&ctx, &mut editor, &mut time);
+            }
             // Нижние вкладки и Project в двух видах.
             editor.set_project_list_view(true);
             run.measure(&ctx, &mut editor, &mut time, &format!("{tag} project-list"), false);
@@ -107,6 +144,24 @@ fn editor_screens_measure_up() {
             editor.set_view_tab(ViewTab::Code);
             editor.set_code_text("fn main() {\n    println!(\"hello\");\n}\n");
             run.measure(&ctx, &mut editor, &mut time, &format!("{tag} code"), false);
+            // Вкладка Code с ошибками (волны, значки, полоса обзора, схема файла), Error List
+            // и Find Results.
+            let code_dir = std::env::temp_dir().join(format!("piska_metrics_code_{}", std::process::id()));
+            std::fs::create_dir_all(&code_dir).unwrap();
+            let broken = code_dir.join("broken.rs");
+            std::fs::write(&broken, "fn main() {
+    let x = 5
+    let y = (1, 2];
+}
+").unwrap();
+            editor.apply(Action::OpenCode(broken));
+            run.measure(&ctx, &mut editor, &mut time, &format!("{tag} code-squiggles"), false);
+            editor.apply(Action::Layout(LayoutAction::Focus(Panel::ErrorList)));
+            run.measure(&ctx, &mut editor, &mut time, &format!("{tag} error-list"), states);
+            editor.apply(Action::Layout(LayoutAction::Focus(Panel::FindResults)));
+            run.measure(&ctx, &mut editor, &mut time, &format!("{tag} find-results"), states);
+            editor.set_bottom_tab(BottomTab::Project);
+            let _ = std::fs::remove_dir_all(&code_dir);
             editor.set_view_tab(ViewTab::Scene);
             // Окна.
             editor.apply(Action::ShowBuildDialog(true));
@@ -157,5 +212,6 @@ fn editor_screens_measure_up() {
         std::fs::write(path, &text).unwrap();
     }
     assert!(run.screens >= 150, "screens measured: {}", run.screens);
+    assert!(menus >= 6, "context menus opened and measured: {menus}");
     assert!(total.offenders.is_empty(), "{} offenders, first ones:\n{}", total.offenders.len(), total.offenders.iter().take(25).cloned().collect::<Vec<_>>().join("\n"));
 }

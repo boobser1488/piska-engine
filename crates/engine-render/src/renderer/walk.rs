@@ -66,8 +66,13 @@ impl<'a> SceneWalk<'a> {
         while first > 0 && self.path[first - 1].1.is_none() {
             first -= 1;
         }
+        // У корня мировая матрица — сама локальная: без умножения на единичную.
         let mut matrix = if first == 0 {
-            Mat4::IDENTITY
+            let root = self.path[0].0.transform.local_matrix();
+            self.path[0].1 = Some(root);
+            self.computed += 1;
+            first = 1;
+            root
         } else {
             self.path[first - 1].1.unwrap_or(Mat4::IDENTITY)
         };

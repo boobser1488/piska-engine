@@ -31,6 +31,10 @@ thiserror.workspace = true
 log.workspace = true
 # `std::time::Instant` в браузере не работает; web-time — тот же API везде.
 web-time = "1"
+# Свои шейдеры (`.shader`, src/shaders): разбор и проверка собранного WGSL до создания
+# модуля на GPU — ошибка с номером строки пользователя, а не сбой драйвера. Та же версия,
+# что тянет wgpu (уже в Cargo.lock).
+naga = { version = "23.1.0", default-features = false, features = ["wgsl-in"] }
 
 # Windows: Vulkan (автоматически) и DX12.
 [target.'cfg(windows)'.dependencies]

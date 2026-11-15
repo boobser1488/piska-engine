@@ -1,15 +1,16 @@
 -- Интро «Звездопада» на языке Scenario (docs/api/scenario.md).
 -- Работает на объекте Game: GameManager ждёт сообщения "Go" перед первой звездой.
+-- Звуки "sfx:…" — встроенные в движок (docs/api/audio.md), регистрировать их не нужно.
 -- Поменяйте текст и сохраните файл во время игры — интро перезапустится само.
 
 ui.show("Hint")
 for n = 3, 1, -1 do
     ui.text("Hint", n .. "…")
-    play("tick", 0.6)
+    play("sfx:coin", 0.6)
     wait(0.5)
 end
 ui.text("Hint", "Лови!")
-play("start")
+play("sfx:powerup")
 self:send("Go")
 
 wait(1.2)

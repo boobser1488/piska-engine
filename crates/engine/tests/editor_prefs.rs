@@ -178,6 +178,12 @@ fn every_default_shortcut_runs_its_command_through_the_registry() {
     let mut checked = 0;
     for def in COMMANDS {
         let Some(binding) = def.default else { continue };
+        // Команды вкладки Code работают, только пока фокус во вкладке Code (и часть — из
+        // двух нажатий): их нажатия проверяют тесты вкладки Code
+        // (`crates/engine-editor/src/code_tests.rs`).
+        if def.category == "Code Editor" || def.prefix.is_some() {
+            continue;
+        }
         let mut editor = editor_over(&sandbox.assets(), EditorConfig::default());
         let hero = hero(&editor);
         editor.apply(Action::Select(Some(hero)));
@@ -308,8 +314,9 @@ fn escape_cancels_recording_and_reset_brings_the_defaults_back() {
     // Поиск находит команду по сочетанию.
     editor.set_settings_search(PREFS, "ctrl+shift+s");
     hands.frames(&mut editor, 2);
-    assert_eq!(editor.settings_search_hits(PREFS), [("shortcuts", 1)]);
-    assert_eq!(editor.settings_visible_rows(PREFS), ["Save As…"]);
+    // «ctrl+shift+s» — начало и `Ctrl+Shift+Space` (Parameter Info вкладки Code).
+    assert_eq!(editor.settings_search_hits(PREFS), [("shortcuts", 2)]);
+    assert_eq!(editor.settings_visible_rows(PREFS), ["Save As…", "Parameter Info"]);
     editor.set_settings_search(PREFS, "");
 
     // Reset page — все сочетания по умолчанию.
@@ -502,6 +509,60 @@ fn orbit_speed_and_inversion_change_how_the_3d_camera_turns() {
     assert!(yaw1 < 0.0 && pitch1 > 0.0, "a drag to the right and down turns the camera: {turns:?}");
     assert!((yaw2 / yaw1 - 2.0).abs() < 0.05, "twice the speed turns twice as far: {turns:?}");
     assert!((pitch2 / pitch1 + 2.0).abs() < 0.05, "inverted and twice as fast vertically: {turns:?}");
+}
+
+/// Обзор правой кнопкой крутится сырым движением мыши: один счёт датчика — 0.003 рад (как в
+/// Unity). Сдвиг курсора при этом второй раз не прибавляется, глаз стоит на месте, а дрожь
+/// руки в один счёт туда-сюда качает вид на те же 0.003 рад и возвращает его точно назад —
+/// раньше шаг курсора в один пиксель давал 0.008 рад, около восьми пикселей картинки.
+#[test]
+fn right_button_look_follows_raw_mouse_counts_and_does_not_amplify_jitter() {
+    let sandbox = Sandbox::new("look_raw");
+    let mut editor = editor_over(&sandbox.assets(), EditorConfig::default());
+    editor.set_scene_3d(true);
+    editor.set_orbit(Orbit3D::default());
+    let mut hands = Hands::new(&mut editor);
+    let center = editor.viewport_rect().center();
+    let start = editor.orbit();
+    let eye = start.eye();
+
+    hands.frame(&mut editor, vec![egui::Event::PointerMoved(center)]);
+    hands.frame(&mut editor, vec![Hands::pointer(center, egui::PointerButton::Secondary, true)]);
+    // Мышь едет вправо: 10 счётов за кадр; курсор системы при этом тоже едет (на 7 точек).
+    let mut pos = center;
+    for _ in 0..12 {
+        pos += egui::vec2(7.0, 0.0);
+        editor.add_raw_mouse_motion(10.0, 0.0);
+        hands.frame(&mut editor, vec![egui::Event::PointerMoved(pos)]);
+    }
+    let turned = editor.orbit();
+    let yaw = turned.yaw - start.yaw;
+    // 12 кадров по 10 счётов = 0.36 рад; первые кадр-два, пока egui решает, что это
+    // перетаскивание, могут не считаться. Со сдвигом курсора вдобавок вышло бы больше 0.6.
+    assert!((-0.3601..=-0.2999).contains(&yaw), "raw counts turn the camera by 0.003 rad each: {yaw}");
+    assert!((turned.pitch - start.pitch).abs() < 1e-5, "no vertical motion: {}", turned.pitch - start.pitch);
+    assert!((turned.eye() - eye).length() < 1e-3, "the eye stays in place: {:?} -> {:?}", eye, turned.eye());
+
+    // Дрожь: счёт вправо, счёт влево; курсор на месте.
+    let (mut lo, mut hi) = (turned.yaw, turned.yaw);
+    for i in 0..20 {
+        editor.add_raw_mouse_motion(if i % 2 == 0 { 1.0 } else { -1.0 }, 0.0);
+        hands.frame(&mut editor, vec![egui::Event::PointerMoved(pos)]);
+        lo = lo.min(editor.orbit().yaw);
+        hi = hi.max(editor.orbit().yaw);
+    }
+    assert!(hi - lo <= 0.0031, "one count of jitter is one small step, not a jump: {}", hi - lo);
+    assert!((editor.orbit().yaw - turned.yaw).abs() < 1e-5, "and it comes back exactly: {} vs {}", editor.orbit().yaw, turned.yaw);
+    assert!((editor.orbit().eye() - eye).length() < 1e-3, "the eye still has not moved");
+
+    // Кнопку отпустили: сырое движение больше не крутит вид.
+    hands.frame(&mut editor, vec![Hands::pointer(pos, egui::PointerButton::Secondary, false)]);
+    hands.frame(&mut editor, vec![]);
+    let released = editor.orbit().yaw;
+    editor.add_raw_mouse_motion(50.0, 0.0);
+    hands.frame(&mut editor, vec![]);
+    hands.frame(&mut editor, vec![]);
+    assert!((editor.orbit().yaw - released).abs() < 1e-6, "raw motion without the button does nothing");
 }
 
 // ===========================================================================

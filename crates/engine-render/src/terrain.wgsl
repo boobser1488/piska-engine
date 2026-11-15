@@ -4,10 +4,9 @@
 // трипланарная скала на обрывах, деталь mod2x вблизи, крупный оттенок против
 // повторов, запечённый AO. Свет — как у мешей: GGX от солнца с картой теней,
 // точечные источники, ambient неба и туман из common.wgsl.
-// Перед этим файлом приклеивается common.wgsl.
+// Перед этим файлом приклеиваются common.wgsl и shadow.wgsl.
 
-@group(0) @binding(1) var shadow_map: texture_depth_2d;
-@group(0) @binding(2) var shadow_sampler: sampler_comparison;
+// Карта теней и `sun_shadow` — shadow.wgsl (приклеивается перед этим файлом).
 
 @group(1) @binding(0) var albedo_tex: texture_2d_array<f32>;
 @group(1) @binding(1) var normal_tex: texture_2d_array<f32>;
@@ -109,14 +108,40 @@ fn alt_dir(d: vec2<f32>) -> vec2<f32> {
 }
 
 // Альбедо плитки с антиповтором (в местах, где вторая выборка не нужна, — одна).
+// Две выборки — только в полосе перехода; где одна из них весит меньше 0.5 %, берётся
+// одна (разница в цвете меньше 0.5 %, а выборок вдвое меньше — это самая дорогая часть
+// шейдера рельефа).
 fn sample_albedo(layer: i32, uv: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>, alt: f32) -> vec4<f32> {
+    if (alt >= ALT_ONLY) {
+        return textureSampleGrad(albedo_tex, tex_samp, alt_uv(uv), layer, alt_dir(gx), alt_dir(gy));
+    }
     var a = textureSampleGrad(albedo_tex, tex_samp, uv, layer, gx, gy);
-    if (alt > 0.01) {
+    if (alt > ALT_NONE) {
         let b = textureSampleGrad(albedo_tex, tex_samp, alt_uv(uv), layer, alt_dir(gx), alt_dir(gy));
         a = mix(a, b, alt);
     }
     return a;
 }
+
+// Нормаль карты слоя (в осях плитки) с той же логикой одной / двух выборок.
+fn sample_normal(layer: i32, uv: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>, alt: f32) -> vec3<f32> {
+    var t = vec3<f32>(0.0, 0.0, 1.0);
+    if (alt < ALT_ONLY) {
+        t = textureSampleGrad(normal_tex, tex_samp, uv, layer, gx, gy).xyz * 2.0 - 1.0;
+    }
+    if (alt > ALT_NONE) {
+        // Нормаль из повёрнутой выборки поворачиваем обратно.
+        let t2 = textureSampleGrad(normal_tex, tex_samp, alt_uv(uv), layer, alt_dir(gx), alt_dir(gy)).xyz * 2.0 - 1.0;
+        let back = vec3<f32>(vec2<f32>(ALT_C * t2.x + ALT_S * t2.y, -ALT_S * t2.x + ALT_C * t2.y) * 1.28, t2.z);
+        t = select(mix(t, back, alt), back, alt >= ALT_ONLY);
+    }
+    return t;
+}
+
+const ALT_NONE: f32 = 0.01;
+const ALT_ONLY: f32 = 0.995;
+// Проекция трипланара с меньшим весом не выбирается.
+const TRI_MIN_WEIGHT: f32 = 0.005;
 
 fn tint(layer: i32) -> vec3<f32> {
     return terrain.tints[layer].rgb;
@@ -128,13 +153,7 @@ fn planar(layer: i32, p: vec3<f32>, scale: f32, gr: Grads, n: vec3<f32>) -> Laye
     let gx = gr.dx.xz * scale;
     let gy = gr.dy.xz * scale;
     let a = sample_albedo(layer, uv, gx, gy, gr.alt);
-    var t = textureSampleGrad(normal_tex, tex_samp, uv, layer, gx, gy).xyz * 2.0 - 1.0;
-    if (gr.alt > 0.01) {
-        // Нормаль из повёрнутой выборки поворачиваем обратно в мир.
-        let t2 = textureSampleGrad(normal_tex, tex_samp, alt_uv(uv), layer, alt_dir(gx), alt_dir(gy)).xyz * 2.0 - 1.0;
-        let back = vec2<f32>(ALT_C * t2.x + ALT_S * t2.y, -ALT_S * t2.x + ALT_C * t2.y) * 1.28;
-        t = mix(t, vec3<f32>(back, t2.z), gr.alt);
-    }
+    let t = sample_normal(layer, uv, gx, gy, gr.alt);
     var l: Layer;
     l.albedo = a.rgb * tint(layer);
     l.height = a.a;
@@ -150,12 +169,25 @@ fn triplanar(layer: i32, wp: vec3<f32>, scale: f32, gr: Grads, n: vec3<f32>) -> 
     let p = wp * scale;
     let dx = gr.dx * scale;
     let dy = gr.dy * scale;
-    let ax = sample_albedo(layer, p.zy, dx.zy, dy.zy, gr.alt);
-    let ay = sample_albedo(layer, p.xz, dx.xz, dy.xz, gr.alt);
-    let az = sample_albedo(layer, p.xy, dx.xy, dy.xy, gr.alt);
-    let tx = textureSampleGrad(normal_tex, tex_samp, p.zy, layer, dx.zy, dy.zy).xyz * 2.0 - 1.0;
-    let ty = textureSampleGrad(normal_tex, tex_samp, p.xz, layer, dx.xz, dy.xz).xyz * 2.0 - 1.0;
-    let tz = textureSampleGrad(normal_tex, tex_samp, p.xy, layer, dx.xy, dy.xy).xyz * 2.0 - 1.0;
+    // Проекция с весом меньше 0.5 % не выбирается (на крутом склоне обычно работают одна-две).
+    var ax = vec4<f32>(0.0);
+    var ay = vec4<f32>(0.0);
+    var az = vec4<f32>(0.0);
+    var tx = vec3<f32>(0.0, 0.0, 1.0);
+    var ty = vec3<f32>(0.0, 0.0, 1.0);
+    var tz = vec3<f32>(0.0, 0.0, 1.0);
+    if (w.x > TRI_MIN_WEIGHT) {
+        ax = sample_albedo(layer, p.zy, dx.zy, dy.zy, gr.alt);
+        tx = textureSampleGrad(normal_tex, tex_samp, p.zy, layer, dx.zy, dy.zy).xyz * 2.0 - 1.0;
+    }
+    if (w.y > TRI_MIN_WEIGHT) {
+        ay = sample_albedo(layer, p.xz, dx.xz, dy.xz, gr.alt);
+        ty = textureSampleGrad(normal_tex, tex_samp, p.xz, layer, dx.xz, dy.xz).xyz * 2.0 - 1.0;
+    }
+    if (w.z > TRI_MIN_WEIGHT) {
+        az = sample_albedo(layer, p.xy, dx.xy, dy.xy, gr.alt);
+        tz = textureSampleGrad(normal_tex, tex_samp, p.xy, layer, dx.xy, dy.xy).xyz * 2.0 - 1.0;
+    }
     let nx = vec3<f32>(0.0, tx.y, tx.x) * sign(n.x);
     let ny = vec3<f32>(ty.x, 0.0, ty.y);
     let nz = vec3<f32>(tz.x, tz.y, 0.0) * sign(n.z);
@@ -218,25 +250,6 @@ fn t_brdf(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, albedo: vec3<f32>, roughness
     return (diffuse + specular) * n_dot_l;
 }
 
-// Доля солнечного света (PCF 3×3), как у мешей.
-fn t_sun_visibility(world_position: vec3<f32>, n: vec3<f32>) -> f32 {
-    if (globals.shadow_params.x < 0.5) {
-        return 1.0;
-    }
-    let clip = globals.light_view_proj * vec4<f32>(world_position + n * globals.shadow_params.z, 1.0);
-    let uv = vec2<f32>(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
-    let depth = clip.z - globals.shadow_params.w;
-    let texel = globals.shadow_params.y;
-    var sum = 0.0;
-    for (var y = -1; y <= 1; y += 1) {
-        for (var x = -1; x <= 1; x += 1) {
-            sum += textureSampleCompareLevel(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, depth);
-        }
-    }
-    let edge = max(max(abs(clip.x), abs(clip.y)), clip.z);
-    return mix(sum / 9.0, 1.0, smoothstep(0.85, 1.0, edge));
-}
-
 @fragment
 fn fs_main(i: VOut) -> @location(0) vec4<f32> {
     let n = normalize(i.normal);
@@ -264,6 +277,11 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
     let alt_scale = s / 151.0;
     let alt_noise = textureSampleGrad(albedo_tex, tex_samp, wp.xz * alt_scale + vec2<f32>(0.5, 0.25), L_DETAIL, gr.dx.xz * alt_scale, gr.dy.xz * alt_scale).a;
     gr.alt = smoothstep(0.3, 0.7, alt_noise);
+    // Пресет Low: без второй выборки против повторов (самая дорогая часть шейдера).
+    let cheap = globals.sky_night.z > 0.5;
+    if (cheap) {
+        gr.alt = 0.0;
+    }
 
     var m = planar(L_GRASS, wp, 0.25 * s, gr, n);
     m.albedo *= mix(vec3<f32>(1.0), vec3<f32>(1.12, 1.05, 0.8), smoothstep(0.55, 0.85, v));
@@ -292,7 +310,13 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
     }
     let rock_amt = smoothstep(0.30, 0.42, slope + max(h - (snow_base - 40.0), 0.0) * 0.0012);
     if (rock_amt > 0.001) {
-        var rock = triplanar(L_ROCK, wp, 0.125 * s, gr, n);
+        // Пресет Low: скала — плоской проекцией сверху, а не трипланаром.
+        var rock: Layer;
+        if (cheap) {
+            rock = planar(L_ROCK, wp, 0.125 * s, gr, n);
+        } else {
+            rock = triplanar(L_ROCK, wp, 0.125 * s, gr, n);
+        }
         rock.albedo *= warm;
         m = blend(m, rock, rock_amt);
     }
@@ -359,7 +383,7 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
     let to_sun = -normalize(globals.sun_direction.xyz);
     var shadow = 1.0;
     if (dot(n, to_sun) > 0.0) {
-        shadow = t_sun_visibility(i.world, n);
+        shadow = sun_shadow(i.world, n);
     }
     var color = t_brdf(nn, view, to_sun, albedo, roughness) * globals.sun_color.rgb * shadow * mix(0.6, 1.0, ao);
 
@@ -372,7 +396,19 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
         let falloff = reach * reach / (1.0 + d * d);
         color += t_brdf(nn, view, to_light / max(d, 1e-4), albedo, roughness) * light.color.rgb * falloff * ao;
     }
+    // Лампы сверх четырёх, прожекторы и тени ламп (lights.wgsl, вариант с лампами).
+    if (EXTENDED_LIGHTS) {
+        let cell = light_cell(i.clip, i.world);
+        for (var k = 0u; k < 16u; k += 1u) {
+            let index = cell_light(cell, k);
+            if (index == 255u) {
+                break;
+            }
+            let lamp = local_light(index, i.world, n, true);
+            color += t_brdf(nn, view, lamp.direction, albedo, roughness) * lamp.radiance * ao;
+        }
+    }
 
-    color += ambient_light(nn) * albedo * ao;
+    color += fill_ambient(nn, ambient_light(nn)) * albedo * ao;
     return vec4<f32>(apply_fog(color, i.world), 1.0);
 }

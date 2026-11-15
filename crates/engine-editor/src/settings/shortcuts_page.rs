@@ -37,8 +37,12 @@ pub(super) fn shortcuts(s: &mut SettingsUi<'_>, editor: &mut Editor) {
         }
         let current = editor.prefs.shortcuts.binding(def.id);
         let listening = editor.settings.keys.listening == Some(def.id);
-        let default = def.default.map_or_else(|| "none".to_string(), |b| b.text());
-        let now = current.map_or_else(|| "none".to_string(), |b| b.text());
+        let default = match (def.prefix, def.default) {
+            (Some(prefix), Some(key)) => format!("{}, {}", prefix.text(), key.text()),
+            (_, key) => key.map_or_else(|| "none".to_string(), |b| b.text()),
+        };
+        let current_text = editor.prefs.shortcuts.text(def.id);
+        let now = if current.is_some() { current_text.clone() } else { "none".to_string() };
         // Описание несёт и текущее сочетание: поиск «ctrl+s» находит команду.
         let description = if editor.prefs.shortcuts.is_default(def.id) {
             trf!("{p0} · {now}", p0 = tr_s(def.category), now = now)
@@ -49,7 +53,7 @@ pub(super) fn shortcuts(s: &mut SettingsUi<'_>, editor: &mut Editor) {
             let text = if listening {
                 tr_s("Press keys…").to_string()
             } else {
-                current.map_or_else(|| tr_s("None").to_string(), |b| b.text())
+                if current.is_some() { current_text.clone() } else { tr_s("None").to_string() }
             };
             let (rect, _) = ui.allocate_exact_size(vec2(KEY_W, theme::FIELD_H), Sense::hover());
             let response = ui.interact(rect, Editor::shortcut_button_id(def.id), Sense::click());

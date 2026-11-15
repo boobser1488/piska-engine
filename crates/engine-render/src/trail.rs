@@ -152,7 +152,7 @@ impl TrailRenderer {
             ];
             (position + side * (width * 0.5), position - side * (width * 0.5), color)
         };
-        out.reserve((count - 1) * 6);
+        out.reserve((count - 1) * crate::draw2d::QUAD_VERTICES);
         let mut previous = edge(0);
         for i in 1..count {
             let current = edge(i);

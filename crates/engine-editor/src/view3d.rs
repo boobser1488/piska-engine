@@ -382,6 +382,17 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
     let rmb = ui.input(|i| i.pointer.secondary_down());
     let flying = rmb && !alt && (response.hovered() || editor.viewport.flying);
     editor.viewport.flying = flying;
+    // Сырое движение мыши с прошлого кадра (копится, только пока идёт обзор).
+    let raw_motion = std::mem::take(&mut editor.viewport.raw_motion);
+    if flying && !editor.viewport.looking {
+        editor.viewport.raw_seen = false;
+    }
+    editor.viewport.looking = flying;
+    if flying {
+        // Пока кнопка зажата, кадры идут в такт монитору, а не по событиям мыши: мышь
+        // шлёт их со своей частотой, и поворот, нарисованный «когда пришло», идёт неровно.
+        ui.ctx().request_repaint();
+    }
     if response.hovered() {
         let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
         if flying {
@@ -413,9 +424,28 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
         editor.viewport.orbit_goal = None;
     } else if response.dragged_by(PointerButton::Secondary) && !alt {
         // Обзор мышью: глаз на месте, поворачивается направление взгляда.
+        //
+        // Поворот берётся из сырого движения мыши (счёты датчика), а не из сдвига курсора:
+        // курсор ходит целыми пикселями, с ускорением системы и упирается в край экрана.
+        // Чувствительность — как у вида Scene в Unity (0.003 рад на счёт): при прежних
+        // 0.008 рад на пиксель курсора один шаг сдвигал картинку пикселей на восемь, и
+        // любая дрожь руки выглядела тряской камеры.
+        if raw_motion != Vec2::ZERO {
+            editor.viewport.raw_seen = true;
+        }
+        let used = if editor.viewport.raw_seen { egui::vec2(raw_motion.x, raw_motion.y) } else { delta };
+        let look = LOOK_SPEED * editor.prefs.orbit_speed;
+        let look_vertical = if editor.prefs.invert_orbit_y { -look } else { look };
         let eye = editor.orbit.eye();
-        editor.orbit.yaw -= delta.x * speed;
-        editor.orbit.pitch = (editor.orbit.pitch + delta.y * vertical).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        editor.orbit.yaw -= used.x * look;
+        editor.orbit.pitch = (editor.orbit.pitch + used.y * look_vertical).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        if crate::look_trace::enabled() {
+            let (time, raw_dt, moves) = ui.input(|i| {
+                (i.time, i.unstable_dt, i.events.iter().filter(|e| matches!(e, egui::Event::PointerMoved(_) | egui::Event::MouseMoved(_))).count())
+            });
+            let raw = egui::vec2(raw_motion.x, raw_motion.y);
+            crate::look_trace::record(time, raw_dt, camera_dt(editor, ui), moves, delta, raw, used, editor.orbit.yaw, editor.orbit.pitch);
+        }
         let moved = editor.orbit.eye();
         editor.orbit.target += eye - moved;
         editor.viewport.orbit_goal = None;
@@ -425,7 +455,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &egui::Ui, painter: &egui::Painter, 
     fly_3d(editor, ui, flying);
     // Плавный доворот к виду, выбранному щелчком по значку.
     if let Some((yaw, pitch)) = editor.viewport.orbit_goal {
-        let dt = motion_dt(ui);
+        let dt = camera_dt(editor, ui);
         let k = 1.0 - (-dt * 16.0).exp();
         let turn = wrap_angle(yaw - editor.orbit.yaw);
         let tilt = pitch - editor.orbit.pitch;
@@ -854,6 +884,8 @@ fn fly_3d(editor: &mut Editor, ui: &egui::Ui, flying: bool) {
         }
         (v, i.modifiers.shift, i.unstable_dt.clamp(MOTION_DT.0, MOTION_DT.1))
     });
+    // Время кадра — выровненное окном под период монитора (если оно известно).
+    let dt = if editor.viewport.frame_dt > 0.0 { editor.viewport.frame_dt.clamp(MOTION_DT.0, MOTION_DT.1) } else { dt };
     let orbit = editor.orbit;
     let forward = (orbit.target - orbit.eye()).normalize_or_zero();
     let right = forward.cross(Vec3::Y).normalize_or_zero();
@@ -878,6 +910,19 @@ pub(crate) const MOTION_DT: (f32, f32) = (1.0 / 500.0, 0.05);
 pub(crate) fn motion_dt(ui: &egui::Ui) -> f32 {
     ui.input(|i| i.unstable_dt).clamp(MOTION_DT.0, MOTION_DT.1)
 }
+
+/// Шаг времени для камеры вида: время кадра, которое окно выровняло под период монитора
+/// (`engine_render::frame_time`), а если окна нет (тесты) — [`motion_dt`].
+pub(crate) fn camera_dt(editor: &Editor, ui: &egui::Ui) -> f32 {
+    if editor.viewport.frame_dt > 0.0 {
+        editor.viewport.frame_dt.clamp(MOTION_DT.0, MOTION_DT.1)
+    } else {
+        motion_dt(ui)
+    }
+}
+
+/// Обзор правой кнопкой: радиан на один счёт мыши (как у вида Scene в Unity).
+pub(crate) const LOOK_SPEED: f32 = 0.003;
 
 /// Наклон камеры ограничен: ровно сверху `look_at` с осью «вверх» по Y вырождается.
 const PITCH_LIMIT: f32 = 1.5;

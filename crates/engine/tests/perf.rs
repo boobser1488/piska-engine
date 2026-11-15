@@ -358,3 +358,21 @@ fn ui_overlay_is_drawn_above_world_sprites() {
     let world = image.get_pixel(100, 100).0;
     assert!(world[0] > 200 && world[1] > 200 && world[2] < 60, "sprite pixel {world:?}");
 }
+
+#[test]
+fn sprites_upload_four_vertices_per_quad() {
+    // Квад — четыре вершины и общий индексный буфер (раньше шесть вершин): загрузка на
+    // GPU за кадр не больше 4 × 52 байт на спрайт плюс параметры кадра.
+    let mut app = engine::app();
+    camera_2d(&mut app, 5.0);
+    for i in 0..400 {
+        app.spawn("Sprite")
+            .at((i % 20) as f32 * 0.4 - 4.0, (i / 20) as f32 * 0.4 - 4.0)
+            .with(SpriteRenderer::colored(Color::WHITE).with_size(0.3, 0.3));
+    }
+    app.run_headless(1, 1.0 / 60.0);
+    let (image, stats) = capture(&app, 64, 64);
+    assert_eq!(stats.sprites, 400);
+    assert!(stats.upload_bytes <= 400 * 4 * 52 + 4096, "{} bytes uploaded", stats.upload_bytes);
+    assert_eq!(image.get_pixel(32, 32).0, [255, 255, 255, 255], "quads are still filled (both triangles drawn)");
+}

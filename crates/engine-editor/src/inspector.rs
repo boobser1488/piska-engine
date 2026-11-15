@@ -227,6 +227,14 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
 
             // --- Компоненты ---
             let present: Vec<&'static str> = object.components().map(|c| c.type_name()).collect();
+            // Шейдер материала объекта — для параметров `MaterialParams` (читается, только
+            // если такой компонент есть).
+            let object_shader = object
+                .get::<engine_render::MaterialParams>()
+                .and(object.get::<engine_render::MeshRenderer>())
+                .and_then(|mesh| mesh.materials.iter().find(|h| !h.is_none()).copied())
+                .and_then(|handle| world.resources.get::<engine_assets::AssetDatabase>()?.load_material(handle.guid()).ok())
+                .map_or(Guid::NIL, |material| material.shader.guid());
             let clipboard_kind = inspector.clipboard.as_ref().map(|(kind, _)| *kind);
             for (index, component) in object.components_mut().enumerate() {
                 let type_name = component.type_name();
@@ -281,6 +289,22 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
                                 theme::section_label(ui, tr_s(group));
                             }
                             let meta = component.field_meta(field);
+                            // Параметры своего шейдера: виджеты по объявлениям в `.shader`
+                            // (шейдер — из поля `shader` компонента или из материала объекта).
+                            if meta.asset_kind == engine_assets::SHADER_PARAMS_KIND {
+                                let parsed = <engine_assets::ShaderParams as engine_core::reflect::FieldValue>::from_value(&value);
+                                if let Some(mut params) = parsed {
+                                    let own = crate::shader_params_ui::guid_of(component.get_field("shader"));
+                                    let shader = if own.is_nil() { object_shader } else { own };
+                                    let database = world.resources.get::<engine_assets::AssetDatabase>();
+                                    let salt = (type_name, index, *field);
+                                    if crate::shader_params_ui::field_ui(ui, database, shader, &mut params, assets, &mut inspector.asset_filter, salt) {
+                                        let value = engine_core::reflect::FieldValue::to_value(&params);
+                                        changed |= component.set_field(field, &value).is_ok();
+                                    }
+                                }
+                                continue;
+                            }
                             let doc = clean_doc(component.field_doc(field));
                             let edited = property(ui, &theme::pretty_name(field), &doc, |ui| {
                                 let widget = ui.scope(|ui| {
@@ -896,7 +920,7 @@ fn list_widget(
         }
         ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new(trn!("{n} element", "{n} elements", items.len())).color(theme::TEXT_MUTED));
-            let add = ui.add_enabled_ui(!items.is_empty(), |ui| crate::controls::button(ui, tr_s("Add"))).inner;
+            let add = crate::controls::button_enabled(ui, !items.is_empty(), tr_s("Add"));
             let add = add.on_disabled_hover_text(
                 tr_s("The element type of an empty list is unknown here: add the first element in code or in the scene file"),
             );

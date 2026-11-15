@@ -9,6 +9,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use engine_editor::kit::boot::Boot;
+use engine_editor::GpuWarmup;
 use piska_hub::capture::HubGpu;
 use piska_hub::{Hub, HubOptions};
 use winit::application::ApplicationHandler;
@@ -32,7 +34,10 @@ struct Gfx {
 }
 
 struct Runner {
-    hub: Hub,
+    /// Запуск хаба: заставка, потом сам хаб (собирается в фоне, `startup.rs`).
+    boot: Boot<Hub>,
+    /// Устройство wgpu готовится в фоне с первой секунды.
+    warmup: Option<GpuWarmup>,
     gfx: Option<Gfx>,
     error: Option<String>,
     frames: u64,
@@ -46,7 +51,7 @@ struct Runner {
 }
 
 impl Runner {
-    fn create_gfx(&self, event_loop: &ActiveEventLoop) -> Result<Gfx, String> {
+    fn create_gfx(&mut self, event_loop: &ActiveEventLoop) -> Result<Gfx, String> {
         let attributes = Window::default_attributes()
             .with_title(tr_s("Piska Hub"))
             .with_visible(false)
@@ -59,9 +64,9 @@ impl Runner {
         let window = Arc::new(event_loop.create_window(attributes).map_err(|e| e.to_string())?);
         // Системные окна «Папка» / «Открыть» встают над хабом и блокируют его.
         engine_editor::kit::window::set_file_dialog_owner(&window);
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
-        let surface = instance.create_surface(window.clone()).map_err(|e| e.to_string())?;
-        let gpu = pollster::block_on(engine_render::Gpu::request(&instance, Some(&surface))).map_err(|e| e.to_string())?;
+        // Устройство готово или почти готово: его готовил отдельный поток.
+        let engine_editor::WindowGpu { surface, gpu } =
+            self.warmup.take().unwrap_or_else(GpuWarmup::start).finish(window.clone()).map_err(|e| e.to_string())?;
         // egui рисует в гамма-пространстве: поверхность не-sRGB.
         let caps = surface.get_capabilities(&gpu.adapter);
         let format = caps
@@ -108,7 +113,8 @@ impl Runner {
         let now = Instant::now();
         let raw = gfx.egui.take_egui_input(&gfx.window);
         let ctx = gfx.egui.egui_ctx().clone();
-        let mut full = ctx.run(raw, |ctx| self.hub.ui(ctx));
+        let boot = &mut self.boot;
+        let mut full = ctx.run(raw, |ctx| piska_hub::startup::frame(boot, ctx));
         let repaint = full
             .viewport_output
             .get(&egui::ViewportId::ROOT)
@@ -122,7 +128,7 @@ impl Runner {
                 gfx.window.pre_present_notify();
                 frame.present();
                 // Первый кадр уже в цветах темы (с заставкой) — окно можно показать.
-                if !self.shown && self.hub.themed() {
+                if !self.shown && self.boot.themed() {
                     self.shown = true;
                     gfx.window.set_visible(self.visible);
                 }
@@ -173,7 +179,8 @@ impl ApplicationHandler for Runner {
         }
         match event {
             WindowEvent::CloseRequested => {
-                if self.hub.close_requested() {
+                // Пока хаб ещё собирается (или запуск не удался), спрашивать не о чем.
+                if self.boot.value_mut().map_or(true, |hub| hub.close_requested()) {
                     event_loop.exit();
                 }
             }
@@ -197,8 +204,13 @@ impl ApplicationHandler for Runner {
         }
         // Сборка, запущенные программы, просьбы редактора — и когда окно спрятано.
         // Перерисовка — только если что-то поменялось.
-        let changed = self.hub.update();
-        let request = self.hub.window_request();
+        self.boot.poll();
+        let quit_asked = self.boot.quit_requested();
+        let (changed, request) = match self.boot.value_mut() {
+            Some(hub) => (hub.update(), hub.window_request()),
+            // Хаб ещё собирается: окно показано, кадры идут от заставки.
+            None => (false, piska_hub::WindowRequest { visible: true, focus: false, quit: quit_asked }),
+        };
         if request.quit {
             event_loop.exit();
             return;
@@ -293,6 +305,8 @@ fn main() {
         }
     }
     let max_frames = std::env::var("ENGINE_FRAMES").ok().and_then(|v| v.parse().ok());
+    // Видеокарта готовится с первой секунды, пока создаются цикл событий и окно.
+    let warmup = GpuWarmup::start();
     let event_loop = match EventLoop::new() {
         Ok(event_loop) => event_loop,
         Err(err) => {
@@ -301,7 +315,8 @@ fn main() {
         }
     };
     let mut runner = Runner {
-        hub: Hub::new(options),
+        boot: piska_hub::startup::start(options),
+        warmup: Some(warmup),
         gfx: None,
         error: None,
         frames: 0,
@@ -310,14 +325,19 @@ fn main() {
         next_frame: Instant::now(),
         shown: false,
     };
-    runner.hub.enable_splash();
     // Системные окна выбора папки и файла — только у настоящего окна (не в тестах).
     engine_build::file_dialog::enable_native();
     if let Err(err) = event_loop.run_app(&mut runner) {
         eprintln!("piska-hub: {err}");
         std::process::exit(1);
     }
-    runner.hub.shutdown();
+    if let Some(hub) = runner.boot.value_mut() {
+        hub.shutdown();
+    }
+    if let Some(message) = runner.boot.error() {
+        eprintln!("piska-hub: {message}");
+        std::process::exit(1);
+    }
     if let Some(err) = runner.error {
         eprintln!("piska-hub: {err}");
         std::process::exit(1);

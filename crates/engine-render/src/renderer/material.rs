@@ -120,8 +120,9 @@ struct Cached {
 /// Конвейеры, раскладка и кэши материалов; живёт в [`Renderer`].
 pub(super) struct MeshPass {
     pub layout: wgpu::BindGroupLayout,
-    /// По номеру `pass` (см. `PASS_*`).
-    pub pipelines: [wgpu::RenderPipeline; 4],
+    /// По варианту шейдера (variant.rs), затем по номеру `pass` (см. `PASS_*`).
+    /// Вариант 0 есть всегда, остальные собираются при первом кадре, которому нужны.
+    pub pipelines: Vec<Option<[wgpu::RenderPipeline; 4]>>,
     pub shadow_two_sided: wgpu::RenderPipeline,
     pub shadow_cutout: wgpu::RenderPipeline,
     pub binds: Vec<wgpu::BindGroup>,
@@ -148,6 +149,84 @@ const fn column(location: u32, floats: u64) -> wgpu::VertexAttribute {
 /// Касательные — отдельный вершинный буфер (слот 2): раскладка основных вершин не меняется.
 pub(super) const TANGENT_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![13 => Float32x4];
 
+/// Вершины меша: позиция, нормаль, UV (`MeshVertex`).
+const MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+
+/// Четыре конвейера основного прохода (непрозрачный / смешивание × отсечение обратных
+/// граней / без) для одного варианта шейдера мешей.
+pub(super) fn main_pipelines(
+    device: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    lit_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout,
+) -> [wgpu::RenderPipeline; 4] {
+    let vertex = wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<super::MeshVertex>() as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &MESH_VERTEX_ATTRIBUTES,
+    };
+    let instance = wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<super::MeshInstance>() as u64,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &super::INSTANCE_ATTRIBUTES,
+    };
+    let tangents = wgpu::VertexBufferLayout {
+        array_stride: 16,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &TANGENT_ATTRIBUTES,
+    };
+    let lit = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("mesh pipeline layout"),
+        bind_group_layouts: &[lit_layout, material_layout],
+        push_constant_ranges: &[],
+    });
+    let multisample = wgpu::MultisampleState { count: super::SAMPLES, ..wgpu::MultisampleState::default() };
+    let main = |label: &'static str, blend: bool, two_sided: bool| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&lit),
+            vertex: wgpu::VertexState {
+                module,
+                entry_point: Some("vs_main"),
+                buffers: &[vertex.clone(), instance.clone(), tangents.clone()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: crate::post::HDR_FORMAT,
+                    blend: blend.then_some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: (!two_sided).then_some(wgpu::Face::Back),
+                ..wgpu::PrimitiveState::default()
+            },
+            // Полупрозрачные проверяют глубину, но не пишут её: позади видно всё.
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: super::DEPTH_FORMAT,
+                depth_write_enabled: !blend,
+                // Обратная глубина (depth.rs): ближе — больше.
+                depth_compare: wgpu::CompareFunction::Greater,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample,
+            multiview: None,
+            cache: None,
+        })
+    };
+    [
+        main("mesh pipeline", false, false),
+        main("two-sided mesh pipeline", false, true),
+        main("transparent mesh pipeline", true, false),
+        main("two-sided transparent mesh pipeline", true, true),
+    ]
+}
+
 /// Что нужно для сборки конвейеров мешей.
 pub(super) struct PipelineInputs<'a> {
     pub device: &'a wgpu::Device,
@@ -156,12 +235,9 @@ pub(super) struct PipelineInputs<'a> {
     pub lit_layout: &'a wgpu::BindGroupLayout,
     pub globals_layout: &'a wgpu::BindGroupLayout,
     pub vertex: wgpu::VertexBufferLayout<'a>,
-    pub instance: wgpu::VertexBufferLayout<'a>,
     pub instance_model: wgpu::VertexBufferLayout<'a>,
     pub instance_cutout: wgpu::VertexBufferLayout<'a>,
-    pub hdr_format: wgpu::TextureFormat,
     pub depth_format: wgpu::TextureFormat,
-    pub samples: u32,
 }
 
 impl MeshPass {
@@ -203,61 +279,8 @@ impl MeshPass {
                 texture(6),
             ],
         });
-        let tangents = wgpu::VertexBufferLayout {
-            array_stride: 16,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &TANGENT_ATTRIBUTES,
-        };
-        let lit = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("mesh pipeline layout"),
-            bind_group_layouts: &[inputs.lit_layout, &layout],
-            push_constant_ranges: &[],
-        });
-        let multisample = wgpu::MultisampleState { count: inputs.samples, ..wgpu::MultisampleState::default() };
-        let main = |label: &'static str, blend: bool, two_sided: bool| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&lit),
-                vertex: wgpu::VertexState {
-                    module: inputs.mesh_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[inputs.vertex.clone(), inputs.instance.clone(), tangents.clone()],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: inputs.mesh_shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: inputs.hdr_format,
-                        blend: blend.then_some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    cull_mode: (!two_sided).then_some(wgpu::Face::Back),
-                    ..wgpu::PrimitiveState::default()
-                },
-                // Полупрозрачные проверяют глубину, но не пишут её: позади видно всё.
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: inputs.depth_format,
-                    depth_write_enabled: !blend,
-                    // Обратная глубина (depth.rs): ближе — больше.
-                    depth_compare: wgpu::CompareFunction::Greater,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample,
-                multiview: None,
-                cache: None,
-            })
-        };
-        let pipelines = [
-            main("mesh pipeline", false, false),
-            main("two-sided mesh pipeline", false, true),
-            main("transparent mesh pipeline", true, false),
-            main("two-sided transparent mesh pipeline", true, true),
-        ];
+        let mut pipelines: Vec<Option<[wgpu::RenderPipeline; 4]>> = (0..super::variant::COUNT).map(|_| None).collect();
+        pipelines[0] = Some(main_pipelines(device, inputs.mesh_shader, inputs.lit_layout, &layout));
 
         let shadow_depth = wgpu::DepthStencilState {
             format: inputs.depth_format,
@@ -449,6 +472,8 @@ impl Renderer {
             params: [material.metallic, material.roughness, material.world_tiling.max(0.0), flag(material.grid)],
             casts_shadows: material.cast_shadows,
         };
+        // Свой шейдер (`.shader`, renderer/custom.rs): та же группа материала, свой конвейер.
+        let resolved = if material.shader.is_none() { resolved } else { self.custom_material(&material, resolved, None, assets) };
         self.mesh_pass.materials.insert(source, Cached { resolved, revision: runtime_entry.map(|(_, r)| r) });
         Some(resolved)
     }
@@ -564,6 +589,8 @@ pub(super) struct MaterialObject<'a> {
     pub matrix: Mat4,
     pub visible: bool,
     pub world_bounds: (Vec3, Vec3),
+    /// Значения своего шейдера только для этого объекта (`MaterialParams`).
+    pub params: Option<&'a engine_assets::ShaderParams>,
 }
 
 /// Кэши кадра: без них каждый объект искал бы материал в хеш-таблицах.
@@ -618,7 +645,11 @@ impl Renderer {
                 resolved
             }
         };
-        Some(resolved.unwrap_or_else(|| missing_material(self.cached_legacy_bind(cache, None, assets))))
+        let resolved = resolved.unwrap_or_else(|| missing_material(self.cached_legacy_bind(cache, None, assets)));
+        Some(match object.params {
+            Some(params) => self.custom_override(resolved, params, assets),
+            None => resolved,
+        })
     }
 
     /// Встроенный материал как [`Resolved`].
@@ -709,19 +740,38 @@ impl Renderer {
         if batches.is_empty() {
             return (0, 0);
         }
-        pass.set_bind_group(0, &self.lit_bind_group, &[]);
+        let (Some(pipelines), Some(lit)) =
+            (self.mesh_pass.pipelines[self.frame_variant].as_ref(), self.lit_binds[self.frame_variant].as_ref())
+        else {
+            return (0, 0);
+        };
+        pass.set_bind_group(0, lit, &[]);
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        self.count_state(2);
         let (mut draws, mut triangles) = (0, 0);
         let mut current: Option<u8> = None;
         for batch in batches {
             let item = &items[batch.first as usize];
+            // Свой шейдер: свой конвейер и группа параметров (renderer/custom.rs).
+            if item.bind & super::custom::CUSTOM_BIT != 0 {
+                if let Some(mesh) = self.meshes.get(&item.key) {
+                    if self.draw_custom_mesh(pass, item, mesh, batch.instances.clone(), false) {
+                        triangles += part_range(mesh, item.part).len() as u32 / 3 * batch.instances.len() as u32;
+                        draws += 1;
+                    }
+                }
+                current = None;
+                continue;
+            }
             let (Some(mesh), Some(bind)) = (self.meshes.get(&item.key), self.mesh_pass.binds.get(item.bind as usize)) else {
                 continue;
             };
             if current != Some(item.pass) {
                 current = Some(item.pass);
-                pass.set_pipeline(&self.mesh_pass.pipelines[item.pass as usize]);
+                pass.set_pipeline(&pipelines[item.pass as usize]);
+                self.count_state(1);
             }
+            self.count_state(4);
             let range = part_range(mesh, item.part);
             pass.set_bind_group(1, bind, &[]);
             pass.set_vertex_buffer(0, mesh.vertices.slice(..));
@@ -736,8 +786,20 @@ impl Renderer {
 
     /// Нарисовать карту теней. Возвращает число draw call'ов.
     pub(super) fn draw_shadow_batches(&self, pass: &mut wgpu::RenderPass<'_>, items: &[MeshItem], batches: &[MeshBatch]) -> u32 {
-        pass.set_bind_group(0, &self.globals_bind_group, &[]);
+        self.draw_shadow_batches_with(pass, &self.globals_bind_group, items, batches)
+    }
+
+    /// То же с заданными параметрами кадра (у каждого каскада — своя матрица солнца).
+    pub(super) fn draw_shadow_batches_with(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        globals: &wgpu::BindGroup,
+        items: &[MeshItem],
+        batches: &[MeshBatch],
+    ) -> u32 {
+        pass.set_bind_group(0, globals, &[]);
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        self.count_state(2);
         let mut draws = 0;
         let mut current: Option<u8> = None;
         for batch in batches {
@@ -745,6 +807,14 @@ impl Renderer {
             let Some(mesh) = self.meshes.get(&item.key) else {
                 continue;
             };
+            // Свой шейдер со своей тенью (сдвиг вершин, `discard`, вырез): renderer/custom.rs.
+            if item.shadow == SHADOW_CUTOUT && item.bind & super::custom::CUSTOM_BIT != 0 {
+                if self.draw_custom_mesh(pass, item, mesh, batch.instances.clone(), true) {
+                    draws += 1;
+                }
+                current = None;
+                continue;
+            }
             if current != Some(item.shadow) {
                 current = Some(item.shadow);
                 pass.set_pipeline(match item.shadow {
@@ -752,15 +822,18 @@ impl Renderer {
                     SHADOW_TWO_SIDED => &self.mesh_pass.shadow_two_sided,
                     _ => &self.mesh_pass.shadow_cutout,
                 });
+                self.count_state(1);
             }
             if item.shadow == SHADOW_CUTOUT {
                 let Some(bind) = self.mesh_pass.binds.get(item.bind as usize) else {
                     continue;
                 };
                 pass.set_bind_group(1, bind, &[]);
+                self.count_state(1);
             }
             pass.set_vertex_buffer(0, mesh.vertices.slice(..));
             pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
+            self.count_state(2);
             pass.draw_indexed(part_range(mesh, item.part), 0, batch.instances.clone());
             draws += 1;
         }

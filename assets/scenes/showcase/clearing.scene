@@ -7,6 +7,9 @@
             (kind: "Environment", fields: {"ambient": Float(1.0), "bloom": Float(0.16), "exposure": Float(1.15), "fog_density": Float(0.03), "shadow_distance": Float(45.0), "vignette": Float(0.38)}),
             (kind: "Fog", fields: {"height": Float(0.4), "height_falloff": Float(0.22), "start": Float(5.0)}),
             (kind: "SkyColors", fields: {"horizon": Color(0.03, 0.05, 0.1, 1.0), "zenith": Color(0.006, 0.012, 0.04, 1.0)}),
+            (kind: "SoftShadows"),
+            (kind: "AmbientOcclusion"),
+            (kind: "PostQuality"),
             (kind: "ColorGrading", fields: {"contrast": Float(1.12), "saturation": Float(1.05), "shadows": Color(0.1, 0.22, 0.5, 1.0), "temperature": Float(-0.05)}),
         ], children: [
             (name: "Moon", transform: (rotation: (-33.318, -155.273, 0.0)), components: [

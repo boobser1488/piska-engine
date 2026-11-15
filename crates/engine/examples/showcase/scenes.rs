@@ -349,6 +349,10 @@ fn island(kit: &Kit) -> SceneData {
         )
         .with("Fog", vec![("start", f(55.0)), ("height", f(0.0)), ("height_falloff", f(0.03))])
         .with("SkyColors", vec![("zenith", rgb(0.1, 0.18, 0.42)), ("horizon", rgb(0.95, 0.52, 0.3))])
+        .with("SoftShadows", vec![])
+        .with("Sky", vec![("clouds", f(0.3)), ("cloud_color", rgb(1.0, 0.86, 0.78))])
+        .with("AmbientOcclusion", vec![])
+        .with("PostQuality", vec![])
         .with(
             "ColorGrading",
             vec![
@@ -603,6 +607,9 @@ fn clearing(kit: &Kit) -> SceneData {
         )
         .with("Fog", vec![("start", f(5.0)), ("height", f(0.4)), ("height_falloff", f(0.22))])
         .with("SkyColors", vec![("zenith", rgb(0.006, 0.012, 0.04)), ("horizon", rgb(0.03, 0.05, 0.1))])
+        .with("SoftShadows", vec![])
+        .with("AmbientOcclusion", vec![])
+        .with("PostQuality", vec![])
         .with(
             "ColorGrading",
             vec![
@@ -797,6 +804,10 @@ fn workshop(kit: &Kit) -> SceneData {
         )
         .with("Fog", vec![("enabled", Value::Bool(false))])
         .with("SkyColors", vec![("zenith", rgb(0.22, 0.27, 0.38)), ("horizon", rgb(0.34, 0.33, 0.36))])
+        .with("SoftShadows", vec![])
+        .with("AmbientOcclusion", vec![])
+        .with("Outline", vec![])
+        .with("PostQuality", vec![])
         .with(
             "ColorGrading",
             vec![
@@ -911,6 +922,10 @@ fn valley(kit: &Kit) -> SceneData {
             ],
         )
         .with("Fog", vec![("start", f(120.0)), ("height_falloff", f(0.004))])
+        .with("SoftShadows", vec![])
+        .with("Sky", vec![("clouds", f(0.35))])
+        .with("AmbientOcclusion", vec![])
+        .with("PostQuality", vec![])
         .with("ColorGrading", vec![("contrast", f(1.05)), ("saturation", f(1.12)), ("temperature", f(0.04))])
         .child(sun("Sun", sun_dir, Color::rgb(1.0, 0.94, 0.85), 2.8, true));
 

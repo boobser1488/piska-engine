@@ -1,0 +1,84 @@
+// Свой шейдер спрайта (`//! kind: sprite`): всё, кроме функции пользователя. Вершины — те
+// же, что у sprite.wgsl (батчинг на CPU), группы 0 и 1 — те же; параметры — группа 2.
+
+struct EngineSpriteGlobals {
+    view_proj: mat4x4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> engine_sprite_globals: EngineSpriteGlobals;
+@group(1) @binding(0) var sprite_texture: texture_2d<f32>;
+@group(1) @binding(1) var sprite_sampler: sampler;
+
+// Вход функции `sprite`.
+struct SpriteIn {
+    uv: vec2<f32>,               // UV в текстуре (с кадром листа)
+    color: vec4<f32>,            // цвет спрайта (`SpriteRenderer::color`)
+    time: f32,
+    texel_size: vec2<f32>,       // размер одного пикселя текстуры в UV
+    texture_size: vec2<f32>,     // размер текстуры в пикселях
+    world_position: vec3<f32>,
+    screen_uv: vec2<f32>,        // 0..1 по экрану, (0, 0) — левый верхний угол
+    frame_rect: vec4<f32>,       // кадр листа в UV: xy — min, zw — max
+    texture_color: vec4<f32>,    // пиксель текстуры (без цвета спрайта)
+};
+
+// Что нарисовал бы обычный спрайт: текстура × цвет.
+fn default_sprite(in: SpriteIn) -> vec4<f32> {
+    return in.texture_color * in.color;
+}
+
+// Пиксель текстуры спрайта в любой точке (без мипмапов — можно в условиях и циклах).
+fn sample_sprite(uv: vec2<f32>) -> vec4<f32> {
+    return textureSampleLevel(sprite_texture, sprite_sampler, uv, 0.0);
+}
+
+struct EngineSpriteVarying {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) @interpolate(perspective, centroid) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) @interpolate(flat) rect: vec4<f32>,
+    @location(3) world_position: vec3<f32>,
+};
+
+@vertex
+fn vs_sprite(
+    @location(0) position: vec3<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+    @location(3) rect: vec4<f32>,
+) -> EngineSpriteVarying {
+    var out: EngineSpriteVarying;
+    out.clip_position = engine_sprite_globals.view_proj * vec4<f32>(position, 1.0);
+    out.uv = uv;
+    out.color = color;
+    out.rect = rect;
+    out.world_position = position;
+    return out;
+}
+
+@fragment
+fn fs_sprite(in: EngineSpriteVarying) -> @location(0) vec4<f32> {
+    engine_load_params();
+    // Как в sprite.wgsl: выборка не выходит за кадр листа на полтекселя выбранного мипа.
+    let size = vec2<f32>(textureDimensions(sprite_texture));
+    let texels = in.uv * size;
+    let footprint = max(dot(dpdx(texels), dpdx(texels)), dot(dpdy(texels), dpdy(texels)));
+    let top = f32(textureNumLevels(sprite_texture) - 1u);
+    let lod = clamp(ceil(0.5 * log2(max(footprint, 1e-8)) + 0.25), 0.0, top);
+    let margin = select(0.0, 0.5 * (exp2(lod) - 1.0), lod > 0.0) / size;
+    let middle = (in.rect.xy + in.rect.zw) * 0.5;
+    let low = min(in.rect.xy + margin, middle);
+    let high = max(in.rect.zw - margin, middle);
+    let uv = clamp(in.uv, low, high);
+    var s: SpriteIn;
+    s.uv = uv;
+    s.color = in.color;
+    s.time = frame.time;
+    s.texel_size = 1.0 / size;
+    s.texture_size = size;
+    s.world_position = in.world_position;
+    s.screen_uv = in.clip_position.xy * frame.screen.zw;
+    s.frame_rect = in.rect;
+    s.texture_color = textureSample(sprite_texture, sprite_sampler, uv);
+    return sprite(s);
+}

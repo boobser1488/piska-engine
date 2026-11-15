@@ -163,11 +163,14 @@ pub(crate) fn snake_case(name: &str) -> String {
     out
 }
 
-/// Текст нового скрипта.
+#[cfg(test)]
+/// Текст нового скрипта: учебная заготовка (остальные — [`ScriptTemplate`](crate::script_templates::ScriptTemplate)).
 pub(crate) fn rust_template(name: &str) -> String {
-    RUST_TEMPLATE.replace("{Name}", name)
+    crate::script_templates::ScriptTemplate::Empty.text(name)
 }
 
+/// Прежний текст нового скрипта (длинные хуки) — для сравнения и старых тестов.
+#[cfg(test)]
 const RUST_TEMPLATE: &str = r#"//! {Name} — скрипт на Rust. Он вешается на объект так же, как Light или MeshRenderer:
 //! в инспекторе — Add Component → {Name}.
 //!
@@ -1043,6 +1046,8 @@ pub(crate) struct RustState {
     pub file_dialog: Option<FileDialog>,
     /// Этот процесс — перезапущенный редактор: метку убрать, когда окно покажет кадр.
     shown_marker: Option<PathBuf>,
+    /// Заготовка, выбранная в окне «New Rust Script».
+    pub template: crate::script_templates::ScriptTemplate,
 }
 
 impl Editor {
@@ -1088,14 +1093,15 @@ impl Editor {
             path: path.display().to_string(),
             source,
         };
+        let template = self.rust.template;
         std::fs::create_dir_all(&dir).map_err(io)?;
-        std::fs::write(&path, rust_template(name)).map_err(io)?;
+        std::fs::write(&path, template.text(name)).map_err(io)?;
         log::info!("created `{}`", path.display());
         regenerate_mod(&dir)?;
 
-        self.code.scan(&self.config.code_dirs);
+        self.code.scan(&self.config.code_dirs, self.assets_root().as_deref());
         self.code.open(&path).map_err(EditorError::Other)?;
-        self.code.goto_line(&path, 22);
+        self.code.goto_line(&path, template.focus_line());
         self.view_tab = ViewTab::Code;
         if let Some(object) = attach_to {
             self.pending_scripts.push((name.to_string(), object));
@@ -1546,7 +1552,7 @@ impl Editor {
     }
 
     fn after_script_file_change(&mut self, path: &Path) {
-        self.code.scan(&self.config.code_dirs);
+        self.code.scan(&self.config.code_dirs, self.assets_root().as_deref());
         let in_rust_dir = match (&self.config.rust_script_dir, path.parent()) {
             (Some(dir), Some(parent)) => same_dir(dir, parent),
             _ => false,
@@ -1915,15 +1921,20 @@ mod tests {
 
     #[test]
     fn the_template_declares_a_component_with_hooks_and_docs() {
+        // Прежний шаблон (длинные хуки) по-прежнему разбирается.
+        let old = RUST_TEMPLATE.replace("{Name}", "EnemyPatrol");
+        assert!(old.contains("fn on_update(&mut self, ctx: &mut Ctx, dt: f32)"));
+        assert_eq!(declared_components(&old).unwrap().len(), 1);
+
         let text = rust_template("EnemyPatrol");
         assert!(text.contains("use engine::prelude::*;"));
         assert!(text.contains("component! {"));
         assert!(text.contains("pub struct EnemyPatrol {"));
-        assert!(text.contains("pub speed: f32 = 90.0,"));
+        assert!(text.contains("pub speed: f32 = 3.0,"));
         assert!(text.contains("impl Component for EnemyPatrol {"));
-        assert!(text.contains("fn on_start(&mut self, _ctx: &mut Ctx)"));
-        assert!(text.contains("fn on_update(&mut self, ctx: &mut Ctx, dt: f32)"));
-        assert!(text.contains("on_fixed_update") && text.contains("docs/api/gameplay.md"));
+        assert!(text.contains("fn start(&mut self, ctx: &mut Ctx)"));
+        assert!(text.contains("fn update(&mut self, ctx: &mut Ctx)"));
+        assert!(text.contains("fixed_update") && text.contains("docs/api/gameplay.md"));
         assert!(!text.contains("{Name}"));
         // Разборщик видит в шаблоне ровно этот компонент.
         assert_eq!(
@@ -2120,5 +2131,29 @@ mod tests {
         let bin = Relaunch::bin("template", "template-editor", &["editor"]);
         assert_eq!(&bin.build.args[..7], ["build", "-p", "template", "--bin", "template-editor", "--features", "editor"]);
         assert_eq!(bin.target, "template-editor");
+    }
+
+    /// Rebuild-and-restart: unsaved code is written to disk before the session is handed
+    /// over (the new editor reopens the files from disk), line endings kept — even when the
+    /// new program cannot be started.
+    #[test]
+    fn the_restart_after_build_saves_modified_code_first() {
+        let dir = temp_dir("relaunch_saves");
+        let file = dir.join("mover.rs");
+        std::fs::write(&file, "fn a() {}
+").unwrap();
+        let mut editor = Editor::new(App::new(), EditorConfig::default().code_dir(&dir)).unwrap();
+        editor.code.open(&file).unwrap();
+        editor.code.set_active_text("fn a() {}
+// edit while building
+");
+        assert!(editor.code.has_unsaved());
+        let result = editor.relaunch_into(&dir.join("no-such-editor.exe"));
+        assert!(result.is_err(), "the program cannot be started");
+        assert_eq!(std::fs::read(&file).unwrap(), b"fn a() {}
+// edit while building
+", "the edit reached the disk with CRLF");
+        assert!(!editor.code.has_unsaved());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

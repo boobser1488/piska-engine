@@ -1,5 +1,7 @@
-// Единственная сцена шаблона: камера, небо, земля со стенками, корзина и менеджер игры.
-// Интерфейс (счёт, жизни, экран «Game over») строит скрипт GameManager.
+// Единственная сцена шаблона: камера, небо, земля, корзина, объект Game с правилами
+// и интерфейс (счёт, жизни, рекорд, подсказка, экран «Game over»). Всё — обычные объекты:
+// их видно в иерархии редактора и можно менять в инспекторе. Скрипт GameManager только
+// меняет тексты и показывает панель (`ctx.ui_text`, `ctx.ui_show`).
 (
     name: "Main",
     objects: [
@@ -49,17 +51,201 @@
                     "lock_rotation": Bool(true),
                 }),
                 (kind: "Collider2D", fields: { "size": Vec2(1.5, 0.9) }),
-                (kind: "Basket", fields: { "speed": Float(9.0) }),
+                // Готовое поведение: A/D и стрелки, за пальцем или зажатой мышью, не дальше
+                // края экрана, спрайт смотрит туда, куда едет корзина.
+                (kind: "Paddle2D", fields: {
+                    "speed": Float(9.0),
+                    "view_margin": Float(0.8),
+                    "flip_sprite": Bool(true),
+                }),
             ],
         ),
         (
             name: "Game",
+            // Над верхним краем экрана: здесь появляются звёзды.
+            transform: (position: (0.0, 6.8, 0.0)),
             components: [
                 (kind: "GameManager", fields: {}),
+                // Звезда раз в секунду в случайном месте по ширине экрана. Включает его
+                // GameManager, когда интро досчитало (сообщение "Go").
+                (kind: "Spawner", fields: {
+                    "enabled": Bool(false),
+                    "prefab": Str("prefabs/star.prefab"),
+                    "interval": Float(1.0),
+                    "across_view": Bool(true),
+                    "view_margin": Float(1.0),
+                }),
                 // Интро на языке Scenario: отсчёт, «Лови!», подсказка после первой звезды.
                 (kind: "ScenarioRunner", fields: {
                     "script": Asset("1a2b3c4d5e6f40718293a4b5c6d7e807"),
                 }),
+            ],
+        ),
+        (
+            name: "HUD",
+            components: [
+                (kind: "Canvas", fields: {}),
+                (kind: "RectTransform", fields: {
+                    "anchor_min": Vec2(0.0, 0.0),
+                    "anchor_max": Vec2(1.0, 1.0),
+                    "size": Vec2(0.0, 0.0),
+                }),
+            ],
+            children: [
+                // Строка в левом верхнем углу: счёт, жизни, рекорд.
+                (
+                    name: "Row",
+                    components: [
+                        (kind: "RectTransform", fields: {
+                            "anchor_min": Vec2(0.0, 0.0),
+                            "anchor_max": Vec2(0.0, 0.0),
+                            "pivot": Vec2(0.0, 0.0),
+                            "position": Vec2(24.0, 16.0),
+                            "size": Vec2(320.0, 48.0),
+                        }),
+                        (kind: "LayoutGroup", fields: {
+                            "direction": Enum("Horizontal"),
+                            "spacing": Float(32.0),
+                            "fit_content": Bool(true),
+                        }),
+                        // Стрелки и Enter управляют игрой, а не фокусом кнопок.
+                        (kind: "Canvas", fields: { "keyboard_navigation": Bool(false) }),
+                    ],
+                    children: [
+                        (
+                            name: "Score",
+                            components: [
+                                (kind: "RectTransform", fields: { "size": Vec2(320.0, 42.0) }),
+                                (kind: "Text", fields: {
+                                    "text": Str("Score: 0"),
+                                    "size": Float(30.0),
+                                    "bold": Bool(true),
+                                    "outline_width": Float(2.0),
+                                    "outline_color": Color(0.0, 0.0, 0.0, 1.0),
+                                }),
+                            ],
+                        ),
+                        (
+                            name: "Lives",
+                            components: [
+                                (kind: "RectTransform", fields: { "size": Vec2(320.0, 42.0) }),
+                                (kind: "Text", fields: {
+                                    "text": Str("Lives: 3"),
+                                    "size": Float(30.0),
+                                    "bold": Bool(false),
+                                    "outline_width": Float(2.0),
+                                    "outline_color": Color(0.0, 0.0, 0.0, 1.0),
+                                }),
+                            ],
+                        ),
+                        (
+                            name: "Best",
+                            components: [
+                                (kind: "RectTransform", fields: { "size": Vec2(320.0, 42.0) }),
+                                (kind: "Text", fields: {
+                                    "text": Str("Best: 0"),
+                                    "size": Float(30.0),
+                                    "bold": Bool(false),
+                                    "outline_width": Float(2.0),
+                                    "outline_color": Color(0.0, 0.0, 0.0, 1.0),
+                                }),
+                            ],
+                        ),
+                    ],
+                ),
+                // Экран конца игры: спрятан, его показывает GameManager.
+                (
+                    name: "GameOverPanel",
+                    active: false,
+                    components: [
+                        (kind: "RectTransform", fields: { "size": Vec2(440.0, 320.0) }),
+                        (kind: "Image", fields: {
+                            "color": Color(0.008023192, 0.011612245, 0.020288562, 1.0),
+                            "corner_radius": Float(16.0),
+                            "border_width": Float(1.0),
+                            "shadow_size": Float(28.0),
+                        }),
+                        (kind: "LayoutGroup", fields: {
+                            "spacing": Float(16.0),
+                            "padding_left": Float(32.0),
+                            "padding_right": Float(32.0),
+                            "padding_top": Float(32.0),
+                            "padding_bottom": Float(32.0),
+                            "fit_content": Bool(true),
+                        }),
+                    ],
+                    children: [
+                        (
+                            name: "Title",
+                            components: [
+                                (kind: "RectTransform", fields: { "size": Vec2(320.0, 62.0) }),
+                                (kind: "Text", fields: {
+                                    "text": Str("Game over"),
+                                    "size": Float(44.0),
+                                    "bold": Bool(true),
+                                    "align": Enum("Center"),
+                                }),
+                            ],
+                        ),
+                        (
+                            name: "FinalScore",
+                            components: [
+                                (kind: "RectTransform", fields: { "size": Vec2(320.0, 37.0) }),
+                                (kind: "Text", fields: { "size": Float(26.0), "align": Enum("Center") }),
+                            ],
+                        ),
+                        // Кнопка шлёт сообщение "restart" (`ctx.clicked("restart")`).
+                        (
+                            name: "restart",
+                            components: [
+                                (kind: "RectTransform", fields: { "size": Vec2(260.0, 52.0) }),
+                                (kind: "Image", fields: { "corner_radius": Float(10.0) }),
+                                (kind: "Button", fields: {
+                                    "message": Str("restart"),
+                                    "normal_color": Color(0.07818743, 0.26225072, 1.0, 1.0),
+                                    "hover_color": Color(0.14412849, 0.33716366, 1.0, 1.0),
+                                    "pressed_color": Color(0.049706563, 0.17464739, 0.70837593, 1.0),
+                                }),
+                            ],
+                            children: [
+                                (
+                                    name: "Label",
+                                    components: [
+                                        (kind: "RectTransform", fields: {
+                                            "anchor_min": Vec2(0.0, 0.0),
+                                            "anchor_max": Vec2(1.0, 1.0),
+                                            "size": Vec2(0.0, 0.0),
+                                        }),
+                                        (kind: "Text", fields: {
+                                            "text": Str("Play again"),
+                                            "size": Float(21.0),
+                                            "bold": Bool(true),
+                                            "align": Enum("Center"),
+                                            "wrap": Bool(false),
+                                        }),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                // Крупная надпись по центру: её ведёт интро-сценарий (`ui.text("Hint", …)`).
+                (
+                    name: "Hint",
+                    components: [
+                        (kind: "RectTransform", fields: {
+                            "position": Vec2(0.0, -120.0),
+                            "size": Vec2(900.0, 68.0),
+                        }),
+                        (kind: "Text", fields: {
+                            "size": Float(48.0),
+                            "bold": Bool(true),
+                            "align": Enum("Center"),
+                            "outline_width": Float(3.0),
+                            "outline_color": Color(0.0, 0.0, 0.0, 1.0),
+                        }),
+                    ],
+                ),
             ],
         ),
     ],

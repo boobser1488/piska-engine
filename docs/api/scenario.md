@@ -448,6 +448,7 @@ log(x[, base]) pow sign deg rad fract min max clamp lerp inverse_lerp random ran
 | `time_scale([value])` | прочитать / задать |
 | `key(name)`, `key_down(name)` | зажата / нажата в этом кадре: `"space"`, `"a"`, `"left"`, `"enter"`, `"1"`, `"f5"`, `"shift"` |
 | `axis(name)`, `action(name)`, `action_down(name)` | карты ввода (`input.bind_axis`, `bind_button`) |
+| `pressed(name)`, `held(name)`, `released(name)`, `axis2(x, y)` | те же имена, что у коротких форм скриптов на Rust (`ctx.pressed("Jump")`…): действие нажато в этом кадре / зажато / отпущено; две оси сразу — `vec2` длиной не больше 1 |
 | `mouse()`, `mouse_down(["left"\|"right"\|"middle"])` | позиция `vec2` в пикселях; нажатие |
 | `play(clip[, volume])` | звук: имя клипа из `audio.add_clip` или путь ассета (`"sounds/hit.wav"`) |
 | `music(clip[, fade = 1])`, `stop_music([fade = 1])` | музыка с плавным переходом |

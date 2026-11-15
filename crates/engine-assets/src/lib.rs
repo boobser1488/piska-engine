@@ -8,6 +8,7 @@ mod formats;
 mod material;
 mod mesh;
 mod pack;
+mod shader;
 
 pub use data::{parse_data, DataFormat};
 
@@ -17,6 +18,10 @@ pub use mesh::{
     SubMesh,
 };
 pub use pack::{AssetPack, AssetPackBuilder};
+pub use shader::{
+    closest, parse_header, ParamDecl, ParamType, ParamValue, Shader, ShaderHeaderError, ShaderInfo, ShaderKind, ShaderParams,
+    TextureDefault, SHADER_PARAMS_KIND,
+};
 /// Чтение сторонних форматов моделей (общий крейт движка и Piska Modeler).
 pub use engine_model_formats as model_formats;
 pub use formats::import_options;
@@ -250,6 +255,8 @@ fn importer_for(path: &Path) -> &'static str {
         "wav" | "ogg" => "Audio",
         "gltf" | "glb" | "obj" | "pmodel" | "bbmodel" | "vox" | "ply" | "stl" => "Mesh",
         "material" => "Material",
+        // Свои шейдеры (`docs/api/shaders.md`): текст WGSL с заголовком `//! kind:`.
+        "shader" => "Shader",
         "ttf" | "otf" => "Font",
         // Сценарии на языке Scenario (`docs/api/scenario.md`).
         "scenario" => "Scenario",

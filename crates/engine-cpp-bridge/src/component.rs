@@ -82,7 +82,8 @@ pub(crate) struct CppClass {
     field_names: Cell<&'static [&'static str]>,
     field_info: Cell<&'static [FieldInfo]>,
     /// `None` — плагин выгружен (или в новой версии такого типа нет).
-    vtable: RefCell<Option<Vtable>>,
+    /// В `Rc`: хук берёт копию указателя, а не всей таблицы (с полями) на каждый вызов.
+    vtable: RefCell<Option<Rc<Vtable>>>,
 }
 
 impl CppClass {
@@ -230,7 +231,7 @@ pub(crate) fn bind_class(
         })
     });
     class.set_fields(fields);
-    *class.vtable.borrow_mut() = Some(vtable.0);
+    *class.vtable.borrow_mut() = Some(Rc::new(vtable.0));
     class
 }
 
@@ -478,6 +479,31 @@ impl Reflect for CppComponent {
 // плагин загружен (таблица привязана), аргументы — значения. Исключения C++ гасит
 // переходник в engine_component.hpp, поэтому через границу ничего не летит.
 impl Component for CppComponent {
+    /// Только хуки, которые C++-класс реализует: остальные диспетчер не вызывает (без
+    /// вызова, области мира и копии таблицы на каждый кадр). Пока плагин не загружен — все.
+    /// После перезагрузки плагина ответ обновляется (`GameObject::refresh_hooks`).
+    fn hooks(&self) -> Hooks {
+        let Some(v) = self.class.vtable.borrow().clone() else {
+            return Hooks::ALL;
+        };
+        let mut hooks = Hooks::NONE;
+        for (present, hook) in [
+            (v.on_start.is_some(), Hooks::START),
+            (v.on_update.is_some(), Hooks::UPDATE),
+            (v.on_fixed_update.is_some(), Hooks::FIXED_UPDATE),
+            (v.on_late_update.is_some(), Hooks::LATE_UPDATE),
+            (v.on_collision_enter.is_some(), Hooks::COLLISION_ENTER),
+            (v.on_trigger_enter.is_some(), Hooks::TRIGGER_ENTER),
+            (v.on_destroy.is_some(), Hooks::DESTROY),
+            (v.on_message.is_some(), Hooks::MESSAGE),
+        ] {
+            if present {
+                hooks = hooks.union(hook);
+            }
+        }
+        hooks
+    }
+
     fn on_start(&mut self, ctx: &mut Ctx) {
         let object = to_object(ctx.id);
         self.call(ctx.world, |vtable, instance| {

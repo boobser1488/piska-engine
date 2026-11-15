@@ -297,6 +297,9 @@ pub enum Action {
     /// Создать `New Material.material` в каталоге (путь относительно каталога ассетов)
     /// и открыть его в инспекторе.
     CreateMaterial { folder: String },
+    /// Создать шейдер из шаблона вида `kind` в каталоге (путь относительно каталога ассетов)
+    /// и открыть его во вкладке Code (docs/api/shaders.md).
+    CreateShader { folder: String, kind: engine_assets::ShaderKind },
     /// Показать материал в инспекторе (`None` — снова выделенный объект).
     InspectMaterial(Option<Guid>),
     /// Назначить материал слоту (части меша) `MeshRenderer` объекта.
@@ -562,7 +565,8 @@ impl Editor {
             config,
         };
         editor.reindex_assets();
-        editor.code.scan(&editor.config.code_dirs);
+        let assets = editor.assets_root();
+        editor.code.scan(&editor.config.code_dirs, assets.as_deref());
         if let Some(scene) = editor.config.scene.clone() {
             editor.load_scene(&scene)?;
         }
@@ -796,6 +800,7 @@ impl Editor {
 
     /// Продвинуть игру на кадр, если она идёт. Вызывается раз за кадр редактора.
     pub fn advance(&mut self, dt: f32) {
+        self.viewport.frame_dt = dt;
         if self.mode == Mode::Playing {
             self.app.tick(dt);
             self.drop_dead_selection();
@@ -868,7 +873,8 @@ impl Editor {
         std::fs::write(&path, SCRIPT_TEMPLATE.replace("{Name}", name)).map_err(io)?;
         log::info!("created `{}`", path.display());
 
-        self.code.scan(&self.config.code_dirs);
+        let assets = self.assets_root();
+        self.code.scan(&self.config.code_dirs, assets.as_deref());
         self.code.open(&path).map_err(EditorError::Other)?;
         self.view_tab = ViewTab::Code;
         if let Some(object) = attach_to {
@@ -1053,6 +1059,13 @@ impl Editor {
                 self.dialog = Some(Dialog::Unsaved {
                     then: Box::new(action),
                 });
+                self.code.leave_error = None;
+                return Ok(());
+            }
+            // Сцена сохранена, но во вкладке Code есть несохранённый код: при выходе из
+            // редактора спрашиваем про него (`code_close.rs`); сцену и код — одним вопросом.
+            if crate::code_close::leaves_editor(&action) && self.code.has_unsaved() {
+                self.code.ask_before_leaving(action);
                 return Ok(());
             }
         }
@@ -1401,6 +1414,7 @@ impl Editor {
                 if let Some(path) = self.code.save_active().map_err(EditorError::Other)? {
                     log::info!("saved `{}`", path.display());
                     self.hint_rust_saved(&path);
+                    crate::code_checks::saved(self, &path);
                 }
             }
             Action::NewScript { name, attach_to } => self.new_script(&name, attach_to)?,
@@ -1413,6 +1427,14 @@ impl Editor {
                 self.refresh_assets()?;
                 self.select_asset(&path);
                 self.inspect_material(&path);
+            }
+            Action::CreateShader { folder, kind } => {
+                let path = self.create_shader(&folder, kind)?;
+                self.refresh_assets()?;
+                self.select_asset(&path);
+                if let Some(root) = self.assets_root() {
+                    self.apply(Action::OpenCode(root.join(&path)));
+                }
             }
             Action::InspectMaterial(guid) => self.open_material(guid),
             Action::AssignMaterial { object, material, slot } => {
@@ -1725,6 +1747,10 @@ impl Editor {
         world.time.elapsed = 0.0;
         world.time.frame = 0;
         world.time.delta = 0.0;
+        // `ctx.reload_scene()` в игре перезагружает открытую сцену (её сохранённый файл).
+        if let Some(path) = &self.scene_path {
+            world.scenes().set_loaded_name(path.clone());
+        }
         self.mode = Mode::Playing;
         // Ввод у игры, только пока фокус у окна Game (ui.rs, `forward_game_input`):
         // Play сам отдаёт ему фокус, если это не выключено в Preferences.
@@ -1899,7 +1925,8 @@ impl Editor {
         self.previews.assets_changed(self.app.world.resources.get::<AssetDatabase>());
         self.material_editor.assets_changed();
         self.reindex_assets();
-        self.code.scan(&self.config.code_dirs);
+        let assets = self.assets_root();
+        self.code.scan(&self.config.code_dirs, assets.as_deref());
         self.viewport.mesh_bounds.clear();
         self.gpu_assets_stale = true;
         Ok(())

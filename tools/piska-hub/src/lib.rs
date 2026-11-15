@@ -25,6 +25,7 @@ pub mod paths;
 pub mod platform;
 pub mod project;
 pub mod samples;
+pub mod startup;
 pub mod tasks;
 pub mod templates;
 mod ui;

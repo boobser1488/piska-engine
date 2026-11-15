@@ -43,6 +43,14 @@ impl EditorGpu {
     /// `output_format` — формат цели, в которую рисуется интерфейс (окно или картинка).
     pub fn new(device: wgpu::Device, queue: wgpu::Queue, output_format: wgpu::TextureFormat) -> Self {
         let egui = egui_wgpu::Renderer::new(&device, output_format, None, 1, false);
+        Self::with_ui(device, queue, egui)
+    }
+
+    /// То же с готовым рисовальщиком интерфейса: им уже рисовали заставку тем же
+    /// контекстом egui на том же устройстве и в тот же формат, и его текстуры (атлас
+    /// шрифтов) должны остаться — новый рисовальщик получил бы от контекста только
+    /// частичные обновления несуществующей у него текстуры.
+    pub fn with_ui(device: wgpu::Device, queue: wgpu::Queue, egui: egui_wgpu::Renderer) -> Self {
         Self {
             scene: Renderer::new(device, queue, VIEWPORT_FORMAT),
             egui,

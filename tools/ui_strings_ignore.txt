@@ -176,3 +176,9 @@ press {id:?}
 {screen}: text {t:?} runs under control {:?} {:?}
 settings_input_analog
 terrain_paint_layer
+Alt+A
+G
+R
+U {:.1}  V {:.1}
+X {:.2}  Y {:.2}
+G  R  S  X  Y

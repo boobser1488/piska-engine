@@ -1,4 +1,6 @@
-// Падающая звезда: картинка, физическое тело с лёгкой гравитацией, триггер и скрипт.
+// Падающая звезда: картинка, физическое тело с лёгкой гравитацией, триггер и два готовых
+// поведения: поймана корзиной — «Caught» объекту Game и звук; упала ниже края экрана —
+// «Missed» объекту Game. В обоих случаях звезда исчезает.
 (
     name: "Star",
     tag: "Star",
@@ -17,6 +19,17 @@
             "radius": Float(0.35),
             "is_trigger": Bool(true),
         }),
-        (kind: "Star", fields: {}),
+        (kind: "Collectible", fields: {
+            "message": Str("Caught"),
+            "notify": Str("Game"),
+            "sound": Str("sounds/catch.wav"),
+        }),
+        // margin −0.4: звезда «упала», когда её центр на 0.4 выше нижнего края экрана —
+        // там, где она уходит в траву.
+        (kind: "OffScreen", fields: {
+            "message": Str("Missed"),
+            "notify": Str("Game"),
+            "margin": Float(-0.4),
+        }),
     ],
 )

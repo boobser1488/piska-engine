@@ -46,6 +46,11 @@ pub(crate) struct HierarchyState {
     hover_expand: Option<(Vec<usize>, f64)>,
     /// Сколько объектов нашёл поиск в прошлом кадре.
     pub matches: usize,
+    /// Строки прошлого кадра и отпечаток того, из чего они собраны (сцена и состояние
+    /// окна): в большой сцене строки не пересобираются каждый кадр.
+    rows_cache: Option<(u64, std::sync::Arc<Vec<Row>>)>,
+    /// Буфер обхода сцены для отпечатка.
+    fingerprint_ids: Vec<GameObjectId>,
 }
 
 pub(crate) struct Rename {
@@ -368,6 +373,66 @@ fn collect(editor: &Editor) -> Vec<Row> {
     rows
 }
 
+/// Отпечаток всего, от чего зависят строки без поиска: порядок и имена объектов, их
+/// флажки, родители и дети, префабы, набор компонентов (значок; у `Light` — вид), а также
+/// свёрнутые и запертые узлы и сортировка окна. Обход без выделения памяти на объект.
+fn fingerprint(editor: &Editor, ids: &mut Vec<GameObjectId>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let state = &editor.hierarchy;
+    state.sort_alpha.hash(&mut h);
+    state.flat_search.hash(&mut h);
+    let set = |set: &HashSet<Vec<usize>>| {
+        set.iter().fold(set.len() as u64, |acc, path| {
+            let mut one = std::collections::hash_map::DefaultHasher::new();
+            path.hash(&mut one);
+            acc ^ one.finish().wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        })
+    };
+    set(&state.collapsed).hash(&mut h);
+    set(&state.locked).hash(&mut h);
+    let scene = &editor.app.world.scene;
+    scene.ids_into(ids);
+    for &id in ids.iter() {
+        let Some(object) = scene.get(id) else { continue };
+        id.hash(&mut h);
+        object.name.hash(&mut h);
+        object.active.hash(&mut h);
+        object.parent().hash(&mut h);
+        object.children().len().hash(&mut h);
+        object.prefab().is_some().hash(&mut h);
+        for component in object.components() {
+            let name = component.type_name();
+            name.hash(&mut h);
+            if name == "Light" {
+                if let Some(Value::Enum(kind)) = component.get_field("kind") {
+                    kind.hash(&mut h);
+                }
+            }
+        }
+    }
+    h.finish()
+}
+
+/// Строки окна: без поиска — из кэша, если отпечаток не изменился.
+fn cached_rows(editor: &mut Editor) -> std::sync::Arc<Vec<Row>> {
+    if !Query::parse(&editor.hierarchy.filter).is_empty() {
+        editor.hierarchy.rows_cache = None;
+        return std::sync::Arc::new(collect(editor));
+    }
+    let mut ids = std::mem::take(&mut editor.hierarchy.fingerprint_ids);
+    let key = fingerprint(editor, &mut ids);
+    editor.hierarchy.fingerprint_ids = ids;
+    if let Some((cached, rows)) = &editor.hierarchy.rows_cache {
+        if *cached == key {
+            return rows.clone();
+        }
+    }
+    let rows = std::sync::Arc::new(collect(editor));
+    editor.hierarchy.rows_cache = Some((key, rows.clone()));
+    rows
+}
+
 pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     // Одна полоса, как в Unity: «+ Create», поиск и меню окна (имя окна — на вкладке дока).
     theme::toolbar_strip(ui, |ui| {
@@ -407,7 +472,7 @@ pub(crate) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     });
 
     reveal_selection(editor);
-    let rows = collect(editor);
+    let rows = cached_rows(editor);
     let searching = !editor.hierarchy.filter.trim().is_empty();
     editor.hierarchy.matches = rows.iter().filter(|r| !r.context_only).count();
     if searching {

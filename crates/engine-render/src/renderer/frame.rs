@@ -111,6 +111,10 @@ pub(super) struct MeshScratch {
     pub instances: Vec<MeshInstance>,
     pub batches: Vec<MeshBatch>,
     pub shadow_batches: Vec<MeshBatch>,
+    /// Пачки теней каждого каскада (`SoftShadows`); без каскадов не используются.
+    pub cascade_batches: Vec<Vec<MeshBatch>>,
+    /// Пачки теней каждой грани теней ламп (`LightShadows`, lights.rs).
+    pub face_batches: Vec<Vec<MeshBatch>>,
     /// Полупрозрачные — от дальних к ближним, рисуются после непрозрачных.
     pub blend: Vec<u32>,
     pub blend_batches: Vec<MeshBatch>,

@@ -348,12 +348,10 @@ pub(crate) fn inspector_body(
     let differs = TERRAIN_SHAPE_FIELDS.iter().any(|f| draft.get_field(f) != terrain.get_field(f));
     ui.add_space(theme::SP_S);
     ui.horizontal_wrapped(|ui| {
-        let regenerate_clicked = ui
-            .add_enabled_ui(differs, |ui| crate::controls::button(ui, tr_s("Regenerate")))
-            .inner
+        let regenerate_clicked = crate::controls::button_enabled(ui, differs, tr_s("Regenerate"))
             .on_hover_text(tr_s("Apply the shape settings above and rebuild the terrain"))
             .clicked();
-        if ui.add_enabled_ui(differs, |ui| crate::controls::button(ui, tr_s("Revert"))).inner.on_hover_text(tr_s("Forget the unapplied shape settings")).clicked() {
+        if crate::controls::button_enabled(ui, differs, tr_s("Revert")).on_hover_text(tr_s("Forget the unapplied shape settings")).clicked() {
             *draft = terrain.clone();
         }
         if regenerate_clicked {
@@ -430,7 +428,7 @@ pub(crate) fn inspector_body(
             trf!("Edited {tiles} tile(s) of 64 × 64 samples", tiles = tiles)
         };
         ui.label(egui::RichText::new(text).color(theme::TEXT_MUTED));
-        if ui.add_enabled_ui(tiles > 0, |ui| crate::controls::button(ui, tr_s("Clear"))).inner.on_hover_text(tr_s("Remove all sculpting and painting")).clicked() {
+        if crate::controls::button_enabled(ui, tiles > 0, tr_s("Clear")).on_hover_text(tr_s("Remove all sculpting and painting")).clicked() {
             terrain.clear_edits();
             changed = true;
         }

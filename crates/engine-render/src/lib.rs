@@ -31,6 +31,12 @@ mod renderer;
 mod fog;
 mod grading;
 mod sky_colors;
+mod atmosphere;
+mod post_fx;
+mod soft_shadows;
+mod lights;
+mod water_fx;
+mod shader_components;
 mod terrain;
 mod terrain_data;
 mod terrain_mesh;
@@ -38,6 +44,8 @@ mod terrain_noise;
 mod terrain_textures;
 mod appicon;
 pub mod frame_time;
+/// Свои шейдеры (`.shader`): сборка, проверка, шаблоны (docs/api/shaders.md).
+pub mod shaders;
 mod window;
 
 pub use components::{
@@ -66,6 +74,12 @@ pub use renderer::TerrainStats;
 pub use fog::Fog;
 pub use grading::ColorGrading;
 pub use sky_colors::SkyColors;
+pub use atmosphere::{Sky, TimeOfDay};
+pub use post_fx::{AmbientOcclusion, Outline, PostQuality};
+pub use soft_shadows::{ShadowFilter, SoftShadows};
+pub use lights::{FillLight, LightShadows, ManyLights, SpotLight};
+pub use water_fx::WaterEffects;
+pub use shader_components::{MaterialParams, PostEffect, ShaderParamExt, SpriteShader};
 pub use terrain::{
     snap_to_terrain, terrain_at, terrain_height, terrain_normal, terrain_raycast, BrushTool, Terrain,
     TerrainBrush, TerrainEdits, TerrainHit, TerrainSource, Water, TERRAIN_LAYERS, TERRAIN_SHAPE_FIELDS,
@@ -92,18 +106,34 @@ pub fn register_components(registry: &mut TypeRegistry) {
         .register::<Fog>()
         .register::<ColorGrading>()
         .register::<SkyColors>()
+        .register::<Sky>()
+        .register::<TimeOfDay>()
+        .register::<SoftShadows>()
+        .register::<SpotLight>()
+        .register::<LightShadows>()
+        .register::<ManyLights>()
+        .register::<FillLight>()
+        .register::<WaterEffects>()
+        .register::<AmbientOcclusion>()
+        .register::<Outline>()
+        .register::<PostQuality>()
         .register::<Terrain>()
-        .register::<Water>();
+        .register::<Water>()
+        .register::<PostEffect>()
+        .register::<SpriteShader>()
+        .register::<MaterialParams>();
     // Категории меню Add Component в редакторе.
     registry
         .categorize(
             &[
                 "SpriteRenderer", "Camera", "MeshRenderer", "Light", "Environment", "Tilemap", "CameraController2D",
-                "Terrain", "Water", "ColorGrading", "SkyColors",
+                "Terrain", "Water", "ColorGrading", "SkyColors", "Sky", "TimeOfDay", "SoftShadows",
+                "AmbientOcclusion", "Outline", "PostQuality",
             ],
             "Rendering",
         )
-        .categorize(&["SpriteAnimator", "ParticleSystem", "TrailRenderer"], "Effects");
+        .categorize(&["SpriteAnimator", "ParticleSystem", "TrailRenderer"], "Effects")
+        .categorize(&["PostEffect", "SpriteShader", "MaterialParams"], "Rendering");
 }
 
 #[derive(Debug, thiserror::Error)]

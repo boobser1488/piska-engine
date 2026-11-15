@@ -18,6 +18,18 @@ pub(crate) type ScreenRect = Option<[f32; 4]>;
 
 /// Прямоугольник на экране по мировым границам `min..max`.
 pub(crate) fn screen_rect(view_proj: Mat4, min: Vec3, max: Vec3) -> ScreenRect {
+    // Ортографическая камера (2D): проекция аффинная, прямоугольник — центр ± полуразмеры
+    // через модуль матрицы, одним преобразованием вместо четырёх-восьми углов с делением.
+    let affine = view_proj.x_axis.w == 0.0 && view_proj.y_axis.w == 0.0 && view_proj.z_axis.w == 0.0 && view_proj.w_axis.w == 1.0;
+    if affine {
+        let center = (min + max) * 0.5;
+        let half = (max - min) * 0.5;
+        let c = view_proj * center.extend(1.0);
+        let ex = view_proj.x_axis.x.abs() * half.x + view_proj.y_axis.x.abs() * half.y + view_proj.z_axis.x.abs() * half.z;
+        let ey = view_proj.x_axis.y.abs() * half.x + view_proj.y_axis.y.abs() * half.y + view_proj.z_axis.y.abs() * half.z;
+        let rect = [c.x - ex, c.y - ey, c.x + ex, c.y + ey];
+        return rect.iter().all(|v| v.is_finite()).then_some(rect);
+    }
     let mut lo = Vec2::splat(f32::INFINITY);
     let mut hi = Vec2::splat(f32::NEG_INFINITY);
     let flat = min.z == max.z;

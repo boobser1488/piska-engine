@@ -149,6 +149,14 @@ impl SceneManager {
         self.loaded_name.as_deref()
     }
 
+    /// Запомнить, какая сцена сейчас открыта, если она пришла не через `load` (её загрузил
+    /// `engine::load_scene` при старте игры или редактор перед Play): тогда
+    /// `ctx.reload_scene()` перезагружает её. `name` — то, что понимает источник сцен
+    /// (`"scenes/main.scene"` или `"main"`).
+    pub fn set_loaded_name(&mut self, name: impl Into<String>) {
+        self.loaded_name = Some(name.into());
+    }
+
     /// Есть ли запрос, который сработает в конце кадра.
     pub fn has_pending(&self) -> bool {
         !self.pending.is_empty()

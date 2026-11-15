@@ -43,6 +43,8 @@ impl Editor {
             self.actions.push(Action::Pause);
         }
         self.shortcuts(ctx);
+        // Вкладка Code: проверка при наборе, cargo check, сборка C++ → Error List.
+        crate::code_checks::tick(self, ctx);
         self.autosave_tick(ctx.input(|i| i.time));
 
         egui::TopBottomPanel::top("editor_top")
@@ -77,6 +79,7 @@ impl Editor {
         self.export_window(ctx);
         self.project_file_window(ctx);
         self.help_windows(ctx);
+        crate::code_nav::windows(self, ctx);
         self.build_tools_window(ctx);
         self.splash_ui(ctx);
         self.apply_queued();
@@ -102,27 +105,38 @@ impl Editor {
         let key = egui::Id::new("piska_theme_applied");
         let wanted = Themed { accent: self.prefs.accent };
         let applied = ctx.data(|data| data.get_temp::<Option<Themed>>(key)).flatten();
+        // Шрифты могла поставить заставка запуска (`boot`): тогда этот кадр рисовать не рано.
+        let fonts_new = !theme::fonts_installed(ctx);
         if applied != Some(wanted) {
             let accent = theme::ACCENTS
                 .get(self.prefs.accent)
                 .map_or(theme::ACCENTS[0].1, |(_, color)| *color);
             theme::set_accent(accent);
-            theme::apply(ctx, applied.is_none());
+            theme::apply(ctx, true);
             ctx.data_mut(|data| data.insert_temp(key, Some(wanted)));
             ctx.set_zoom_factor(self.prefs.ui_scale);
+            crate::window_kit::note_zoom_change(ctx, self.prefs.ui_scale);
         }
         // Масштаб меняют и Preferences, и встроенные Ctrl + / Ctrl − / Ctrl 0.
         let scale_key = egui::Id::new("piska_ui_scale");
         let last = ctx.data(|data| data.get_temp::<f32>(scale_key));
         let zoom = ctx.zoom_factor();
         match last {
-            Some(last) if (last - self.prefs.ui_scale).abs() > 1e-3 => ctx.set_zoom_factor(self.prefs.ui_scale),
+            Some(last) if (last - self.prefs.ui_scale).abs() > 1e-3 => {
+                ctx.set_zoom_factor(self.prefs.ui_scale);
+                crate::window_kit::note_zoom_change(ctx, self.prefs.ui_scale);
+            }
             Some(last) if (last - zoom).abs() > 1e-3 => self.prefs.ui_scale = zoom,
-            None => ctx.set_zoom_factor(self.prefs.ui_scale),
+            None => {
+                ctx.set_zoom_factor(self.prefs.ui_scale);
+                crate::window_kit::note_zoom_change(ctx, self.prefs.ui_scale);
+            }
             _ => {}
         }
         ctx.data_mut(|data| data.insert_temp(scale_key, self.prefs.ui_scale));
-        applied.is_none()
+        // Счёт кадров после смены масштаба идёт каждый кадр, открыто окно или нет.
+        let _ = crate::window_kit::zoom_settling(ctx);
+        fonts_new
     }
 
     pub(crate) fn open_save_as(&mut self) {
@@ -272,6 +286,15 @@ impl Editor {
         }
         // Open Scene… (окно со списком и поиском) и Open Recent Scene ▸ — scene_picker.rs.
         self.scene_menu_items(ui);
+        let new_file_keys = k.text("code-new-file"); // i18n-skip: id команды
+        // Новый файл кода — в каталоге, выделенном в дереве вкладки Code.
+        if item(tr_s("New Code File…")).icon(Icon::Code).shortcut(&new_file_keys).show(ui) {
+            if let Some(folder) = crate::code_tree::selected_folder(self) {
+                self.view_tab = crate::state::ViewTab::Code;
+                self.actions.push(Action::Layout(LayoutAction::Focus(crate::dock::Panel::Code)));
+                self.code.tree_commands.push(crate::code_tree::TreeCmd::New(crate::code_tree::NewKind::TextFile, folder));
+            }
+        }
         theme::menu_separator(ui);
         if item(tr_s("Save"))
             .icon(Icon::Save)
@@ -877,12 +900,19 @@ impl Editor {
     // ------------------------------------------------------------------
 
     fn dialogs(&mut self, ctx: &egui::Context) {
+        crate::code_close::dialog(self, ctx);
         enum Outcome {
             None,
             Cancel,
             Confirm,
             Discard,
         }
+        // Выход из редактора с несохранённым кодом: вопрос о сцене спрашивает и о нём.
+        let code_unsaved: Vec<String> = match &self.dialog {
+            Some(Dialog::Unsaved { then }) if crate::code_close::leaves_editor(then) => self.code.unsaved_names(),
+            _ => Vec::new(),
+        };
+        let code_error = self.code.leave_error.clone();
         let Some(dialog) = self.dialog.as_mut() else {
             return;
         };
@@ -905,12 +935,21 @@ impl Editor {
                     Dialog::Unsaved { .. } => {
                         dialog_title(ui, Icon::Warn, theme::WARN, tr_s("Save changes before closing?"));
                         dialog_text(ui, &trf!("Scene “{scene_name}” has changes that are not saved. If you don't save, they are lost.", scene_name = scene_name));
+                        if !code_unsaved.is_empty() {
+                            dialog_text(ui, &trf!("Unsaved code: {names}.", names = code_unsaved.join(", ")));
+                        }
+                        if let Some(error) = &code_error {
+                            ui.label(egui::RichText::new(error).color(theme::ERROR));
+                        }
                         (tr_s("Save"), tr_s("Save"), false)
                     }
                     Dialog::NewScript { name, .. } => {
                         let rust = &mut self.script_rust;
                         dialog_title(ui, Icon::Script, theme::TEXT_MUTED, if *rust { tr_s("New Rust Script") } else { tr_s("New C++ Script") });
                         crate::rust_scripts::language_switch(ui, rust);
+                        if *rust {
+                            crate::script_templates::picker(ui, &mut self.rust.template);
+                        }
                         dialog_text(ui, &crate::rust_scripts::script_dialog_text(*rust, &self.config));
                         if field(ui, name, "EnemyPatrol") {
                             outcome = Outcome::Confirm;
@@ -980,10 +1019,23 @@ impl Editor {
             (Outcome::None, dialog) => self.dialog = dialog,
             (Outcome::Cancel, _) | (_, None) => {}
             (Outcome::Discard, Some(Dialog::Unsaved { then })) => {
+                if crate::code_close::leaves_editor(&then) {
+                    // «Don't Save» относится и к коду: правки и их копии восстановления — прочь.
+                    self.code.discard_unsaved();
+                }
                 self.dirty = false;
                 self.apply(*then);
             }
             (Outcome::Confirm, Some(Dialog::Unsaved { then })) => {
+                if crate::code_close::leaves_editor(&then) {
+                    if let Err(why) = self.save_all_code() {
+                        // Код не записался — ничего не закрываем, ошибка видна в вопросе.
+                        log::error!("{why}");
+                        self.code.leave_error = Some(why);
+                        self.dialog = Some(Dialog::Unsaved { then });
+                        return;
+                    }
+                }
                 if self.scene_path.is_some() {
                     self.apply(Action::Save);
                     if !self.dirty {
@@ -1083,9 +1135,19 @@ impl Editor {
     /// Сырое движение мыши от системы (`DeviceEvent::MouseMotion`): игре — только пока
     /// курсор захвачен (иначе движение приходит позицией курсора).
     pub fn add_raw_mouse_motion(&mut self, dx: f32, dy: f32) {
+        // Обзор правой кнопкой в виде Scene тоже крутится сырым движением (view3d.rs).
+        if self.viewport.looking {
+            self.viewport.raw_motion += Vec2::new(dx, dy);
+        }
         if self.game_cursor_captured() {
             self.app.world.input.add_mouse_delta(Vec2::new(dx, dy));
         }
+    }
+
+    /// Идёт обзор правой кнопкой в виде Scene: окну — спрятать курсор и вернуть его на место
+    /// после.
+    pub(crate) fn scene_looking(&self) -> bool {
+        self.viewport.looking
     }
 
     /// Что сделать с курсором системы: `Some(true)` — запереть и спрятать, `Some(false)` —

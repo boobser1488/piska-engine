@@ -505,6 +505,14 @@ impl CppPlugins {
             // …и экземпляры создаются заново кодом новой версии.
             self.register_components(&mut world.registry);
             for_each_cpp_component(world, |component| component.attach());
+            // Новая версия класса могла получить или потерять хуки.
+            for id in world.scene.ids() {
+                if let Some(object) = world.scene.get_mut(id) {
+                    if object.components().any(|c| c.as_any().is::<CppComponent>()) {
+                        object.refresh_hooks();
+                    }
+                }
+            }
             log::info!(
                 "plugin `{}` reloaded: {}",
                 self.plugins[index].name(),

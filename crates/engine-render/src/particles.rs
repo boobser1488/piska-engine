@@ -451,7 +451,7 @@ impl ParticleSystem {
         let (_, rotation, _) = matrix.to_scale_rotation_translation();
         let sheet = self.sheet_columns.max(1) * self.sheet_rows.max(1);
         let sheeted = sheet > 1;
-        out.reserve(self.rt.particles.len() * 6);
+        out.reserve(self.rt.particles.len() * crate::draw2d::QUAD_VERTICES);
         for p in &self.rt.particles {
             let t = (p.age / p.lifetime).clamp(0.0, 1.0);
             let mut color = p.color;

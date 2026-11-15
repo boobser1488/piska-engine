@@ -149,7 +149,7 @@ fn editor_over(assets: &Path) -> Editor {
 #[test]
 fn preferences_has_appearance_and_game_view_pages_that_edit_the_preferences() {
     let pages: Vec<&str> = Editor::settings_pages(PREFS).into_iter().map(|(id, _)| id).collect();
-    assert_eq!(pages, ["general", "appearance", "scene-view", "game-view", "console", "build-tools", "shortcuts"]);
+    assert_eq!(pages, ["general", "appearance", "scene-view", "game-view", "console", "code-editor", "build-tools", "shortcuts"]);
 
     let sandbox = Sandbox::new("prefs");
     let mut editor = editor_over(&sandbox.assets());

@@ -131,6 +131,11 @@ struct Component {
 действия виджетов интерфейса — `Button` присылает `Nil`, `Toggle` — `Bool`, `Slider` — `Float`,
 `InputField` — `Str` (и `"<message>:submit"` по Enter); сообщения кнопок приходят и родителям.
 
+Движок вызывает только те хуки, которые класс **переопределил**: для остальных `component<T>()`
+отдаёт пустой указатель (определяется при компиляции по типу `&T::on_update`), поэтому
+компонент с одним `on_update` не стоит ничего в других фазах кадра. Плагин, собранный со старым
+заголовком, по-прежнему получает все хуки.
+
 Хуки столкновений вызываются движком одинаково для 2D и 3D физики. Хуков «выход из
 столкновения/триггера» в движке нет (см. §16).
 
@@ -255,6 +260,8 @@ EngineTime all = engine::time_info();       // всё сразу
 using namespace engine;
 float run = input::axis("Horizontal");            // действия: -1..1 (A/D, стрелки, стик)
 if (input::button_down("Jump")) { ... }            // button / button_down / button_up / button_value
+if (input::pressed("Jump")) { ... }                // короткие имена, как в Rust: pressed / held / released
+Vec2 move = input::axis2("Horizontal", "Vertical"); // две оси, длина ≤ 1; engine::dt() — как ctx.dt()
 if (input::key_down("Space") || input::key("LShift")) { ... }   // клавиши по имени
 if (input::mouse_button_down(0)) { Vec2 p = input::mouse_position(); }
 Vec2 look = input::mouse_delta(); Vec2 wheel = input::scroll_delta(); Vec2 size = input::screen_size();

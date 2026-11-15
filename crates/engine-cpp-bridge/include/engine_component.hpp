@@ -41,6 +41,7 @@
 #include <initializer_list>
 #include <string>
 #include <type_traits>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -529,6 +530,8 @@ inline Tween Object::tween(const char* path, const Value& to, const TweenParams&
 inline EngineTime time_info() noexcept { EngineTime t{}; A().time_info(&t); return t; }
 // Секунд за кадр с учётом time_scale (в хуках это же приходит параметром dt).
 inline float delta_time() noexcept { return time_info().delta; }
+// Короткое имя, как `ctx.dt()` в Rust.
+inline float dt() noexcept { return delta_time(); }
 inline float unscaled_delta_time() noexcept { return time_info().unscaled_delta; }
 inline float fixed_delta_time() noexcept { return time_info().fixed_delta; }
 // Игровое время с запуска (идёт с учётом time_scale) и реальное.
@@ -553,6 +556,21 @@ inline bool button(const char* name) noexcept { return A().input_button(detail::
 inline bool button_down(const char* name) noexcept { return A().input_button_down(detail::s(name)) != 0; }
 inline bool button_up(const char* name) noexcept { return A().input_button_up(detail::s(name)) != 0; }
 inline float button_value(const char* name) noexcept { return A().input_button_value(detail::s(name)); }
+// Те же короткие имена, что у скриптов на Rust (`ctx.pressed("Jump")`, `ctx.axis2(..)`).
+inline bool pressed(const char* name) noexcept { return button_down(name); }
+inline bool held(const char* name) noexcept { return button(name); }
+inline bool released(const char* name) noexcept { return button_up(name); }
+// Две оси сразу, длина не больше 1: `input::axis2("Horizontal", "Vertical")`.
+inline Vec2 axis2(const char* x, const char* y) noexcept {
+    Vec2 v{axis(x), axis(y)};
+    const float l2 = v.x * v.x + v.y * v.y;
+    if (l2 > 1.0f) {
+        const float k = 1.0f / std::sqrt(l2);
+        v.x *= k;
+        v.y *= k;
+    }
+    return v;
+}
 
 // Клавиши по имени: "Space", "A", "Digit1" (или "1"), "Left", "LShift", "Escape", "F5"…
 inline bool key(const char* name) noexcept { return A().input_key(detail::s(name), 0) != 0; }
@@ -1081,6 +1099,20 @@ int field_set(void* self, const EngineValue* value) noexcept {
 
 }  // namespace detail
 
+// Переопределил ли класс хук: `&T::on_update` без своего метода — это метод Component
+// (тип `void (Component::*)(...)`). Хуки, которых класс не переопределил, движку не
+// отдаются (указатель пустой) — он их не вызывает вовсе.
+namespace detail {
+template <class T> constexpr bool overrides_on_start = !std::is_same_v<decltype(&T::on_start), decltype(&Component::on_start)>;
+template <class T> constexpr bool overrides_on_update = !std::is_same_v<decltype(&T::on_update), decltype(&Component::on_update)>;
+template <class T> constexpr bool overrides_on_fixed_update = !std::is_same_v<decltype(&T::on_fixed_update), decltype(&Component::on_fixed_update)>;
+template <class T> constexpr bool overrides_on_late_update = !std::is_same_v<decltype(&T::on_late_update), decltype(&Component::on_late_update)>;
+template <class T> constexpr bool overrides_on_collision_enter = !std::is_same_v<decltype(&T::on_collision_enter), decltype(&Component::on_collision_enter)>;
+template <class T> constexpr bool overrides_on_trigger_enter = !std::is_same_v<decltype(&T::on_trigger_enter), decltype(&Component::on_trigger_enter)>;
+template <class T> constexpr bool overrides_on_destroy = !std::is_same_v<decltype(&T::on_destroy), decltype(&Component::on_destroy)>;
+template <class T> constexpr bool overrides_on_message = !std::is_same_v<decltype(&T::on_message), decltype(&Component::on_message)>;
+}  // namespace detail
+
 // Описание типа для движка: создание, уничтожение и переходники к методам класса.
 // Исключения гасятся на границе — в движок они уйти не должны.
 template <class T>
@@ -1097,32 +1129,48 @@ EngineComponentType component(const char* name) noexcept {
         }
     };
     type.destroy = [](void* self) noexcept { delete static_cast<T*>(self); };
-    type.on_start = [](void* self, EngineObject object) noexcept {
-        detail::guard<T>("on_start", [&] { static_cast<T*>(self)->on_start(Object{object}); });
-    };
-    type.on_update = [](void* self, EngineObject object, float dt) noexcept {
-        detail::guard<T>("on_update", [&] { static_cast<T*>(self)->on_update(Object{object}, dt); });
-    };
-    type.on_fixed_update = [](void* self, EngineObject object, float dt) noexcept {
-        detail::guard<T>("on_fixed_update", [&] { static_cast<T*>(self)->on_fixed_update(Object{object}, dt); });
-    };
-    type.on_late_update = [](void* self, EngineObject object, float dt) noexcept {
-        detail::guard<T>("on_late_update", [&] { static_cast<T*>(self)->on_late_update(Object{object}, dt); });
-    };
-    type.on_collision_enter = [](void* self, EngineObject object, EngineObject other) noexcept {
-        detail::guard<T>("on_collision_enter", [&] { static_cast<T*>(self)->on_collision_enter(Object{object}, Object{other}); });
-    };
-    type.on_trigger_enter = [](void* self, EngineObject object, EngineObject other) noexcept {
-        detail::guard<T>("on_trigger_enter", [&] { static_cast<T*>(self)->on_trigger_enter(Object{object}, Object{other}); });
-    };
-    type.on_destroy = [](void* self, EngineObject object) noexcept {
-        detail::guard<T>("on_destroy", [&] { static_cast<T*>(self)->on_destroy(Object{object}); });
-    };
-    type.on_message = [](void* self, EngineObject object, const char* message, const EngineValue* value) noexcept {
-        detail::guard<T>("on_message", [&] {
-            static_cast<T*>(self)->on_message(Object{object}, message ? message : "", value ? Value::from(*value) : Value());
-        });
-    };
+    if constexpr (detail::overrides_on_start<T>) {
+        type.on_start = [](void* self, EngineObject object) noexcept {
+            detail::guard<T>("on_start", [&] { static_cast<T*>(self)->on_start(Object{object}); });
+        };
+    }
+    if constexpr (detail::overrides_on_update<T>) {
+        type.on_update = [](void* self, EngineObject object, float dt) noexcept {
+            detail::guard<T>("on_update", [&] { static_cast<T*>(self)->on_update(Object{object}, dt); });
+        };
+    }
+    if constexpr (detail::overrides_on_fixed_update<T>) {
+        type.on_fixed_update = [](void* self, EngineObject object, float dt) noexcept {
+            detail::guard<T>("on_fixed_update", [&] { static_cast<T*>(self)->on_fixed_update(Object{object}, dt); });
+        };
+    }
+    if constexpr (detail::overrides_on_late_update<T>) {
+        type.on_late_update = [](void* self, EngineObject object, float dt) noexcept {
+            detail::guard<T>("on_late_update", [&] { static_cast<T*>(self)->on_late_update(Object{object}, dt); });
+        };
+    }
+    if constexpr (detail::overrides_on_collision_enter<T>) {
+        type.on_collision_enter = [](void* self, EngineObject object, EngineObject other) noexcept {
+            detail::guard<T>("on_collision_enter", [&] { static_cast<T*>(self)->on_collision_enter(Object{object}, Object{other}); });
+        };
+    }
+    if constexpr (detail::overrides_on_trigger_enter<T>) {
+        type.on_trigger_enter = [](void* self, EngineObject object, EngineObject other) noexcept {
+            detail::guard<T>("on_trigger_enter", [&] { static_cast<T*>(self)->on_trigger_enter(Object{object}, Object{other}); });
+        };
+    }
+    if constexpr (detail::overrides_on_destroy<T>) {
+        type.on_destroy = [](void* self, EngineObject object) noexcept {
+            detail::guard<T>("on_destroy", [&] { static_cast<T*>(self)->on_destroy(Object{object}); });
+        };
+    }
+    if constexpr (detail::overrides_on_message<T>) {
+        type.on_message = [](void* self, EngineObject object, const char* message, const EngineValue* value) noexcept {
+            detail::guard<T>("on_message", [&] {
+                static_cast<T*>(self)->on_message(Object{object}, message ? message : "", value ? Value::from(*value) : Value());
+            });
+        };
+    }
     type.fields = Fields<T>::data();
     type.field_count = Fields<T>::count();
     return type;

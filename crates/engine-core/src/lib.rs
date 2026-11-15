@@ -35,6 +35,7 @@ pub mod save;
 pub mod scene;
 pub mod scenes;
 pub mod schedule;
+pub mod script;
 pub mod serialize;
 pub mod settings;
 pub mod settings_sections;
@@ -66,6 +67,7 @@ pub mod prelude {
         DirScenes, MemoryScenes, SceneLoadFailed, SceneLoaded, SceneManager, SceneSource,
     };
     pub use crate::schedule::{Scheduler, TimerId};
+    pub use crate::script::{AsRotation, AsVec3, ScriptErrors};
     pub use crate::state::StateMachine;
     pub use crate::timer::{Cooldown, Timer};
     pub use crate::tween::{Ease, Sequence, Tween, TweenFinished, TweenId, Tweens};

@@ -29,6 +29,776 @@ Scenario (`scenario.md`): там `wait(1)` можно поставить пос�
 * [13. Для редактора и встраивания](#13-для-редактора-и-встраивания)
 * [14. Чего здесь нет](#14-чего-здесь-нет)
 
+<!-- beginner:begin -->
+**Новичку:** начните с [первого скрипта за 10 минут](#первый-скрипт-за-10-минут), потом
+загляните в [«Как сделать…»](#как-сделать) — там 30+ готовых рецептов. Всё короткое из этих
+двух частей собрано в [шпаргалке](#шпаргалка-короткие-формы) (она же в редакторе: Help →
+Scripting Cheat Sheet). Справочник (§1–§14) — дальше, когда понадобятся подробности.
+
+* [Первый скрипт за 10 минут](#первый-скрипт-за-10-минут)
+* [Как сделать…](#как-сделать)
+* [Шпаргалка: короткие формы](#шпаргалка-короткие-формы)
+* [Старая форма ↔ короткая](#старая-форма--короткая)
+* [Готовые поведения](#готовые-поведения)
+* [Целая игра: звёзды в корзину](#целая-игра-звёзды-в-корзину)
+
+## Первый скрипт за 10 минут
+
+### Шаг 1. Скрипт
+
+В редакторе: выделите объект → Inspector → **Add Component → New Script…** (или Assets →
+New Rust Script…), выберите заготовку **Empty (with examples)**, имя `Hero`. Редактор
+создаст `src/scripts/hero.rs`, допишет его в `src/scripts/mod.rs` (регистрировать руками
+ничего не надо), соберёт игру и повесит `Hero` на объект. Нажмите Play — объект едет по
+стрелкам / WASD.
+
+Скрипт — это компонент: данные объявляет `component!` (поля видны в инспекторе и
+сохраняются в сцене), поведение — хуки `impl Component`:
+
+```rust
+use engine::prelude::*;
+
+component! {
+    /// Герой. Эта строка — подсказка в инспекторе.
+    pub struct Hero {
+        pub speed: f32 = 5.0,
+    }
+}
+
+impl Component for Hero {
+    fn start(&mut self, ctx: &mut Ctx) {
+        ctx.log("hello!"); // окно Console
+    }
+
+    fn update(&mut self, ctx: &mut Ctx) {
+        // здесь всё, что происходит каждый кадр
+    }
+}
+```
+
+Хуки: `start` (один раз), `update` (каждый кадр), `fixed_update` (шаг физики),
+`late_update` (после всех `update` — камеры), `on_collision(other)`, `on_trigger(other)`,
+`on_click` (кнопка), `on_message(message)`, `on_destroy`. Переопределяйте только нужные.
+`ctx` — «я и весь мир»: через него скрипт двигает объект, читает ввод, находит других.
+
+### Шаг 2. Движение
+
+`ctx.dt()` — сколько секунд длился кадр: умножайте на него скорость, и движение будет
+одинаковым при любом FPS.
+
+```rust
+fn update(&mut self, ctx: &mut Ctx) {
+    ctx.move_by(Vec2::new(self.speed * ctx.dt(), 0.0)); // вправо, `speed` единиц в секунду
+    ctx.rotate_by(90.0 * ctx.dt());                     // 90° в секунду
+}
+```
+
+`ctx.pos()` / `ctx.set_pos(..)` — мировая позиция, `ctx.set_angle(..)`, `ctx.set_scale(..)`,
+`ctx.look_at(..)`, `ctx.forward()`. Вектор можно передать `Vec2` (2D: глубина `z` не
+меняется) или `Vec3`.
+
+### Шаг 3. Ввод
+
+```rust
+fn update(&mut self, ctx: &mut Ctx) {
+    let dir = ctx.axis2("Horizontal", "Vertical"); // WASD, стрелки, крестовина, стик
+    ctx.move_by(dir * self.speed * ctx.dt());
+    if ctx.pressed("Jump") {                        // Space или кнопка A геймпада
+        ctx.log("jump!");
+    }
+    if ctx.key_pressed(Key::R) {                    // конкретная клавиша
+        ctx.reload_scene();
+    }
+}
+```
+
+Действия (`Horizontal`, `Vertical`, `Jump`, `Fire1`, `Submit`, `Cancel` и ваши) настраиваются
+в Project Settings → Input. Опечатка в имени не роняет игру: в Console один раз появится
+`Hero: there is no input axis `Horizntal`. Did you mean `Horizontal`? …` с файлом и строкой.
+
+### Шаг 4. Столкновения
+
+Добавьте объекту `Rigidbody2D` и `Collider2D`, монете — `Collider2D` с галочкой
+`is_trigger` и тег `Coin`. Физика сама вызовет хук:
+
+```rust
+fn on_trigger(&mut self, ctx: &mut Ctx, other: GameObjectId) {
+    if ctx.has_tag(other, "Coin") {
+        ctx.destroy(other);
+        self.score += 1;
+    }
+}
+```
+
+С физическим телом двигайте скорость, а не позицию: `ctx.set_velocity(dir * self.speed)`
+(лучше в `fixed_update`). `ctx.grounded()` — стоит ли объект на земле.
+
+### Шаг 5. Создать объект
+
+Префаб — заготовка объекта в `assets/prefabs/` (перетащите объект из Hierarchy в Project).
+
+```rust
+if ctx.pressed("Fire1") {
+    let bullet = ctx.spawn_at("prefabs/bullet.prefab", ctx.pos());
+    ctx.on(bullet).set_velocity(Vec2::new(12.0, 0.0)); // `on(id)` — то же для другого объекта
+    ctx.on(bullet).destroy_self_after(2.0);
+}
+```
+
+### Шаг 6. Интерфейс
+
+Текст в интерфейсе — объект с компонентом `Text`; к нему обращаются по имени объекта:
+
+```rust
+ctx.ui_text("Score", format!("Score: {}", self.score));
+ctx.ui_show("GameOver"); // и ctx.ui_hide("GameOver")
+if ctx.clicked("restart") { ctx.reload_scene(); } // или хук on_click на самой кнопке
+```
+
+### Шаг 7. Звук
+
+```rust
+ctx.play("sounds/coin.wav"); // файл из ассетов или имя клипа из audio.add_clip(..)
+ctx.play("sfx:coin");        // встроенный звук: sfx:jump, sfx:hurt, sfx:lose… (audio.md)
+ctx.music("music:calm");     // встроенная музыка или файл: ctx.music("sounds/theme.ogg")
+```
+
+### Шаг 8. Следующая сцена
+
+```rust
+if self.score >= 10 {
+    ctx.save("best", self.score); // переживёт перезапуск игры
+    ctx.load_scene("level2");     // scenes/level2.scene
+}
+```
+
+Прочитать сохранённое: `self.best = ctx.load("best", 0);`. Готово: это вся игра «собери
+десять монет». Дальше — рецепты.
+
+### Целая игра: звёзды в корзину
+
+Самая маленькая честная версия «Звездопада» (`games/template`): корзина ездит, звёзды
+падают, счёт растёт. Почти всё — готовые поведения, которые вешаются в редакторе; код
+нужен только для счёта.
+
+Сцена (`assets/scenes/main.scene`, собирается в редакторе):
+
+* **Main Camera** — `Camera` (`ortho_size` 6);
+* **Player** (тег `Player`) — `SpriteRenderer`, `Rigidbody2D` (Dynamic), `Collider2D` и
+  `Paddle2D` (клавиши или палец, не дальше края экрана);
+* **Ground** — `SpriteRenderer` и `Collider2D` под корзиной;
+* **Game** (над верхним краем экрана, y = 6.8) — `Score` (скрипт ниже) и `Spawner`:
+  `prefab` = `prefabs/star.prefab`, `interval` 1, `across_view` вкл.;
+* **Canvas** с текстом **ScoreText** (`Text`).
+
+Префаб звезды (`assets/prefabs/star.prefab`) — `SpriteRenderer`, `Rigidbody2D`
+(`gravity_scale` 0.25), `Collider2D` с `is_trigger` и `Collectible`: `message` = `Caught`,
+`notify` = `Game`, `sound` = `sfx:coin`. Хотите, чтобы упавшие звёзды исчезали, — добавьте
+`OffScreen`.
+
+Весь код игры, `src/lib.rs`:
+
+```rust
+pub mod scripts; // скрипты, созданные в редакторе
+use engine::prelude::*;
+
+engine::game! {
+    name: "Mini Starfall",
+    scene: "scenes/main.scene",
+    components: [Score],
+}
+
+component! {
+    /// Счёт: каждая пойманная звезда — очко.
+    pub struct Score {
+        pub points: i32 = 0,
+    }
+}
+
+impl Component for Score {
+    fn on_message(&mut self, ctx: &mut Ctx, message: &Message) {
+        if message.is("Caught") {
+            self.points += 1;
+            ctx.ui_text("ScoreText", format!("Score: {}", self.points));
+        }
+    }
+}
+```
+
+Полная игра — жизни, рекорд, экран «Game over» с рестартом, музыка и интро на Scenario —
+это `games/template/src/lib.rs` (около 70 строк) и шаблон **Starfall** в Piska Hub.
+Тест этого примера: `crates/engine/tests/mini_starfall.rs`.
+
+### Если что-то не нашлось
+
+Короткие формы не паникуют. `ctx.me_mut::<Rigidbody2D>()` на объекте без тела,
+`ctx.find("Gmae")`, `ctx.spawn("prefabs/nope.prefab")` пишут в Console **один раз на место
+вызова** понятную ошибку — что искали, на каком объекте, что есть рядом, как починить:
+
+```text
+`Hero` has no `Rigidbody2D` component (ctx.me_mut::<Rigidbody2D>()). It has: Transform,
+SpriteRenderer, Collider2D, Hero. Add it in the Inspector (Add Component → Rigidbody2D) or in
+code (`ctx.add(Rigidbody2D::default())`); until then this call changes nothing (src/scripts/hero.rs:14)
+```
+
+а вызов ничего не делает: `me_mut` отдаёт временную «заглушку», `find` и `spawn` —
+`GameObjectId::NONE`, с которым любые короткие формы ничего не делают. Ошибки копятся и в
+ресурсе `ScriptErrors` (`world.resources.get::<ScriptErrors>()`) — удобно в тестах.
+
+## Как сделать…
+
+Каждый рецепт — целый компонент или кусок хука; `use engine::prelude::*;` в начале файла.
+
+### …движение с постоянной скоростью
+
+```rust
+component! { pub struct Cloud { pub speed: f32 = 1.0 } }
+impl Component for Cloud {
+    fn update(&mut self, ctx: &mut Ctx) {
+        ctx.move_by(Vec2::new(self.speed * ctx.dt(), 0.0));
+    }
+}
+```
+
+Готовое: `Mover` (Add Component → Behaviours).
+
+### …вращение
+
+```rust
+fn update(&mut self, ctx: &mut Ctx) {
+    ctx.rotate_by(180.0 * ctx.dt());                         // 2D: вокруг Z
+    // ctx.rotate_by(Vec3::new(0.0, 90.0 * ctx.dt(), 0.0)); // 3D: вокруг Y
+}
+```
+
+Готовое: `Rotator`.
+
+### …игрока с видом сверху
+
+```rust
+component! { pub struct Walker { pub speed: f32 = 5.0 } }
+impl Component for Walker {
+    fn update(&mut self, ctx: &mut Ctx) {
+        let dir = ctx.axis2("Horizontal", "Vertical");
+        ctx.move_by(dir * self.speed * ctx.dt());
+    }
+}
+```
+
+Готовое: `PlayerMove2D` (с `Rigidbody2D` упирается в стены).
+
+### …бег и прыжок (платформер)
+
+```rust
+component! { pub struct Runner { pub speed: f32 = 6.0, pub jump: f32 = 11.0 } }
+impl Component for Runner {
+    fn fixed_update(&mut self, ctx: &mut Ctx) {
+        let mut v = ctx.velocity2();
+        v.x = ctx.axis("Horizontal") * self.speed;
+        if ctx.grounded() && ctx.pressed("Jump") {
+            v.y = self.jump;
+        }
+        ctx.set_velocity(v);
+    }
+}
+```
+
+Нужны `Rigidbody2D` (`lock_rotation`) и `Collider2D`. Готовое с «временем койота» и буфером
+прыжка — `Platformer2D`.
+
+### …героя от третьего лица
+
+```rust
+fn fixed_update(&mut self, ctx: &mut Ctx) {
+    let input = ctx.axis2("Horizontal", "Vertical");
+    let walk = Vec3::new(input.x, 0.0, -input.y) * 5.0;
+    let mut v = Vec3::new(walk.x, ctx.velocity().y, walk.z);
+    if ctx.grounded() && ctx.pressed("Jump") {
+        v.y = 5.0;
+    }
+    ctx.set_velocity(v); // на объекте CharacterController
+}
+```
+
+Готовое (относительно камеры, с поворотом по ходу): `PlayerMove3D`; от первого лица —
+`FpsController` (`fps.md`).
+
+### …камеру, которая следует за игроком
+
+```rust
+component! {
+    pub struct CameraFollow { pub target: ObjectRef = ObjectRef::NONE, pub smoothing: f32 = 5.0 }
+}
+impl Component for CameraFollow {
+    fn late_update(&mut self, ctx: &mut Ctx) {
+        let target = ctx.obj(self.target); // поле назначается перетаскиванием в инспекторе
+        if !ctx.exists(target) { return; }
+        let goal = ctx.on(target).pos().truncate().extend(ctx.pos().z);
+        let k = 1.0 - (-self.smoothing * ctx.dt()).exp();
+        ctx.set_pos(ctx.pos().lerp(goal, k));
+    }
+}
+```
+
+Готовое: `Follow`; для 2D с границами и тряской — `CameraController2D` (`2d.md`).
+
+### …подбор монеты
+
+```rust
+fn on_trigger(&mut self, ctx: &mut Ctx, other: GameObjectId) {
+    if ctx.has_tag(other, "Player") {
+        let game = ctx.find("Game");
+        ctx.send_value(game, "Coin", 1);
+        ctx.play("sounds/coin.wav");
+        ctx.destroy_self();
+    }
+}
+```
+
+Готовое: `Collectible`.
+
+### …счёт на экране
+
+```rust
+fn on_message(&mut self, ctx: &mut Ctx, message: &Message) {
+    if message.is("Coin") {
+        self.score += message.get::<i32>().unwrap_or(1);
+        ctx.ui_text("Score", format!("Score: {}", self.score));
+    }
+}
+```
+
+### …жизни и урон
+
+```rust
+component! { pub struct Hp { pub hp: i32 = 3 } }
+impl Component for Hp {
+    fn on_message(&mut self, ctx: &mut Ctx, message: &Message) {
+        if message.is("Damage") {
+            self.hp -= message.get::<i32>().unwrap_or(1);
+            if self.hp <= 0 { ctx.destroy_self(); }
+        }
+    }
+}
+// у шипов:
+fn on_collision(&mut self, ctx: &mut Ctx, other: GameObjectId) {
+    ctx.send_value(other, "Damage", 1);
+}
+```
+
+Готовые: `Health` и `Damage`.
+
+### …выстрел
+
+```rust
+component! { pub struct Gun { pub cooldown: Cooldown = Cooldown::new(0.25) } }
+impl Component for Gun {
+    fn update(&mut self, ctx: &mut Ctx) {
+        self.cooldown.tick(ctx.dt());
+        if ctx.held("Fire1") && self.cooldown.trigger() {
+            let bullet = ctx.spawn_at("prefabs/bullet.prefab", ctx.pos());
+            ctx.on(bullet).set_velocity(Vec2::new(15.0, 0.0));
+            ctx.on(bullet).destroy_self_after(2.0);
+        }
+    }
+}
+```
+
+### …появление врагов по таймеру
+
+```rust
+fn start(&mut self, ctx: &mut Ctx) {
+    ctx.repeat(2.0, |ctx| {
+        let x = ctx.rand_range(-6.0, 6.0);
+        ctx.spawn_at("prefabs/enemy.prefab", Vec2::new(x, 5.0));
+    });
+}
+```
+
+Готовое: `Spawner` (`across_view` — по всей ширине экрана; `enabled` и `interval` можно
+менять из скрипта: `ctx.me_mut::<Spawner>().interval = 0.5`).
+
+### …корзину или ракетку, которая ездит за пальцем
+
+Готовое: `Paddle2D` (`speed`, `follow_pointer`, `view_margin` — отступ от края экрана,
+`flip_sprite`). Своими руками:
+
+```rust
+fn update(&mut self, ctx: &mut Ctx) {
+    let mut run = ctx.axis("Horizontal");
+    if ctx.pointer_held() {
+        run = ((ctx.pointer_world().x - ctx.pos().x) * 2.0).clamp(-1.0, 1.0);
+    }
+    let area = ctx.view_rect().expand(-0.8); // видимая часть мира без полосы у края
+    let x = ctx.pos().x + run * self.speed * ctx.dt();
+    ctx.set_pos(Vec2::new(x.clamp(area.x, area.max().x), ctx.pos().y));
+}
+```
+
+### …что-то, упавшее за край экрана
+
+```rust
+fn update(&mut self, ctx: &mut Ctx) {
+    if ctx.pos().y < ctx.view_rect().y {
+        let game = ctx.find("Game");
+        ctx.send(game, "Missed");
+        ctx.destroy_self();
+    }
+}
+```
+
+Готовое: `OffScreen` (`message`, `notify`, `margin`; срабатывает, только если объект уже
+побывал на экране).
+
+### …сделать что-то через N секунд
+
+```rust
+ctx.delay(1.5, |ctx| ctx.ui_hide("Hint"));
+ctx.destroy_self_after(3.0); // исчезнуть через 3 секунды (готовое: DestroyAfter)
+```
+
+### …мигание
+
+```rust
+fn update(&mut self, ctx: &mut Ctx) {
+    let on = (ctx.elapsed() * 4.0).sin() > 0.0;
+    ctx.me_mut::<SpriteRenderer>().color.a = if on { 1.0 } else { 0.3 };
+}
+```
+
+### …плавно передвинуть объект в точку
+
+```rust
+ctx.move_to(Vec2::new(4.0, 0.0), 0.5); // за полсекунды, с мягким стартом и концом
+ctx.scale_to(Vec2::splat(1.5), 0.2);
+```
+
+Сложнее (цвет, цепочки, повтор) — твины, §4.
+
+### …ездящую платформу
+
+```rust
+component! {
+    pub struct Platform { pub offset: Vec3 = Vec3::new(3.0, 0.0, 0.0), pub start: Vec3 = Vec3::ZERO, pub t: f32 = 0.0 }
+}
+impl Component for Platform {
+    fn start(&mut self, ctx: &mut Ctx) { self.start = ctx.pos(); }
+    fn fixed_update(&mut self, ctx: &mut Ctx) {
+        self.t += ctx.dt();
+        let k = smoothstep(ping_pong(self.t / 2.0, 1.0));
+        ctx.set_pos(self.start + self.offset * k);
+    }
+}
+```
+
+### …найти другой объект
+
+```rust
+let game = ctx.find("Game");           // по имени (опечатка → подсказка в Console)
+let player = ctx.find_tag("Player");    // по тегу
+let boss = ctx.first_with::<Boss>();    // по компоненту
+for enemy in ctx.all_with::<Enemy>() { ctx.on(enemy).destroy_self(); }
+```
+
+Без сообщения об ошибке («есть ли такой?») — длинные формы `ctx.find_by_name(..)` /
+`ctx.find_by_tag(..)` возвращают `Option`.
+
+### …ссылку на объект в инспекторе
+
+```rust
+component! { pub struct Door { pub switch: ObjectRef = ObjectRef::NONE } }
+// в хуке:
+let switch = ctx.obj(self.switch);
+```
+
+Подробно (`ComponentRef<T>`, префабы) — §6.5.
+
+### …прочитать или поменять чужой компонент
+
+```rust
+let enemy = ctx.find("Boss");
+ctx.on(enemy).me_mut::<Health>().hp -= 1;
+let hp = ctx.on(enemy).me::<Health>().hp;
+```
+
+### …свой компонент без `Option`
+
+```rust
+ctx.me_mut::<SpriteRenderer>().flip_x = true;
+ctx.with::<Light, _>(|light| light.intensity = 2.0);
+if !ctx.has::<AudioSource>() { ctx.add(AudioSource::default()); }
+```
+
+Свой собственный скрипт — это `self`, а не `ctx.me::<Self>()`.
+
+### …послать сообщение
+
+```rust
+ctx.send(door, "Open");             // ловится в on_message: message.is("Open")
+ctx.send_value(player, "Heal", 2);  // со значением: message.get::<i32>()
+```
+
+### …кнопку в интерфейсе
+
+Повесьте скрипт на объект кнопки (`Button`): хук `on_click` вызовется при нажатии мышью,
+пальцем или Enter.
+
+```rust
+fn on_click(&mut self, ctx: &mut Ctx) {
+    ctx.load_scene("level1");
+}
+```
+
+Опросом из любого скрипта: `if ctx.clicked("play") { … }` (имя — поле `message` кнопки).
+
+### …щелчок по объекту мира
+
+Добавьте объекту `Clickable` (Behaviours) — и хук `on_click` любого скрипта на нём
+сработает при щелчке мышью или касании (2D, ортографическая камера).
+
+### …показать и спрятать экран
+
+```rust
+ctx.ui_show("PausePanel");
+ctx.ui_hide("PausePanel");
+```
+
+### …паузу
+
+```rust
+if ctx.pressed("Cancel") {
+    let paused = ctx.time_scale() == 0.0;
+    ctx.set_time_scale(if paused { 1.0 } else { 0.0 });
+}
+```
+
+### …звук и музыку
+
+```rust
+ctx.play("sounds/jump.wav");
+ctx.play_at("sounds/boom.wav", ctx.pos()); // объёмный: громче рядом со слушателем
+ctx.music("sounds/theme.ogg");
+ctx.stop_music();
+ctx.play("sfx:hurt");     // встроенные звуки — без файлов и без add_clip
+ctx.music("music:calm");  // уже играет — не начнётся заново (удобно после рестарта)
+```
+
+### …следующий уровень, рестарт, выход
+
+```rust
+ctx.load_scene("level2");
+ctx.reload_scene(); // та же сцена заново: все объекты и скрипты как в начале
+ctx.quit();
+```
+
+`reload_scene` перезагружает сцену, с которой стартовала игра (`engine::game!` /
+`engine::load_scene`), последнюю из `load_scene(..)` или открытую в редакторе при Play.
+Сохранения (`ctx.save`) и музыка (`ctx.music`) переживают перезагрузку.
+
+### …рекорд, который переживёт перезапуск
+
+```rust
+fn start(&mut self, ctx: &mut Ctx) { self.best = ctx.load("best", 0); }
+// при новом рекорде:
+ctx.save("best", self.best);
+```
+
+### …случайное число
+
+```rust
+let x = ctx.rand_range(-3.0, 3.0); // дробное
+let die = ctx.rand_int(1, 6);      // целое, 6 входит
+if ctx.rand() < 0.1 { /* 10% */ }
+```
+
+### …луч: что впереди / под ногами
+
+```rust
+if let Some(hit) = ctx.raycast2d(ctx.pos2(), Vec2::X, 5.0) {
+    ctx.log(format!("in front: {}", ctx.name_of(hit.object)));
+}
+// 3D: ctx.raycast(ctx.pos(), ctx.forward(), 50.0)
+```
+
+### …силу и толчок
+
+```rust
+ctx.add_force(Vec3::Y * 30.0); // в fixed_update, пока сила действует
+let v = ctx.velocity();
+ctx.set_velocity(v * 0.5);     // затормозить вдвое
+```
+
+### …объекты в радиусе (3D)
+
+```rust
+for id in ctx.overlap_sphere(ctx.pos(), 3.0) {
+    ctx.send(id, "Explosion");
+}
+```
+
+### …повернуться к цели
+
+```rust
+let target = ctx.find_tag("Player");
+let at = ctx.on(target).pos();
+ctx.look_at(at); // 3D: «вперёд» (−Z) на цель
+```
+
+### …выключить объект
+
+```rust
+ctx.set_active_self(false);               // себя
+ctx.on(door).set_active_self(false);      // другой объект
+```
+
+### …написать в Console
+
+```rust
+ctx.log(format!("hp = {}", self.hp)); // с именем объекта: "[Hero] hp = 3"
+ctx.warn("no checkpoint yet");
+```
+
+### …проверить скрипт тестом
+
+```rust
+#[test]
+fn hero_walks_right() {
+    let mut app = engine::app();
+    let hero = app.spawn("Hero").with(Hero::default()).id();
+    app.world.input.set_key(Key::D, true);
+    app.run_headless(60, 1.0 / 60.0);
+    assert!(app.world.scene.world_position(hero).x > 4.0);
+}
+```
+
+## Шпаргалка: короткие формы
+
+Каждая короткая форма — тонкая обёртка над длинной; **обе остаются рабочими**, их можно
+смешивать в одном скрипте. Та же таблица — в редакторе (Help → Scripting Cheat Sheet).
+Короткие формы физики, звука и интерфейса — трейты `PhysicsCtx`, `AudioCtx`, `UiCtx`; их
+подключает `use engine::prelude::*;`.
+
+<!-- cheat-sheet:begin (генерируется из engine_core::script::CHEAT_SHEET; тест сверяет) -->
+| раздел | короткая форма | пример | длинная форма (тоже работает) |
+|---|---|---|---|
+| Game | `engine::game! { name, scene, components }` | `engine::game! { name: "My Game", scene: "scenes/main.scene", components: [Player] }` | `fn register + fn build_with + fn build + engine::game_main!(..)` |
+| Hooks | `fn start(&mut self, ctx)` | `fn start(&mut self, ctx: &mut Ctx) { ctx.log("hi"); }` | `fn on_start(&mut self, ctx)` |
+| Hooks | `fn update(&mut self, ctx)` | `fn update(&mut self, ctx: &mut Ctx) { ctx.move_by(Vec2::X * ctx.dt()); }` | `fn on_update(&mut self, ctx, dt)` |
+| Hooks | `fn fixed_update(&mut self, ctx)` | `fn fixed_update(&mut self, ctx: &mut Ctx) { ctx.set_velocity(Vec2::X); }` | `fn on_fixed_update(&mut self, ctx, dt)` |
+| Hooks | `fn late_update(&mut self, ctx)` | `fn late_update(&mut self, ctx: &mut Ctx) { /* camera */ }` | `fn on_late_update(&mut self, ctx, dt)` |
+| Hooks | `fn on_collision(&mut self, ctx, other)` | `if ctx.has_tag(other, "Enemy") { ctx.destroy_self(); }` | `fn on_collision_enter(&mut self, ctx, other)` |
+| Hooks | `fn on_trigger(&mut self, ctx, other)` | `if ctx.has_tag(other, "Player") { ctx.play("coin"); }` | `fn on_trigger_enter(&mut self, ctx, other)` |
+| Hooks | `fn on_click(&mut self, ctx)` | `fn on_click(&mut self, ctx: &mut Ctx) { ctx.load_scene("level1"); }` | `on_message from a Button / ctx.ui().clicked(..)` |
+| Hooks | `message.is(name) / message.get::<T>()` | `if message.is("Damage") { self.hp -= message.get::<i32>().unwrap_or(1); }` | `message.name == .. / T::from_value(&message.value)` |
+| Time | `ctx.dt()` | `ctx.move_by(Vec2::X * 3.0 * ctx.dt())` | `the dt parameter / ctx.time().delta` |
+| Time | `ctx.elapsed()` | `let wave = ctx.elapsed().sin();` | `ctx.time().elapsed as f32` |
+| Moving | `ctx.pos() / ctx.pos2()` | `let p = ctx.pos2();` | `ctx.world_position()` |
+| Moving | `ctx.set_pos(p)` | `ctx.set_pos(Vec2::new(0.0, 3.0))` | `ctx.transform().position = .. (local)` |
+| Moving | `ctx.move_by(delta)` | `ctx.move_by(Vec2::new(speed * ctx.dt(), 0.0))` | `ctx.transform().translate(..)` |
+| Moving | `ctx.rotate_by(deg)` | `ctx.rotate_by(90.0 * ctx.dt())` | `ctx.transform().rotate_z(radians)` |
+| Moving | `ctx.angle() / ctx.set_angle(deg)` | `ctx.set_angle(45.0)` | `transform().angle_z() / set_angle_z(radians)` |
+| Moving | `ctx.scale() / ctx.set_scale(s)` | `ctx.set_scale(Vec2::splat(2.0))` | `ctx.transform().scale` |
+| Moving | `ctx.look_at(point)` | `ctx.look_at(target_pos)` | `ctx.transform().look_at(point, Vec3::Y)` |
+| Moving | `ctx.forward() / right() / up()` | `ctx.move_by(ctx.forward() * ctx.dt())` | `scene.world_rotation(id) * Vec3::NEG_Z` |
+| Moving | `ctx.move_to(p, secs) / scale_to` | `ctx.move_to(Vec2::new(4.0, 0.0), 0.5);` | `ctx.start_tween(Tween::position(id, p).duration(secs))` |
+| Input | `ctx.key(Key::W) / key_pressed / key_released` | `if ctx.key_pressed(Key::Space) { .. }` | `ctx.input().key(..) / key_down / key_up` |
+| Input | `ctx.axis("Horizontal")` | `let run = ctx.axis("Horizontal");` | `ctx.input().axis(..)` |
+| Input | `ctx.axis2(x, y)` | `let dir = ctx.axis2("Horizontal", "Vertical");` | `Vec2::new(input.axis(x), input.axis(y))` |
+| Input | `ctx.pressed("Jump") / held / released` | `if ctx.pressed("Jump") { .. }` | `ctx.input().button_down / button / button_up` |
+| Input | `ctx.mouse() / mouse_pressed(b) / mouse_held(b)` | `if ctx.mouse_pressed(MouseButton::Left) { .. }` | `ctx.input().mouse_position() / mouse_button_down` |
+| Screen | `ctx.view_rect()` | `if ctx.pos().y < ctx.view_rect().y { ctx.destroy_self(); }` | `camera.ortho_size × screen aspect, by hand` |
+| Screen | `ctx.pointer_world() / pointer_held()` | `if ctx.pointer_held() { let target = ctx.pointer_world(); }` | `touches() / mouse_position() + camera math + ui().pointer_over_ui()` |
+| Screen | `ctx.screen_to_world(pixels)` | `let p = ctx.screen_to_world(ctx.mouse());` | `Unity: Camera.main.ScreenToWorldPoint, by hand` |
+| Components | `ctx.me::<T>() / ctx.me_mut::<T>()` | `ctx.me_mut::<SpriteRenderer>().flip_x = true;` | `ctx.get::<T>() / get_mut::<T>() (Option)` |
+| Components | `ctx.with::<T, _>(\|t\| ..)` | `ctx.with::<Light, _>(\|l\| l.intensity = 2.0);` | `if let Some(t) = ctx.get_mut::<T>() { .. }` |
+| Components | `ctx.has::<T>() / ctx.add(component)` | `if !ctx.has::<Light>() { ctx.add(Light::default()); }` | `ctx.object().has / object_mut().add` |
+| Objects | `ctx.find("Name")` | `let game = ctx.find("Game");` | `ctx.find_by_name(..) (Option)` |
+| Objects | `ctx.find_tag("Tag") / find_all_tag` | `let player = ctx.find_tag("Player");` | `ctx.find_by_tag / find_all_by_tag` |
+| Objects | `ctx.first_with::<T>() / all_with::<T>()` | `for coin in ctx.all_with::<Coin>() { .. }` | `ctx.find_with::<T>()` |
+| Objects | `ctx.obj(self.target)` | `let target = ctx.obj(self.target);` | `ctx.resolve(self.target) (Option)` |
+| Objects | `ctx.on(id).…` | `ctx.on(enemy).me_mut::<Health>().hp -= 1;` | `ctx.get_on_mut::<T>(id), scene.get_mut(id)` |
+| Objects | `ctx.exists(id) / has_tag(id, tag) / name_of(id)` | `if ctx.exists(target) { .. }` | `ctx.scene().get(id).is_some() / .tag == ..` |
+| Messages | `ctx.send(id, "Name")` | `ctx.send(game, "Caught");` | `ctx.send_message(id, name, Value::Nil)` |
+| Messages | `ctx.send_value(id, "Name", v)` | `ctx.send_value(player, "Damage", 2);` | `ctx.send_message(id, name, Value::Int(2))` |
+| Lifetime | `ctx.spawn(prefab) / spawn_at / spawn_child` | `let coin = ctx.spawn_at("prefabs/coin.prefab", ctx.pos());` | `ctx.instantiate_at(..) (Result)` |
+| Lifetime | `ctx.destroy_self() / destroy(id) / destroy_self_after(s)` | `ctx.destroy_self_after(2.0);` | `(unchanged)` |
+| Lifetime | `ctx.set_active_self(on)` | `ctx.on(door).set_active_self(false);` | `ctx.set_active(ctx.id, on)` |
+| Timers | `ctx.delay(secs, \|ctx\| ..)` | `ctx.delay(1.0, \|ctx\| ctx.destroy_self());` | `ctx.call_after(secs, \|world\| ..) / ctx.after(secs, msg, value)` |
+| Timers | `ctx.repeat(secs, \|ctx\| ..)` | `ctx.repeat(2.0, \|ctx\| { ctx.spawn("prefabs/enemy.prefab"); });` | `ctx.call_every / ctx.every(secs, msg, value)` |
+| Timers | `Timer / Cooldown fields` | `pub shot: Cooldown = Cooldown::new(0.3),` | `(unchanged)` |
+| Physics | `ctx.velocity() / velocity2() / set_velocity(v)` | `ctx.set_velocity(Vec2::new(run * 5.0, ctx.velocity2().y));` | `ctx.get_mut::<Rigidbody2D>().velocity` |
+| Physics | `ctx.add_force(f)` | `ctx.add_force(Vec3::Y * 20.0);` | `physics3d.add_force(id, f)` |
+| Physics | `ctx.grounded()` | `if ctx.grounded() && ctx.pressed("Jump") { .. }` | `CharacterController::grounded / a raycast down` |
+| Physics | `ctx.raycast(from, dir, max) / raycast2d` | `if let Some(hit) = ctx.raycast2d(ctx.pos2(), Vec2::NEG_Y, 1.0) { .. }` | `Physics2D / Physics3D::raycast(.., Some(id))` |
+| Physics | `ctx.overlap_sphere(center, r)` | `for id in ctx.overlap_sphere(ctx.pos(), 3.0) { .. }` | `physics3d.overlap_sphere(..)` |
+| Sound | `ctx.play("clip") / play_at(clip, p)` | `ctx.play("sounds/jump.wav");` | `ctx.resource_mut::<Audio>().play(..)` |
+| Sound | `ctx.play("sfx:coin") / music("music:calm")` | `ctx.play("sfx:hurt");` | `audio.add_clip("hurt", synth::sfx::hurt()) + play("hurt")` |
+| Sound | `ctx.music("clip") / stop_music()` | `ctx.music("theme");` | `audio.play_music(clip, 1.0)` |
+| UI | `ctx.ui_text("Name", text)` | `ctx.ui_text("Score", format!("Score: {}", self.score));` | `find_by_name + get_component_mut::<Text>().set(..)` |
+| UI | `ctx.ui_show("Name") / ui_hide` | `ctx.ui_show("GameOver");` | `scene.ui_set_visible(id, true)` |
+| UI | `ctx.clicked("button")` | `if ctx.clicked("restart") { ctx.reload_scene(); }` | `ctx.ui().clicked(..)` |
+| Shaders | `ctx.set_shader_param(name, v)` | `ctx.set_shader_param("amount", self.burn);` | `ctx.me_mut::<MaterialParams>().set(..) / SpriteShader / PostEffect` |
+| Scenes | `ctx.load_scene(name) / reload_scene() / quit()` | `ctx.load_scene("level2");` | `(unchanged)` |
+| Saving | `ctx.save(key, v) / ctx.load(key, default)` | `self.best = ctx.load("best", 0);` | `ctx.save_data().set_int(..) + save() / int(..)` |
+| Random | `ctx.rand() / rand_range(a, b) / rand_int(a, b)` | `let x = ctx.rand_range(-3.0, 3.0);` | `ctx.random().f32() / range / int_range_inclusive` |
+| Log | `ctx.log(text) / ctx.warn(text)` | `ctx.log(format!("hp = {}", self.hp));` | `log::info!(..)` |
+<!-- cheat-sheet:end -->
+
+## Старая форма ↔ короткая
+
+Старый код не надо переписывать: всё, что было, компилируется и работает как раньше
+(это проверяют `crates/engine/tests/compat.rs` и игры в `games/`). Новые формы — только
+добавлены.
+
+| было (работает) | можно короче |
+|---|---|
+| `fn on_update(&mut self, ctx: &mut Ctx, dt: f32)` | `fn update(&mut self, ctx: &mut Ctx)` + `ctx.dt()` |
+| `fn on_start` / `on_fixed_update` / `on_late_update` | `start` / `fixed_update` / `late_update` |
+| `fn on_collision_enter` / `on_trigger_enter` | `on_collision` / `on_trigger` |
+| `if let Some(b) = ctx.get_mut::<Rigidbody2D>() { b.velocity.x = 5.0; }` | `ctx.me_mut::<Rigidbody2D>().velocity.x = 5.0;` |
+| `ctx.transform().position.x += 1.0 * dt;` | `ctx.move_by(Vec2::X * ctx.dt());` |
+| `ctx.input().axis("Horizontal")` | `ctx.axis("Horizontal")` |
+| `ctx.input().button_down("Jump")` | `ctx.pressed("Jump")` |
+| `if let Some(g) = ctx.find_by_name("Game") { ctx.send_message(g, "Caught", Value::Nil); }` | `let g = ctx.find("Game"); ctx.send(g, "Caught");` |
+| `match ctx.instantiate_at(path, pos) { Ok(id) => …, Err(e) => log::error!(…) }` | `let id = ctx.spawn_at(path, pos);` |
+| `ctx.call_after(1.0, \|world\| …)` | `ctx.delay(1.0, \|ctx\| …)` |
+| `if let Some(a) = ctx.resource_mut::<Audio>() { a.play("coin"); }` | `ctx.play("coin");` |
+| `find_by_name("Score")` + `get_component_mut::<Text>(id)` + `set(..)` | `ctx.ui_text("Score", text);` |
+| `let s = ctx.save_data(); s.set_int("best", 5); s.save()?;` | `ctx.save("best", 5);` |
+| `ctx.random().range(a, b)` | `ctx.rand_range(a, b)` |
+
+Если переопределены и длинный, и короткий хук одного вида (`on_update` и `update`), работает
+длинный — как в старом коде. Маска `fn hooks()` общая: `Hooks::UPDATE` включает обе формы.
+Имена, которые уже были заняты длинными формами с другим смыслом, остались прежними, поэтому
+у коротких форм свои имена: `ctx.delay` / `ctx.repeat` (а `ctx.after` / `ctx.every` — таймеры
+с сообщением), `ctx.set_active_self(on)` (а `ctx.set_active(id, on)`), `ctx.obj(field)` (а
+`ctx.object()` — свой `GameObject`), `ctx.elapsed()` (а `ctx.time()` — вся структура `Time`).
+
+## Готовые поведения
+
+Add Component → **Behaviours**: маленькие скрипты движка, написанные короткими формами.
+Исходники — `crates/engine/src/behaviours/` (читайте как примеры); в коде —
+`engine::behaviours::Mover` и т. д.
+
+| поведение | что делает | что нужно на объекте |
+|---|---|---|
+| `Mover` | едет со скоростью `velocity` | — |
+| `Rotator` | вращается (`degrees_per_second`) | — |
+| `Follow` | следует за `target` с плавностью `smoothing` (в `late_update`) | — |
+| `DestroyAfter` | исчезает через `seconds` | — |
+| `Spawner` | создаёт `prefab` каждые `interval` с (меняется на ходу), всего `count` (0 — без конца), разброс `spread` или по ширине экрана (`across_view`, `view_margin`); `enabled` — пауза | — |
+| `Health` | жизни: сообщения `Damage` / `Heal`, на нуле — `Died` и (если `destroy_on_death`) исчезает | — |
+| `Damage` | при касании шлёт `Damage` (`amount`) объектам с тегом `only_tag` | коллайдер |
+| `Collectible` | подбирается объектом с тегом `collector_tag`: сообщение `message` (`value`) ему и объекту `notify`, звук `sound`, исчезает | коллайдер-триггер |
+| `OffScreen` | побывал на экране и ушёл за край (`margin`): сообщение `message` себе и объекту `notify`, исчезает (`destroy`) | 2D-камера |
+| `Clickable` | щелчок по объекту → хук `on_click` у скриптов объекта, сообщение `message` | 2D, ортографическая камера |
+| `PlayerMove2D` | ходит по осям `Horizontal` / `Vertical` | (`Rigidbody2D` с гравитацией 0) |
+| `Paddle2D` | влево-вправо по оси `Horizontal` или за пальцем / зажатой мышью (`follow_pointer`), не дальше края экрана (`view_margin`), `flip_sprite`; с `Rigidbody2D` скорость по Y остаётся телу | (`Rigidbody2D`) |
+| `Platformer2D` | бег, прыжок по `Jump`, время койота, буфер прыжка | `Rigidbody2D`, `Collider2D` |
+| `PlayerMove3D` | ходьба относительно камеры, поворот по ходу, прыжок | `CharacterController` |
+
+<!-- beginner:end -->
+
 ---
 
 ## 1. Порядок кадра

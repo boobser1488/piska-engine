@@ -1,9 +1,8 @@
 // Меши: PBR (metallic-roughness, GGX), солнце с картой теней, до четырёх точечных
 // источников, ambient от неба, туман. Выход — HDR: тонмаппинг и блум делает post.wgsl.
-// Перед этим файлом приклеивается common.wgsl.
+// Перед этим файлом приклеиваются common.wgsl, shadow*.wgsl и lights*.wgsl (renderer/variant.rs).
 
-@group(0) @binding(1) var shadow_map: texture_depth_2d;
-@group(0) @binding(2) var shadow_sampler: sampler_comparison;
+// Карта теней и `sun_shadow` — shadow.wgsl (приклеивается перед этим файлом).
 
 // Материал (renderer/material.rs): общие для пачки параметры и текстуры. Цвет, металл,
 // шероховатость и свечение — в данных экземпляра, поэтому материалы, отличающиеся
@@ -141,27 +140,6 @@ fn brdf(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, albedo: vec3<f32>, metallic: f
     return (diffuse + specular) * n_dot_l;
 }
 
-// Доля солнечного света, дошедшая до точки: 1 — на свету, 0 — в тени. PCF 3×3,
-// к краю освещённой солнцем области тень плавно исчезает.
-fn sun_visibility(world_position: vec3<f32>, n: vec3<f32>) -> f32 {
-    if (globals.shadow_params.x < 0.5) {
-        return 1.0;
-    }
-    // Сдвиг вдоль нормали убирает «акне», не отрывая тень от объекта.
-    let clip = globals.light_view_proj * vec4<f32>(world_position + n * globals.shadow_params.z, 1.0);
-    let uv = vec2<f32>(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
-    let depth = clip.z - globals.shadow_params.w;
-    let texel = globals.shadow_params.y;
-    var sum = 0.0;
-    for (var y = -1; y <= 1; y += 1) {
-        for (var x = -1; x <= 1; x += 1) {
-            sum += textureSampleCompareLevel(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, depth);
-        }
-    }
-    let edge = max(max(abs(clip.x), abs(clip.y)), clip.z);
-    return mix(sum / 9.0, 1.0, smoothstep(0.85, 1.0, edge));
-}
-
 // Цвет материала: UV меша или проекция текстуры по трём осям объекта с шагом `tile`
 // метров — стены любого размера получают одинаковый масштаб кладки. Оси — объекта
 // (повёрнутые вместе с ним), длины — мировые: у повёрнутого бруса полосы идут вдоль
@@ -232,7 +210,7 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0)
 
     // Солнце (тень — по геометрической нормали: карта нормалей не сдвигает тени).
     let to_sun = -normalize(globals.sun_direction.xyz);
-    let shadow = select(1.0, sun_visibility(in.world_position, geometric), material.flags.y > 0.5);
+    let shadow = select(1.0, sun_shadow(in.world_position, geometric), material.flags.y > 0.5);
     var color = brdf(n, v, to_sun, albedo, metallic, roughness)
         * globals.sun_color.rgb * shadow;
 
@@ -247,10 +225,24 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0)
         color += brdf(n, v, to_light / max(distance, 1e-4), albedo, metallic, roughness)
             * light.color.rgb * falloff;
     }
+    // Лампы сверх четырёх, прожекторы и тени ламп (lights.wgsl); в варианте без ламп
+    // (lights_off.wgsl) константа ложна и этого кода нет.
+    if (EXTENDED_LIGHTS) {
+        let cell = light_cell(in.clip_position, in.world_position);
+        let receive = material.flags.y > 0.5;
+        for (var k = 0u; k < 16u; k += 1u) {
+            let index = cell_light(cell, k);
+            if (index == 255u) {
+                break;
+            }
+            let lamp = local_light(index, in.world_position, geometric, receive);
+            color += brdf(n, v, lamp.direction, albedo, metallic, roughness) * lamp.radiance;
+        }
+    }
 
     // Ambient от неба; у гладких и металлических поверхностей — отражение неба.
     // Ambient occlusion гасит и то, и другое в щелях.
-    color += ambient_light(n) * albedo * (1.0 - metallic) * occlusion;
+    color += fill_ambient(n, ambient_light(n)) * albedo * (1.0 - metallic) * occlusion;
     let f0 = mix(vec3<f32>(0.04), albedo, metallic);
     let reflection = sky_color(reflect(-v, n)) * globals.sky_zenith.w * 2.0;
     color += reflection * f0 * (1.0 - roughness * 0.75) * occlusion;

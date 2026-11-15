@@ -261,3 +261,10 @@ Undo, запись файла, перерисовка), `editor.undo_material()`
 Модели Blockbench (`.bbmodel`), Minecraft (`.model.json`), MagicaVoxel (`.vox`) и `.ply` с цветами
 приносят свою текстуру-атлас, как `.pmodel`: `MeshRenderer` без своей текстуры рисует ею.
 Настройки их импорта и таблица возможностей — `docs/api/model-formats.md`.
+
+## Свой шейдер
+
+Поле `shader` материала (в инспекторе — раздел **Shader**) подключает файл `.shader`: одна
+функция на WGSL меняет цвет, нормаль, свечение или прозрачность, а свет, тени и туман
+остаются движка. Параметры шейдера хранятся в `shader_params` и видны в инспекторе.
+`Material::new().shader(handle).param("amount", 0.5)`. Подробно — `docs/api/shaders.md`.

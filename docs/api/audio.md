@@ -171,6 +171,14 @@ audio.add_clip("jump", synth::sfx::jump());
 audio.add_clip("boom", synth::sfx::explosion());
 ```
 
+**Без регистрации — по имени `sfx:<имя>` / `music:<имя>`.** Готовые эффекты и мелодии
+(`synth::music::adventure`, `calm`) играются сразу: `ctx.play("sfx:coin")`,
+`ctx.music("music:calm")`, `play("sfx:jump")` в Scenario, `clip_name: "sfx:hit"` у
+`AudioSource`, `sound: "sfx:coin"` у `Collectible`. Клип синтезируется при первом обращении и
+запоминается под этим именем (`audio.has_clip("sfx:coin") == true`); зарегистрированный
+клип с тем же именем главнее. Список имён — `synth::BUILTIN`, клип по имени —
+`synth::builtin("sfx:coin")`.
+
 Чтобы однотипные звуки не звучали «машинно», варьируйте высоту: `PlayParams::new().pitch(0.9 + rand * 0.2)`.
 
 ### Рецепты своих звуков

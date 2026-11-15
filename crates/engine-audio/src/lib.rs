@@ -20,6 +20,8 @@ mod clip;
 mod components;
 pub mod dsp;
 mod mixer;
+/// Короткие формы для скриптов: `ctx.play("jump")`, `ctx.music("theme")`.
+mod script;
 pub mod synth;
 mod system;
 
@@ -27,12 +29,14 @@ pub use audio::{spatialize, Audio, ClipRef, DeviceStatus, ListenerState, PlayPar
 pub use clip::{AudioClip, ClipError, Level};
 pub use components::{AudioListener, AudioSource};
 pub use mixer::{pan_gains, Bus, Mixer, VoiceId, VoiceParams};
+pub use script::AudioCtx;
 pub use system::AudioSystem;
 
 use engine_core::app::App;
 
 /// Всё, что нужно игре: попадает в `engine::prelude`.
 pub mod prelude {
+    pub use crate::script::AudioCtx;
     pub use crate::synth::{self, Melody, Sound, Tone, Wave};
     pub use crate::{
         Audio, AudioClip, AudioListener, AudioSource, Bus, ClipRef, DeviceStatus, PlayParams, VoiceId,

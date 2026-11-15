@@ -17,8 +17,8 @@ mod geo;
 mod ground;
 mod kit;
 mod palette;
-mod scenes;
-mod tour;
+pub mod scenes;
+pub mod tour;
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;

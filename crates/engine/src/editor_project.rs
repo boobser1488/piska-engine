@@ -74,13 +74,16 @@ fn workspace_of(crate_dir: &Path) -> Option<PathBuf> {
 pub fn run_editor(
     build: BuildFn,
     project: GameProject,
-    configure: impl FnOnce(EditorConfig) -> EditorConfig,
+    configure: impl FnOnce(EditorConfig) -> EditorConfig + 'static,
 ) -> Result<(), EngineError> {
     crate::init_logger();
-    // `build()` загружает сцену: компонент, которого больше нет в коде, не должен её губить.
-    engine_core::missing::keep_missing_scripts(true);
-    let app = build()?;
-    crate::edit(app, configure(project.editor_config()))
+    // Окно с заставкой открывается сразу, игра собирается за ним (`edit_with`).
+    crate::edit_with(move || {
+        // `build()` загружает сцену: компонент, которого больше нет в коде, не должен её губить.
+        engine_core::missing::keep_missing_scripts(true);
+        let app = build()?;
+        Ok((app, configure(project.editor_config())))
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -201,28 +204,33 @@ pub fn project_app(project: &ProjectDir) -> Result<(engine_core::app::App, Optio
 /// редактор, потом он перезапускается в программу проекта).
 pub fn open_project(dir: &Path, target_dir: Option<&'static str>, build_now: bool) -> Result<(), EngineError> {
     crate::init_logger();
-    let dir = dir.canonicalize().map(|d| strip_verbatim(&d)).unwrap_or_else(|_| dir.to_path_buf());
-    let project = ProjectDir::read(&dir)?;
-    let (app, scene) = project_app(&project)?;
-    let mut config = match (&project.package, &project.editor_bin) {
-        (Some(package), Some(bin)) => GameProject {
-            // Строки живут до конца программы: их один набор на процесс.
-            package: Box::leak(package.clone().into_boxed_str()),
-            bin: Box::leak(bin.clone().into_boxed_str()),
-            manifest_dir: Box::leak(dir.display().to_string().into_boxed_str()),
-            target_dir,
+    let dir = dir.to_path_buf();
+    // Окно с заставкой открывается сразу; проект читается и собирается за ним, а ошибка (нет
+    // каталога, битый Cargo.toml) видна на экране ошибки, а не только в консоли.
+    crate::edit_with(move || {
+        let dir = dir.canonicalize().map(|d| strip_verbatim(&d)).unwrap_or_else(|_| dir.clone());
+        let project = ProjectDir::read(&dir)?;
+        let (app, scene) = project_app(&project)?;
+        let mut config = match (&project.package, &project.editor_bin) {
+            (Some(package), Some(bin)) => GameProject {
+                // Строки живут до конца программы: их один набор на процесс.
+                package: Box::leak(package.clone().into_boxed_str()),
+                bin: Box::leak(bin.clone().into_boxed_str()),
+                manifest_dir: Box::leak(dir.display().to_string().into_boxed_str()),
+                target_dir,
+            }
+            .editor_config(),
+            _ => EditorConfig::titled(format!("Piska Editor: {}", project.title)),
+        };
+        if let Some(scene) = scene {
+            config = config.open_scene(scene);
         }
-        .editor_config(),
-        _ => EditorConfig::titled(format!("Piska Editor: {}", project.title)),
-    };
-    if let Some(scene) = scene {
-        config = config.open_scene(scene);
-    }
-    if build_now && project.editor_bin.is_some() {
-        log::info!("the project's own scripts are building; this editor switches to them when the build is done");
-        std::env::set_var("PISKA_BUILD_ON_START", "1");
-    }
-    crate::edit(app, config)
+        if build_now && project.editor_bin.is_some() {
+            log::info!("the project's own scripts are building; this editor switches to them when the build is done");
+            std::env::set_var("PISKA_BUILD_ON_START", "1");
+        }
+        Ok((app, config))
+    })
 }
 
 /// Общий проигрыватель (`piska-player --project <каталог>`): запустить игру проекта без

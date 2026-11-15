@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{pos2, vec2, Align2, Color32, FontFamily, FontId, Rect, Response, Rounding, Sense, Stroke, TextStyle, Ui};
+use egui::{pos2, vec2, Color32, FontFamily, FontId, Rect, Response, Rounding, Sense, Stroke, TextStyle, Ui};
 
 use crate::icons::{self, Icon};
 
@@ -60,6 +60,25 @@ pub const WARN: Color32 = Color32::from_rgb(0xd2, 0xa2, 0x4c);
 pub const ERROR: Color32 = Color32::from_rgb(0xd6, 0x5f, 0x5a);
 /// Информационные сообщения.
 pub const INFO: Color32 = Color32::from_rgb(0x6f, 0x9f, 0xd2);
+
+// --- Вкладка Code: подсветка синтаксиса (приглушённая схема в духе IDE JetBrains; на фоне
+// `BG_INSET` у каждого цвета контраст не ниже 4,5 : 1, у комментария — 4,6 : 1) ---
+pub const SYN_KEYWORD: Color32 = Color32::from_rgb(0xcf, 0x8e, 0x6d);
+pub const SYN_TYPE: Color32 = Color32::from_rgb(0x7f, 0xa8, 0xd8);
+pub const SYN_FUNCTION: Color32 = Color32::from_rgb(0xd6, 0xbf, 0x7c);
+pub const SYN_MACRO: Color32 = Color32::from_rgb(0xb3, 0x96, 0xcf);
+pub const SYN_STRING: Color32 = Color32::from_rgb(0x8e, 0xb5, 0x7c);
+pub const SYN_NUMBER: Color32 = Color32::from_rgb(0x6f, 0xaa, 0xb8);
+pub const SYN_COMMENT: Color32 = Color32::from_rgb(0x80, 0x84, 0x8a);
+/// Волнистые подчёркивания диагностик: ошибка, предупреждение, сообщение.
+pub const SQUIGGLE_ERROR: Color32 = ERROR;
+pub const SQUIGGLE_WARNING: Color32 = WARN;
+pub const SQUIGGLE_INFO: Color32 = INFO;
+/// Выделенный текст (как в Visual Studio), совпадения поиска (текущее ярче), курсор.
+pub const TEXT_SELECTION: Color32 = Color32::from_rgb(0x26, 0x4f, 0x78);
+pub const FIND_MATCH: Color32 = Color32::from_rgb(0x4a, 0x41, 0x22);
+pub const FIND_CURRENT: Color32 = Color32::from_rgb(0x8a, 0x6a, 0x10);
+pub const CARET: Color32 = Color32::from_rgb(0xe8, 0xe8, 0xe8);
 /// Экземпляры префабов — как в Unity, голубым.
 pub const PREFAB: Color32 = Color32::from_rgb(0x6a, 0xb0, 0xe0);
 /// Каталоги в окне Project — приглушённый жёлтый.
@@ -434,11 +453,18 @@ fn install_fonts(ctx: &egui::Context) {
 // Стиль egui
 // ---------------------------------------------------------------------------
 
+/// Шрифты темы уже поставлены в этот контекст (они подключаются со следующего кадра: кадр, в
+/// котором их ставят, рисовать рано).
+pub fn fonts_installed(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::new("piska_fonts_installed"))).unwrap_or(false)
+}
+
 /// Применить тему к контексту (шрифты ставятся один раз; цвета — при каждом вызове,
 /// чтобы смена акцента в Preferences сразу была видна).
 pub fn apply(ctx: &egui::Context, with_fonts: bool) {
-    if with_fonts {
+    if with_fonts && !fonts_installed(ctx) {
         install_fonts(ctx);
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("piska_fonts_installed"), true));
     }
     let accent = accent();
     let mut style = (*ctx.style()).clone();
@@ -506,7 +532,8 @@ pub fn apply(ctx: &egui::Context, with_fonts: bool) {
     };
     visuals.hyperlink_color = mix(accent, Color32::WHITE, 0.35);
     visuals.selection.bg_fill = mix(BG_INSET, accent, 0.6);
-    visuals.selection.stroke = Stroke::new(1.0_f32, TEXT_STRONG);
+    // Кольцо фокуса поля ввода (egui рисует его этой обводкой) — акцент набора, а не светлая рамка egui.
+    visuals.selection.stroke = Stroke::new(STROKE, accent);
     visuals.slider_trailing_fill = true;
     visuals.handle_shape = egui::style::HandleShape::Rect { aspect_ratio: 0.5 };
     visuals.striped = false;
@@ -663,31 +690,15 @@ pub fn badge(ui: &mut Ui, text: &str, color: Color32) -> Response {
     response
 }
 
-/// Тонкая полоса прогресса (4 px) с подписью над ней; `fraction = None` — «бегущая».
+/// Строка прогресса долгой операции: подпись, полоса (с долей или бегущий отрезок) и процент в
+/// одной строке высотой контрола, не шире 360 px. Одна реализация для всех долгих операций
+/// редактора — [`crate::boot::progress_row`] (там же строка с «Cancel»).
 pub fn progress_bar(ui: &mut Ui, fraction: Option<f32>, text: &str) -> Response {
-    let width = ui.available_width().min(260.0);
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 18.0), Sense::hover());
-    let bar = Rect::from_min_max(pos2(rect.left(), rect.bottom() - 4.0), rect.max);
-    ui.painter().rect_filled(bar, 2.0, BG_INSET);
-    let time = ui.input(|i| i.time) as f32;
-    let filled = match fraction {
-        Some(f) => Rect::from_min_size(bar.min, vec2(bar.width() * f.clamp(0.0, 1.0), bar.height())),
-        None => {
-            ui.ctx().request_repaint();
-            let t = (time * 0.8).fract();
-            let x = bar.left() + (bar.width() * 1.3) * t - bar.width() * 0.3;
-            Rect::from_min_max(pos2(x.max(bar.left()), bar.top()), pos2((x + bar.width() * 0.3).min(bar.right()), bar.bottom()))
-        }
-    };
-    ui.painter().rect_filled(filled, 2.0, accent());
-    ui.painter().text(
-        pos2(rect.left(), bar.top() - 2.0),
-        Align2::LEFT_BOTTOM,
-        text,
-        caption(),
-        TEXT_MUTED,
-    );
-    response
+    let width = ui.available_width().min(360.0);
+    ui.allocate_ui(vec2(width, control_h(ui)), |ui| {
+        crate::boot::progress_row(ui, text, fraction, false);
+    })
+    .response
 }
 
 /// Рамка модального диалога.
@@ -858,9 +869,12 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
     let mut changed = false;
     let height = control_h(ui);
     let pad = density(ui.ctx()).pad_x();
+    // Подпись сегмента — тем же шрифтом, что подпись кнопки этой плотности (в хабе и установщике —
+    // полужирным): сегменты и кнопки в одной строке не отличаются весом.
+    let font = density(ui.ctx()).button_font();
     let galleys: Vec<_> = options
         .iter()
-        .map(|(_, label, _)| ui.painter().layout_no_wrap(label.to_string(), body(), Color32::PLACEHOLDER))
+        .map(|(_, label, _)| ui.painter().layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER))
         .collect();
     let widths: Vec<f32> = galleys.iter().map(|g| (g.size().x + pad * 2.0).max(height + SP_3).round()).collect();
     let total: f32 = widths.iter().sum();
@@ -1211,9 +1225,11 @@ pub fn key_value(ui: &mut Ui, key: &str, value: impl Into<egui::WidgetText>) {
     ui.end_row();
 }
 
-/// `jump_speed` → `Jump Speed` — подписи полей в инспекторе.
+/// `jump_speed` → `Jump Speed` → «Скорость прыжка» — подписи полей в инспекторе. Подпись
+/// целиком ищется в каталоге перевода ([`FIELD_LABELS`]); поля игры, которых там нет, остаются
+/// английскими (порядок слов русского не собрать из слов английского).
 pub fn pretty_name(field: &str) -> String {
-    field
+    let english = field
         .split('_')
         .filter(|part| !part.is_empty())
         .map(|part| {
@@ -1224,8 +1240,255 @@ pub fn pretty_name(field: &str) -> String {
             }
         })
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" ");
+    crate::i18n::tr(&english).into_owned()
 }
+
+/// Подписи полей встроенных компонентов (ключи каталога): их ищет [`pretty_name`].
+pub const FIELD_LABELS: &[&str] = &[
+    n_("Speed"),
+    n_("Enabled"),
+    n_("Message"),
+    n_("Color"),
+    n_("Offset"),
+    n_("Velocity"),
+    n_("Interactable"),
+    n_("Jump Speed"),
+    n_("Value"),
+    n_("Friction"),
+    n_("Gravity Scale"),
+    n_("Corner Radius"),
+    n_("Notify"),
+    n_("Sound"),
+    n_("Seconds"),
+    n_("Spread"),
+    n_("Timer"),
+    n_("Fov Deg"),
+    n_("Kind"),
+    n_("Start"),
+    n_("Body Type"),
+    n_("Linear Damping"),
+    n_("Lock Rotation"),
+    n_("Interpolate"),
+    n_("Is Trigger"),
+    n_("Restitution"),
+    n_("Collides With"),
+    n_("Direction"),
+    n_("Padding"),
+    n_("Border Color"),
+    n_("Shadow Color"),
+    n_("Shadow Offset"),
+    n_("Fill Color"),
+    n_("Background Color"),
+    n_("Collector Tag"),
+    n_("Smoothing"),
+    n_("Hp"),
+    n_("Destroy On Death"),
+    n_("Amount"),
+    n_("Only Tag"),
+    n_("Destroy On Hit"),
+    n_("Degrees Per Second"),
+    n_("Coyote Time"),
+    n_("Jump Buffer"),
+    n_("Air Time"),
+    n_("Since Jump Press"),
+    n_("Flip Sprite"),
+    n_("Turn Speed"),
+    n_("Interval"),
+    n_("Spawned"),
+    n_("Max Speed"),
+    n_("Accelerate"),
+    n_("Air Accelerate"),
+    n_("Air Speed Cap"),
+    n_("Stop Speed"),
+    n_("Jump Height"),
+    n_("Step Size"),
+    n_("Walkable Normal"),
+    n_("Max Velocity"),
+    n_("Hull Width"),
+    n_("Stand Height"),
+    n_("Stand Eye"),
+    n_("Duck Height"),
+    n_("Duck Eye"),
+    n_("Duck Time"),
+    n_("Unduck Time"),
+    n_("Duck Speed Scale"),
+    n_("Walk Speed Scale"),
+    n_("Sprint"),
+    n_("Sprint Speed Scale"),
+    n_("Auto Hop"),
+    n_("Noclip"),
+    n_("Noclip Speed"),
+    n_("Input Enabled"),
+    n_("Jump On Wheel"),
+    n_("Look Enabled"),
+    n_("Look Requires Capture"),
+    n_("Sensitivity"),
+    n_("M Yaw"),
+    n_("M Pitch"),
+    n_("Invert Y"),
+    n_("Gamepad Look Speed"),
+    n_("Pitch Limit"),
+    n_("Yaw Deg"),
+    n_("Pitch Deg"),
+    n_("On Ground"),
+    n_("Ducked"),
+    n_("Script"),
+    n_("Auto Start"),
+    n_("Hot Reload"),
+    n_("Clip"),
+    n_("Clip Name"),
+    n_("Pitch"),
+    n_("Looping"),
+    n_("Play On Start"),
+    n_("Spatial"),
+    n_("Min Distance"),
+    n_("Max Distance"),
+    n_("Bus"),
+    n_("Object"),
+    n_("Fields"),
+    n_("Target Dir"),
+    n_("Public"),
+    n_("Points"),
+    n_("Every"),
+    n_("Label"),
+    n_("Clicks"),
+    n_("One Way"),
+    n_("Angular Velocity"),
+    n_("Angular Damping"),
+    n_("Ccd"),
+    n_("Density"),
+    n_("Step Height"),
+    n_("Max Slope Deg"),
+    n_("Grounded"),
+    n_("Sun Size"),
+    n_("Sun Glow"),
+    n_("Scattering"),
+    n_("Clouds"),
+    n_("Cloud Speed"),
+    n_("Cloud Scale"),
+    n_("Cloud Color"),
+    n_("Stars"),
+    n_("Moon"),
+    n_("Hour"),
+    n_("Heading"),
+    n_("Max Elevation"),
+    n_("Night Intensity"),
+    n_("Sorting Layer"),
+    n_("Flip X"),
+    n_("Flip Y"),
+    n_("Uv Offset"),
+    n_("Uv Size"),
+    n_("Sheet Columns"),
+    n_("Sheet Rows"),
+    n_("Projection"),
+    n_("Ortho Size"),
+    n_("Near"),
+    n_("Far"),
+    n_("Clear Color"),
+    n_("Priority"),
+    n_("Culling Mask"),
+    n_("Range"),
+    n_("Ambient"),
+    n_("Fog Density"),
+    n_("Exposure"),
+    n_("Vignette"),
+    n_("Shadow Distance"),
+    n_("Height Falloff"),
+    n_("Temperature"),
+    n_("Contrast"),
+    n_("Saturation"),
+    n_("Highlights"),
+    n_("Bias"),
+    n_("Depth Threshold"),
+    n_("Normal Threshold"),
+    n_("Fxaa"),
+    n_("High Quality Bloom"),
+    n_("Zenith"),
+    n_("Horizon"),
+    n_("Cascades"),
+    n_("Filter"),
+    n_("Softness"),
+    n_("Source"),
+    n_("Seed"),
+    n_("Chunk Size"),
+    n_("Resolution"),
+    n_("Noise Scale"),
+    n_("Height Scale"),
+    n_("Mountains"),
+    n_("Octaves"),
+    n_("Land Bias"),
+    n_("Flat Zones"),
+    n_("Flat Falloff"),
+    n_("Heightmap"),
+    n_("Heightmap Height"),
+    n_("View Distance"),
+    n_("Lod Distance"),
+    n_("Sea Level"),
+    n_("Snow Height"),
+    n_("Desert"),
+    n_("Texture Scale"),
+    n_("Grass Texture"),
+    n_("Dirt Texture"),
+    n_("Rock Texture"),
+    n_("Sand Texture"),
+    n_("Snow Texture"),
+    n_("Grass Color"),
+    n_("Dirt Color"),
+    n_("Rock Color"),
+    n_("Sand Color"),
+    n_("Snow Color"),
+    n_("Edits"),
+    n_("Deep Color"),
+    n_("Opacity"),
+    n_("Waves"),
+    n_("Wave Speed"),
+    n_("Sort Order"),
+    n_("Scale Mode"),
+    n_("Reference Resolution"),
+    n_("Match Width Or Height"),
+    n_("Scale Factor"),
+    n_("Keyboard Navigation"),
+    n_("Anchor Min"),
+    n_("Anchor Max"),
+    n_("Spacing"),
+    n_("Padding Left"),
+    n_("Padding Right"),
+    n_("Padding Top"),
+    n_("Padding Bottom"),
+    n_("Child Alignment"),
+    n_("Stretch Children"),
+    n_("Expand Children"),
+    n_("Fit Content"),
+    n_("Blocks Raycasts"),
+    n_("Border Width"),
+    n_("Shadow Size"),
+    n_("Slice Border"),
+    n_("Raycast Target"),
+    n_("Vertical Align"),
+    n_("Wrap"),
+    n_("Bold"),
+    n_("Line Spacing"),
+    n_("Outline Width"),
+    n_("Outline Color"),
+    n_("Normal Color"),
+    n_("Hover Color"),
+    n_("Pressed Color"),
+    n_("Disabled Color"),
+    n_("Is On"),
+    n_("Off Color"),
+    n_("On Color"),
+    n_("Check Color"),
+    n_("Whole Numbers"),
+    n_("Track Color"),
+    n_("Handle Color"),
+    n_("Placeholder"),
+    n_("Max Length"),
+    n_("Font Size"),
+    n_("Text Color"),
+    n_("Placeholder Color"),
+    n_("Focus Color"),
+];
 
 /// `PlayerController` → `Player Controller`, `Rigidbody2D` → `Rigidbody 2D`.
 pub fn pretty_type(name: &str) -> String {

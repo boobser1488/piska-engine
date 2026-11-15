@@ -6,10 +6,9 @@
 
 use crate::i18n::tr_s;
 use std::ops::Range;
-use std::sync::Arc;
 
-use egui::epaint::text::cursor::PCursor;
-use egui::{pos2, vec2, Color32, Galley, Pos2, Rect, Sense, Shape, Stroke};
+use egui::text::CCursor;
+use egui::{pos2, vec2, Color32, Pos2, Rect, Sense, Shape, Stroke};
 
 use crate::code_diagnostics::{Diagnostic, LineIndex, QuickFix, Severity};
 use crate::icons::{self, Icon};
@@ -18,9 +17,9 @@ use crate::theme;
 /// Цвет важности.
 pub(crate) fn severity_color(severity: Severity) -> Color32 {
     match severity {
-        Severity::Error => theme::ERROR,
-        Severity::Warning => theme::WARN,
-        Severity::Info => theme::INFO,
+        Severity::Error => theme::SQUIGGLE_ERROR,
+        Severity::Warning => theme::SQUIGGLE_WARNING,
+        Severity::Info => theme::SQUIGGLE_INFO,
     }
 }
 
@@ -32,60 +31,60 @@ pub(crate) fn severity_icon(severity: Severity) -> Icon {
     }
 }
 
-/// Разложенный текст редактора и где он на экране.
+/// Разложенный текст редактора (видимые строки своего виджета) и где он на экране.
 pub(crate) struct Laid<'a> {
-    pub galley: &'a Arc<Galley>,
-    pub origin: Pos2,
+    pub view: &'a crate::code_widget::View,
     pub text: &'a str,
     pub index: &'a LineIndex,
 }
 
 impl Laid<'_> {
-    /// Строки галереи совпадают со строками текста (перенос выключен).
+    /// Перенос строк выключен.
     fn unwrapped(&self) -> bool {
-        self.galley.rows.len() == self.index.lines()
+        !self.view.wrap
+    }
+
+    /// Строка спрятана в свёрнутом блоке.
+    pub fn is_hidden(&self, line: usize) -> bool {
+        self.view.is_hidden(line)
     }
 
     /// Прямоугольник символа (высота строки) по байту `offset`, в координатах экрана.
+    /// Строка вне видимой части — по ширине моноширинного символа.
     pub fn char_rect(&self, offset: usize) -> Rect {
         let (line, column) = self.index.line_col(self.text, offset);
-        let rect = if self.unwrapped() {
-            let row = &self.galley.rows[line.min(self.galley.rows.len() - 1)];
-            let x = row.x_offset(column);
-            Rect::from_min_max(pos2(x, row.min_y()), pos2(x, row.max_y()))
-        } else {
-            self.galley.pos_from_pcursor(PCursor { paragraph: line, offset: column, prefer_next_row: false })
+        let top = self.view.line_top(line);
+        let (x, y) = match self.view.galley(line) {
+            Some(g) => {
+                let r = g.pos_from_ccursor(CCursor::new(column));
+                (r.min.x, r.min.y)
+            }
+            None => (column as f32 * self.view.cw, 0.0),
         };
-        rect.translate(self.origin.to_vec2())
+        Rect::from_min_max(pos2(self.view.text_left + x, top + y), pos2(self.view.text_left + x, top + y + self.view.line_h))
     }
 
     /// Байт под точкой экрана.
     pub fn offset_at(&self, pos: Pos2) -> usize {
-        let cursor = self.galley.cursor_from_pos(pos - self.origin);
-        self.index.offset(self.text, cursor.pcursor.paragraph, cursor.pcursor.offset)
+        let line = self.view.line_at_y(pos.y);
+        let start = self.index.line_start(line);
+        let end = self.index.line_end(self.text, line);
+        let column = match self.view.galley(line) {
+            Some(g) => g.cursor_from_pos(vec2(pos.x - self.view.text_left, pos.y - self.view.line_top(line))).ccursor.index,
+            None => ((pos.x - self.view.text_left) / self.view.cw.max(1.0)).round().max(0.0) as usize,
+        };
+        self.text[start..end].char_indices().nth(column).map_or(end, |(i, _)| start + i)
     }
 
-    /// Строки (с нуля), которые видны в `clip`.
-    pub fn visible_lines(&self, clip: Rect) -> Range<usize> {
-        let rows = &self.galley.rows;
-        if rows.is_empty() {
-            return 0..0;
-        }
-        if self.unwrapped() {
-            let h = rows[0].height().max(1.0);
-            let first = ((clip.top() - self.origin.y) / h).floor().max(0.0) as usize;
-            let last = ((clip.bottom() - self.origin.y) / h).ceil().max(0.0) as usize + 1;
-            return first.min(rows.len())..last.min(rows.len());
-        }
-        let top = self.galley.cursor_from_pos(vec2(0.0, clip.top() - self.origin.y)).pcursor.paragraph;
-        let bottom = self.galley.cursor_from_pos(vec2(0.0, clip.bottom() - self.origin.y)).pcursor.paragraph;
-        top..bottom + 1
+    /// Строки (с нуля), которые видны.
+    pub fn visible_lines(&self, _clip: Rect) -> Range<usize> {
+        self.view.visible.clone()
     }
 
     /// Верх и низ строки текста `line` на экране (первый ряд строки при переносе).
     pub fn line_span(&self, line: usize) -> (f32, f32) {
-        let rect = self.char_rect(self.index.line_start(line));
-        (rect.top(), rect.bottom())
+        let top = self.view.line_top(line);
+        (top, top + self.view.line_h)
     }
 }
 
@@ -101,7 +100,7 @@ fn wave(painter: &egui::Painter, x0: f32, x1: f32, y: f32, color: Color32) {
         x += step;
         up = !up;
     }
-    painter.add(Shape::line(points, Stroke::new(1.0, color)));
+    painter.add(Shape::line(points, Stroke::new(1.0_f32, color)));
 }
 
 /// Подчеркнуть диагностики, видимые в `clip`.
@@ -121,6 +120,9 @@ pub(crate) fn paint_squiggles(painter: &egui::Painter, laid: &Laid<'_>, diagnost
             color = color.gamma_multiply(0.45);
         }
         for line in first.max(visible.start)..=last.min(visible.end.saturating_sub(1)) {
+            if laid.is_hidden(line) {
+                continue;
+            }
             let start = if line == first { d.range.start } else { laid.index.line_start(line) };
             let end = if line == last { d.range.end } else { laid.index.line_end(laid.text, line) };
             let a = laid.char_rect(start);
@@ -131,13 +133,60 @@ pub(crate) fn paint_squiggles(painter: &egui::Painter, laid: &Laid<'_>, diagnost
     }
 }
 
+/// Направляющие отступов (тонкие вертикальные линии на каждом уровне) и, если включено,
+/// видимые пробелы (точки) и табуляции (стрелки) видимых строк.
+pub(crate) fn paint_guides(painter: &egui::Painter, laid: &Laid<'_>, clip: Rect, size: usize, glyph: f32, whitespace: bool) {
+    let visible = laid.visible_lines(clip);
+    if !laid.unwrapped() {
+        return;
+    }
+    let guide = Stroke::new(1.0_f32, theme::LINE_SOFT);
+    let dot = theme::TEXT_DISABLED.gamma_multiply(0.6);
+    for line in visible {
+        if laid.is_hidden(line) {
+            continue;
+        }
+        let start = laid.index.line_start(line);
+        let end = laid.index.line_end(laid.text, line);
+        let text = &laid.text[start..end];
+        let (top, bottom) = laid.line_span(line);
+        // Пустая строка берёт отступ следующей непустой (направляющая не рвётся).
+        let width = if text.trim().is_empty() {
+            (line + 1..(line + 50).min(laid.index.lines()))
+                .map(|l| &laid.text[laid.index.line_start(l)..laid.index.line_end(laid.text, l)])
+                .find(|t| !t.trim().is_empty())
+                .map_or(0, |t| t.len() - t.trim_start_matches(' ').len())
+        } else {
+            text.len() - text.trim_start_matches(' ').len()
+        };
+        let mut column = 0;
+        while column < width {
+            let x = laid.view.text_left + column as f32 * glyph;
+            painter.vline(x.round() + 0.5, top..=bottom, guide);
+            column += size;
+        }
+        if whitespace {
+            for (i, c) in text.char_indices() {
+                if c == ' ' || c == '\t' {
+                    let r = laid.char_rect(start + i);
+                    if c == ' ' {
+                        painter.circle_filled(pos2(r.left() + glyph * 0.5, r.center().y), 1.0, dot);
+                    } else {
+                        painter.text(pos2(r.left() + 1.0, r.center().y), egui::Align2::LEFT_CENTER, "→", theme::caption(), dot); // i18n-skip: знак табуляции
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Значки диагностик в колонке номеров строк: самый важный на строке.
 pub(crate) fn paint_gutter_marks(painter: &egui::Painter, laid: &Laid<'_>, diagnostics: &[&Diagnostic], x: f32, clip: Rect) {
     let visible = laid.visible_lines(clip);
     let mut worst: std::collections::BTreeMap<usize, (Severity, bool)> = std::collections::BTreeMap::new();
     for d in diagnostics {
         let line = laid.index.line_of(d.range.start);
-        if visible.contains(&line) {
+        if visible.contains(&line) && !laid.is_hidden(line) {
             let entry = worst.entry(line).or_insert((d.severity, d.stale));
             if d.severity < entry.0 {
                 *entry = (d.severity, d.stale);
@@ -181,7 +230,7 @@ pub(crate) fn overview_ruler(ui: &mut egui::Ui, rect: Rect, lines: usize, marks:
     let response = ui.interact(rect, id, Sense::click_and_drag());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, theme::BG_PANEL);
-    painter.vline(rect.left(), rect.y_range(), Stroke::new(1.0, theme::LINE));
+    painter.vline(rect.left(), rect.y_range(), Stroke::new(1.0_f32, theme::LINE));
     let lines = lines.max(1) as f32;
     let y_of = |line: usize| rect.top() + 2.0 + (rect.height() - 4.0) * (line as f32 / lines);
     // Видимая часть текста.
@@ -228,7 +277,7 @@ pub(crate) fn diagnostic_tooltip(ui: &mut egui::Ui, d: &Diagnostic, fix_keys: &s
         ui.label(egui::RichText::new(crate::i18n::trf!("hint: {hint}", hint = hint)).color(theme::TEXT));
     }
     for note in d.notes.iter().take(6) {
-        ui.label(egui::RichText::new(format!("• {note}")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
+        ui.label(egui::RichText::new(format!("• {note}")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED)); // i18n-skip: имя типа / ключ
     }
     if d.stale {
         ui.label(egui::RichText::new(tr_s("The text changed since this check; save to check again.")).size(theme::FONT_CAPTION).color(theme::TEXT_MUTED));
@@ -276,11 +325,11 @@ pub(crate) fn quick_fix_menu(ctx: &egui::Context, menu: &mut QuickFixMenu) -> Re
     if escape {
         close = true;
     }
-    let area = egui::Area::new(egui::Id::new("code_quick_fix"))
+    let area = egui::Area::new(egui::Id::new("code_quick_fix")).fade_in(false)
         .order(egui::Order::Foreground)
         .fixed_pos(menu.at)
         .show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).fill(theme::BG_RAISED).stroke(Stroke::new(1.0, theme::LINE_STRONG)).show(ui, |ui| {
+            egui::Frame::popup(ui.style()).fill(theme::BG_RAISED).stroke(Stroke::new(1.0_f32, theme::LINE_STRONG)).show(ui, |ui| {
                 theme::menu_body(ui);
                 ui.set_min_width(260.0);
                 for (k, fix) in menu.fixes.iter().enumerate() {

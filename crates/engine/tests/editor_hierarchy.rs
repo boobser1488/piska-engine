@@ -282,3 +282,24 @@ fn the_fps_controller_has_a_crosshair_icon_and_grouped_fields_in_the_inspector()
         assert!(hands.find_text(&mut editor, group).is_some(), "the Inspector shows the `{group}` group header");
     }
 }
+
+#[test]
+fn cached_rows_follow_renames_reparenting_and_new_objects() {
+    // Строки кэшируются между кадрами (большие сцены): любое изменение сцены, которое видно
+    // в окне, должно сразу попасть в него.
+    let mut editor = editor();
+    let groups = big_scene(&mut editor);
+    let mut hands = Hands::new(&mut editor);
+    let first = editor.app.world.scene.get(groups[0]).unwrap().children()[0];
+    // Переименование прямо в сцене (как скрипт в режиме Play).
+    editor.app.world.scene.get_mut(first).unwrap().name = "Renamed Rail".into();
+    assert!(hands.find_text(&mut editor, "Renamed Rail").is_some(), "a rename shows up in the next frame");
+    // Новый объект в корне — новая строка.
+    editor.app.world.scene.build("Fresh Object").id();
+    assert!(hands.find_text(&mut editor, "Fresh Object").is_some() || editor.hierarchy_rows().len() == 5002, "a new object is listed");
+    // Выключенный объект рисуется приглушённо: проверяем, что строки пересобраны (флажок активности входит в отпечаток).
+    let before = editor.hierarchy_rows().len();
+    editor.app.world.scene.build("Another").child_of(groups[1]).id();
+    hands.frame(&mut editor, vec![], NONE);
+    assert_eq!(editor.hierarchy_rows().len(), before + 1);
+}

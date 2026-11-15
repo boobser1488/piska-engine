@@ -15,6 +15,9 @@ use crate::code_check_data::{check_file, CheckKind, Schema};
 use crate::code_diagnostics::{same_path, shift_all, text_change, Counts, Diagnostic, LineIndex, Origin, Severity};
 use crate::state::Editor;
 
+/// Строки вывода сборки C++ и рабочий каталог команды (для относительных путей).
+pub(crate) type BuildOutput = Arc<Mutex<Vec<(String, Option<PathBuf>)>>>;
+
 /// Файлы больше этого проверяются в фоновом потоке (меньшие — сразу, за миллисекунды).
 pub(crate) const BACKGROUND_BYTES: usize = 96 * 1024;
 
@@ -50,7 +53,7 @@ pub(crate) struct Checks {
     schema: Arc<Schema>,
     schema_types: usize,
     /// Вывод последней сборки C++: (строка, рабочий каталог команды).
-    pub cpp_output: Arc<Mutex<Vec<(String, Option<PathBuf>)>>>,
+    pub cpp_output: BuildOutput,
     /// Файлы, у которых диагностики пришли из сборки C++ (их заменяет следующая сборка).
     cpp_files: BTreeSet<PathBuf>,
     build_running: bool,
@@ -58,6 +61,8 @@ pub(crate) struct Checks {
     pub last_syntax_ms: f32,
     /// Какую проверку компилятором запустить, когда закончится сборка.
     deferred: bool,
+    /// Когда последний раз смотрели время файлов на диске.
+    disk_poll: f64,
 }
 
 impl Checks {
@@ -216,10 +221,30 @@ fn schema(editor: &mut Editor) -> Arc<Schema> {
 /// проверок и компилятора; конец сборки C++ → разбор её вывода.
 pub(crate) fn tick(editor: &mut Editor, ctx: &egui::Context) {
     let now = ctx.input(|i| i.time);
+    crate::code_recovery::tick(&mut editor.code, now);
     let schema = schema(editor);
     let settings = editor.code.checks.settings;
     let mut wake: Option<f64> = None;
     let code = &mut editor.code;
+    // Файл изменили снаружи: без своих правок — перечитать, с правками — спросить.
+    if now - code.checks.disk_poll > 1.0 || now < code.checks.disk_poll {
+        code.checks.disk_poll = now;
+        for doc in &mut code.documents {
+            let time = crate::code::disk_stamp(&doc.path);
+            if time.is_none() || time == doc.disk_time || doc.conflict {
+                continue;
+            }
+            if doc.dirty() {
+                doc.conflict = true;
+            } else if let Ok((text, format)) = crate::code_files::read(&doc.path) {
+                log::info!("`{}` changed on disk: reloaded", doc.path.display()); // i18n-skip: журнал
+                doc.text = text.clone();
+                doc.saved = text;
+                doc.format = format;
+                doc.disk_time = time;
+            }
+        }
+    }
     for doc in &mut code.documents {
         doc.sync(&mut code.checks, now);
         doc.poll_check();
@@ -265,12 +290,13 @@ pub(crate) fn tick(editor: &mut Editor, ctx: &egui::Context) {
         let documents = std::mem::take(&mut code.documents);
         code.checks.store_compiler(raw, &documents, true);
         code.documents = documents;
-        if code.checks.deferred {
-            code.checks.deferred = false;
-            request_compiler(editor, None, now);
-        }
     }
-    editor.code.checks.build_running = running;
+    let fire_deferred = code.checks.build_running && !running && code.checks.deferred;
+    code.checks.build_running = running;
+    if fire_deferred {
+        editor.code.checks.deferred = false;
+        request_compiler(editor, None, now);
+    }
     if let Some(after) = wake {
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(after.clamp(0.0, 1.0)));
     }
@@ -441,7 +467,7 @@ pub(crate) fn tooltip_text(d: &Diagnostic, fix_shortcut: &str) -> String {
         None => d.message.clone(),
     };
     if let Some(hint) = &d.hint {
-        text.push_str("\n");
+        text.push('\n');
         text.push_str(&trf!("hint: {hint}", hint = hint));
     }
     for note in d.notes.iter().take(6) {
@@ -449,11 +475,11 @@ pub(crate) fn tooltip_text(d: &Diagnostic, fix_shortcut: &str) -> String {
         text.push_str(note);
     }
     if d.stale {
-        text.push_str("\n");
+        text.push('\n');
         text.push_str(tr_s("(the text changed since this check; save to check again)"));
     }
     if !d.fixes.is_empty() {
-        text.push_str("\n");
+        text.push('\n');
         text.push_str(&trf!("Quick Fix… ({keys})", keys = fix_shortcut));
     }
     text

@@ -36,10 +36,12 @@ impl Hooks {
     pub const MESSAGE: Hooks = Hooks(1 << 5);
     pub const COLLISION_ENTER: Hooks = Hooks(1 << 6);
     pub const TRIGGER_ENTER: Hooks = Hooks(1 << 7);
+    /// Щелчок (`on_click`): кнопка интерфейса на этом объекте или готовое поведение `Clickable`.
+    pub const CLICK: Hooks = Hooks(1 << 8);
     /// Все хуки, в том числе те, что появятся в будущих версиях. Значение по умолчанию.
     pub const ALL: Hooks = Hooks(u16::MAX);
 
-    const NAMES: [(Hooks, &'static str); 8] = [
+    const NAMES: [(Hooks, &'static str); 9] = [
         (Hooks::START, "START"),
         (Hooks::UPDATE, "UPDATE"),
         (Hooks::FIXED_UPDATE, "FIXED_UPDATE"),
@@ -48,6 +50,7 @@ impl Hooks {
         (Hooks::MESSAGE, "MESSAGE"),
         (Hooks::COLLISION_ENTER, "COLLISION_ENTER"),
         (Hooks::TRIGGER_ENTER, "TRIGGER_ENTER"),
+        (Hooks::CLICK, "CLICK"),
     ];
 
     /// Есть ли в наборе все хуки из `other`.
@@ -112,6 +115,23 @@ impl std::fmt::Debug for Hooks {
 ///
 /// Порядок в кадре: `on_start` (один раз) → `on_fixed_update` (0..N раз, шаг физики)
 /// → `on_update` → `on_late_update` → отложенное уничтожение (`on_destroy`).
+///
+/// **Короткие имена хуков.** `start`, `update`, `fixed_update`, `late_update` (без
+/// параметра `dt` — он в `ctx.dt()`), `on_collision`, `on_trigger`, `on_click` — это
+/// те же хуки: длинный хук по умолчанию вызывает короткий. Переопределите любой из
+/// двух; если переопределён длинный, короткий не вызывается (так старый код работает
+/// как раньше). Маска [`hooks`](Component::hooks) общая: `Hooks::UPDATE` включает и
+/// `on_update`, и `update`.
+///
+/// ```
+/// # use engine_core::prelude::*;
+/// component! { pub struct Spin { pub speed: f32 = 90.0 } }
+/// impl Component for Spin {
+///     fn update(&mut self, ctx: &mut Ctx) {
+///         ctx.rotate_by(self.speed * ctx.dt()); // градусов в секунду вокруг Z
+///     }
+/// }
+/// ```
 #[allow(unused_variables)]
 pub trait Component: Reflect + 'static {
     /// Какие хуки компонент реализует. Движок не вызывает остальные — так тысячи
@@ -152,22 +172,55 @@ pub trait Component: Reflect + 'static {
         0
     }
 
-    /// Один раз, перед первым обновлением активного объекта.
-    fn on_start(&mut self, ctx: &mut Ctx) {}
-    /// Каждый кадр.
-    fn on_update(&mut self, ctx: &mut Ctx, dt: f32) {}
-    /// С фиксированным шагом, прямо перед шагом физики.
-    fn on_fixed_update(&mut self, ctx: &mut Ctx, dt: f32) {}
-    /// Каждый кадр после всех `on_update` — для камер и слежения.
-    fn on_late_update(&mut self, ctx: &mut Ctx, dt: f32) {}
+    /// Один раз, перед первым обновлением активного объекта. Короткое имя — [`start`](Component::start).
+    fn on_start(&mut self, ctx: &mut Ctx) {
+        self.start(ctx)
+    }
+    /// Каждый кадр. Короткое имя — [`update`](Component::update).
+    fn on_update(&mut self, ctx: &mut Ctx, dt: f32) {
+        self.update(ctx)
+    }
+    /// С фиксированным шагом, прямо перед шагом физики. Короткое имя — [`fixed_update`](Component::fixed_update).
+    fn on_fixed_update(&mut self, ctx: &mut Ctx, dt: f32) {
+        self.fixed_update(ctx)
+    }
+    /// Каждый кадр после всех `on_update` — для камер и слежения. Короткое имя —
+    /// [`late_update`](Component::late_update).
+    fn on_late_update(&mut self, ctx: &mut Ctx, dt: f32) {
+        self.late_update(ctx)
+    }
     /// Перед удалением объекта (в конце кадра, в котором вызван `destroy`).
     fn on_destroy(&mut self, ctx: &mut Ctx) {}
     /// Сообщение от `send_message`.
     fn on_message(&mut self, ctx: &mut Ctx, message: &Message) {}
-    /// Началось столкновение с твёрдым коллайдером объекта `other`.
-    fn on_collision_enter(&mut self, ctx: &mut Ctx, other: GameObjectId) {}
-    /// Объект `other` вошёл в триггер (или мы вошли в его триггер).
-    fn on_trigger_enter(&mut self, ctx: &mut Ctx, other: GameObjectId) {}
+    /// Началось столкновение с твёрдым коллайдером объекта `other`. Короткое имя —
+    /// [`on_collision`](Component::on_collision).
+    fn on_collision_enter(&mut self, ctx: &mut Ctx, other: GameObjectId) {
+        self.on_collision(ctx, other)
+    }
+    /// Объект `other` вошёл в триггер (или мы вошли в его триггер). Короткое имя —
+    /// [`on_trigger`](Component::on_trigger).
+    fn on_trigger_enter(&mut self, ctx: &mut Ctx, other: GameObjectId) {
+        self.on_trigger(ctx, other)
+    }
+
+    // ----- короткие имена (см. описание трейта) -----
+
+    /// Короткая форма `on_start`: один раз перед первым кадром объекта.
+    fn start(&mut self, ctx: &mut Ctx) {}
+    /// Короткая форма `on_update`: каждый кадр; длительность кадра — `ctx.dt()`.
+    fn update(&mut self, ctx: &mut Ctx) {}
+    /// Короткая форма `on_fixed_update`: шаг физики; его длительность — `ctx.dt()`.
+    fn fixed_update(&mut self, ctx: &mut Ctx) {}
+    /// Короткая форма `on_late_update`: после всех `update` (камеры, слежение).
+    fn late_update(&mut self, ctx: &mut Ctx) {}
+    /// Короткая форма `on_collision_enter`: столкнулись с объектом `other`.
+    fn on_collision(&mut self, ctx: &mut Ctx, other: GameObjectId) {}
+    /// Короткая форма `on_trigger_enter`: `other` вошёл в триггер (или мы — в его).
+    fn on_trigger(&mut self, ctx: &mut Ctx, other: GameObjectId) {}
+    /// По объекту щёлкнули: кнопка интерфейса на этом объекте нажата (мышь, касание,
+    /// Enter) или сработал `Clickable`. Маска — [`Hooks::CLICK`].
+    fn on_click(&mut self, ctx: &mut Ctx) {}
 }
 
 /// Контекст хука: «я» (`id`) и весь мир.

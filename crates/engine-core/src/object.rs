@@ -18,6 +18,14 @@ pub struct GameObjectId {
 }
 
 impl GameObjectId {
+    /// «Никакой объект»: так короткие формы (`ctx.find`, `ctx.spawn`…) отвечают, когда
+    /// объекта нет. `scene.get(GameObjectId::NONE)` — `None`, короткие формы с ним ничего
+    /// не делают.
+    pub const NONE: GameObjectId = GameObjectId {
+        index: u32::MAX,
+        generation: u32::MAX,
+    };
+
     /// Идентификатор одним числом (поколение в старших битах) — для передачи через
     /// границу с C++ и в сетевых сообщениях.
     pub fn to_bits(self) -> u64 {
@@ -190,6 +198,28 @@ impl GameObject {
             order: Cell::new(default_order),
         });
         self.touch();
+    }
+
+    /// Спросить [`Component::hooks`] у компонентов объекта заново. Нужно, когда ответ
+    /// компонента изменился после добавления — например, C++-компонент после горячей
+    /// перезагрузки плагина получил или потерял хук. Без изменений — ничего не делает.
+    pub fn refresh_hooks(&mut self) {
+        let mut changed = false;
+        for slot in &mut self.components {
+            if slot.removed {
+                continue;
+            }
+            if let Some(component) = slot.comp.as_deref() {
+                let hooks = component.hooks();
+                if hooks != slot.hooks {
+                    slot.hooks = hooks;
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.touch();
+        }
     }
 
     /// Удалить первый компонент типа `T`. Возвращает `false`, если такого нет.

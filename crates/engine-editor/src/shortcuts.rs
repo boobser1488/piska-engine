@@ -162,6 +162,9 @@ pub(crate) enum When {
     EditMode,
     /// Обрабатывает док (окно под курсором) — см. [`Editor::consume_command`].
     Dock,
+    /// Во вкладке Code или в Error List (и пока печатают в тексте кода). У такой команды
+    /// приоритет над общей с тем же сочетанием.
+    Code,
 }
 
 /// Команда редактора.
@@ -174,12 +177,30 @@ pub struct CommandDef {
     pub category: &'static str,
     /// Сочетание по умолчанию (`None` — команда без сочетания, его можно назначить).
     pub default: Option<KeyBinding>,
+    /// Первое нажатие сочетания из двух (`Ctrl+K` в `Ctrl+K, Ctrl+C`), как в Visual Studio.
+    pub prefix: Option<KeyBinding>,
     pub(crate) when: When,
 }
 
 const fn cmd(id: &'static str, title: &'static str, category: &'static str, default: Option<KeyBinding>, when: When) -> CommandDef {
-    CommandDef { id, title, category, default, when }
+    CommandDef { id, title, category, default, prefix: None, when }
 }
+
+/// Команда с сочетанием из двух нажатий: `prefix`, затем `key`.
+const fn chord(id: &'static str, title: &'static str, category: &'static str, prefix: KeyBinding, key: KeyBinding, when: When) -> CommandDef {
+    CommandDef { id, title, category, default: Some(key), prefix: Some(prefix), when }
+}
+
+const fn alt(key: Key) -> KeyBinding {
+    KeyBinding::with(key, false, false, true)
+}
+
+const fn shift_alt(key: Key) -> KeyBinding {
+    KeyBinding::with(key, false, true, true)
+}
+
+const CTRL_K: KeyBinding = KeyBinding::ctrl(Key::K);
+const CTRL_M: KeyBinding = KeyBinding::ctrl(Key::M);
 
 const N: Key = Key::N; // «N» встречается в трёх сочетаниях ниже
 
@@ -238,9 +259,78 @@ pub const COMMANDS: &[CommandDef] = &[
     cmd("window-hierarchy", n_("Hierarchy"), n_("Window"), Some(KeyBinding::ctrl(Key::Num4)), When::Always),
     cmd("window-project", n_("Project"), n_("Window"), Some(KeyBinding::ctrl(Key::Num5)), When::Always),
     cmd("window-console", n_("Console"), n_("Window"), Some(KeyBinding::ctrl(Key::Num6)), When::Always),
+    cmd("window-error-list", n_("Error List"), n_("Window"), Some(KeyBinding::ctrl(Key::Num9)), When::Always),
+    cmd("window-find-results", n_("Find Results"), n_("Window"), None, When::Always),
     cmd("window-profiler", n_("Profiler"), n_("Window"), Some(KeyBinding::ctrl(Key::Num7)), When::Always),
     cmd("window-inspector", n_("Inspector"), n_("Window"), Some(KeyBinding::ctrl(Key::Num8)), When::Always),
     cmd("maximize-panel", n_("Maximize / Restore Window"), n_("Window"), Some(KeyBinding::with(Key::Space, false, true, false)), When::Dock),
+    // --- Code Editor ---
+    cmd("check-code", n_("Check Code (cargo check)"), n_("Code Editor"), Some(KeyBinding::key(Key::F7)), When::Code),
+    cmd("next-error", n_("Next Error"), n_("Code Editor"), Some(KeyBinding::key(Key::F8)), When::Code),
+    cmd("prev-error", n_("Previous Error"), n_("Code Editor"), Some(KeyBinding::with(Key::F8, false, true, false)), When::Code),
+    cmd("quick-fix", n_("Quick Fix"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::Period)), When::Code),
+    cmd("quick-fix-alt", n_("Quick Fix (second shortcut)"), n_("Code Editor"), Some(KeyBinding::with(Key::Enter, false, false, true)), When::Code),
+    cmd("find-next", n_("Find Next"), n_("Code Editor"), Some(KeyBinding::key(Key::F3)), When::Code),
+    cmd("find-prev", n_("Find Previous"), n_("Code Editor"), Some(KeyBinding::with(Key::F3, false, true, false)), When::Code),
+    cmd("find-selected", n_("Find Selected"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::F3)), When::Code),
+    cmd("go-to-file", n_("Go to File"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::P)), When::Code),
+    cmd("go-to-file-alt", n_("Go to File (second shortcut)"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::Comma)), When::Code),
+    cmd("go-to-symbol", n_("Go to Symbol in File"), n_("Code Editor"), Some(KeyBinding::ctrl_shift(Key::O)), When::Code),
+    cmd("go-to-symbol-alt", n_("Go to Symbol in File (second shortcut)"), n_("Code Editor"), Some(alt(Key::Backslash)), When::Code),
+    cmd("go-to-project-symbol", n_("Go to Symbol in Project"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::T)), When::Code),
+    cmd("go-to-definition", n_("Go to Definition"), n_("Code Editor"), Some(KeyBinding::key(Key::F12)), When::Code),
+    cmd("peek-definition", n_("Peek Definition"), n_("Code Editor"), Some(alt(Key::F12)), When::Code),
+    cmd("navigate-back", n_("Navigate Back"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::Minus)), When::Code),
+    cmd("navigate-forward", n_("Navigate Forward"), n_("Code Editor"), Some(KeyBinding::ctrl_shift(Key::Minus)), When::Code),
+    cmd("next-tab", n_("Next Tab (recently used)"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::Tab)), When::Code),
+    cmd("reopen-tab", n_("Reopen Closed Tab"), n_("Code Editor"), Some(KeyBinding::ctrl_shift(Key::T)), When::Code),
+    cmd("find-in-files", n_("Find in Files"), n_("Code Editor"), Some(KeyBinding::ctrl_shift(Key::F)), When::Code),
+    cmd("find-references", n_("Find All References"), n_("Code Editor"), Some(KeyBinding::with(Key::F12, false, true, false)), When::Code),
+    cmd("complete", n_("Show Completions"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::Space)), When::Code),
+    cmd("parameter-info", n_("Parameter Info"), n_("Code Editor"), Some(KeyBinding::ctrl_shift(Key::Space)), When::Code),
+    chord("format-document", n_("Format Document"), n_("Code Editor"), CTRL_K, KeyBinding::ctrl(Key::D), When::Code),
+    cmd("rename-symbol", n_("Rename Symbol"), n_("Code Editor"), Some(KeyBinding::key(Key::F2)), When::Code),
+    chord("rename-symbol-alt", n_("Rename Symbol (second shortcut)"), n_("Code Editor"), KeyBinding::ctrl(Key::R), KeyBinding::ctrl(Key::R), When::Code),
+    cmd("duplicate-line", n_("Duplicate Line"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::D)), When::Code),
+    cmd("delete-line", n_("Delete Line"), n_("Code Editor"), Some(KeyBinding::ctrl_shift(Key::K)), When::Code),
+    cmd("cut-line", n_("Cut Line"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::L)), When::Code),
+    cmd("move-line-up", n_("Move Line Up"), n_("Code Editor"), Some(alt(Key::ArrowUp)), When::Code),
+    cmd("move-line-down", n_("Move Line Down"), n_("Code Editor"), Some(alt(Key::ArrowDown)), When::Code),
+    cmd("copy-line-up", n_("Copy Line Up"), n_("Code Editor"), Some(shift_alt(Key::ArrowUp)), When::Code),
+    cmd("copy-line-down", n_("Copy Line Down"), n_("Code Editor"), Some(shift_alt(Key::ArrowDown)), When::Code),
+    cmd("join-lines", n_("Join Lines"), n_("Code Editor"), None, When::Code),
+    cmd("sort-lines", n_("Sort Lines"), n_("Code Editor"), None, When::Code),
+    cmd("toggle-comment", n_("Toggle Line Comment"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::Slash)), When::Code),
+    chord("comment-lines", n_("Comment Selection"), n_("Code Editor"), CTRL_K, KeyBinding::ctrl(Key::C), When::Code),
+    chord("uncomment-lines", n_("Uncomment Selection"), n_("Code Editor"), CTRL_K, KeyBinding::ctrl(Key::U), When::Code),
+    cmd("block-comment", n_("Toggle Block Comment"), n_("Code Editor"), Some(shift_alt(Key::A)), When::Code),
+    cmd("upper-case", n_("Make Uppercase"), n_("Code Editor"), Some(KeyBinding::ctrl_shift(Key::U)), When::Code),
+    cmd("lower-case", n_("Make Lowercase"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::U)), When::Code),
+    cmd("go-to-bracket", n_("Go to Matching Bracket"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::CloseBracket)), When::Code),
+    cmd("expand-selection", n_("Expand Selection"), n_("Code Editor"), Some(shift_alt(Key::ArrowRight)), When::Code),
+    cmd("shrink-selection", n_("Shrink Selection"), n_("Code Editor"), Some(shift_alt(Key::ArrowLeft)), When::Code),
+    chord("toggle-bookmark", n_("Toggle Bookmark"), n_("Code Editor"), CTRL_K, KeyBinding::ctrl(Key::K), When::Code),
+    chord("next-bookmark", n_("Next Bookmark"), n_("Code Editor"), CTRL_K, KeyBinding::ctrl(Key::N), When::Code),
+    chord("prev-bookmark", n_("Previous Bookmark"), n_("Code Editor"), CTRL_K, KeyBinding::ctrl(Key::P), When::Code),
+    cmd("word-wrap", n_("Toggle Word Wrap"), n_("Code Editor"), Some(alt(Key::Z)), When::Code),
+    cmd("code-zoom-reset", n_("Reset Code Zoom"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::Num0)), When::Code),
+    // Несколько курсоров и выделение столбцом (Alt+щелчок, Shift+Alt+мышь — в самом виджете).
+    cmd("add-caret-above", n_("Add Caret Above"), n_("Code Editor"), Some(KeyBinding::with(Key::ArrowUp, true, false, true)), When::Code),
+    cmd("add-caret-below", n_("Add Caret Below"), n_("Code Editor"), Some(KeyBinding::with(Key::ArrowDown, true, false, true)), When::Code),
+    cmd("box-select-left", n_("Column Select Left"), n_("Code Editor"), Some(KeyBinding::with(Key::ArrowLeft, true, true, true)), When::Code),
+    cmd("box-select-right", n_("Column Select Right"), n_("Code Editor"), Some(KeyBinding::with(Key::ArrowRight, true, true, true)), When::Code),
+    cmd("box-select-up", n_("Column Select Up"), n_("Code Editor"), Some(KeyBinding::with(Key::ArrowUp, true, true, true)), When::Code),
+    cmd("box-select-down", n_("Column Select Down"), n_("Code Editor"), Some(KeyBinding::with(Key::ArrowDown, true, true, true)), When::Code),
+    cmd("add-next-occurrence", n_("Add Next Occurrence"), n_("Code Editor"), Some(shift_alt(Key::Period)), When::Code),
+    cmd("select-all-occurrences", n_("Select All Occurrences"), n_("Code Editor"), Some(shift_alt(Key::Semicolon)), When::Code),
+    cmd("select-all-occurrences-alt", n_("Select All Occurrences (second shortcut)"), n_("Code Editor"), Some(KeyBinding::ctrl_shift(Key::L)), When::Code),
+    cmd("close-tab", n_("Close Tab"), n_("Code Editor"), Some(KeyBinding::ctrl(Key::W)), When::Code),
+    cmd("code-new-file", n_("New File in Code Folder"), n_("Code Editor"), Some(KeyBinding::ctrl(N)), When::Code),
+    // Свёртка блоков (Ctrl+M, …), как в Visual Studio.
+    chord("toggle-outlining", n_("Toggle Outlining Expansion"), n_("Code Editor"), CTRL_M, KeyBinding::ctrl(Key::M), When::Code),
+    chord("collapse-to-definitions", n_("Collapse to Definitions"), n_("Code Editor"), CTRL_M, KeyBinding::ctrl(Key::O), When::Code),
+    chord("toggle-all-outlining", n_("Toggle All Outlining"), n_("Code Editor"), CTRL_M, KeyBinding::ctrl(Key::L), When::Code),
+    chord("stop-outlining", n_("Stop Outlining"), n_("Code Editor"), CTRL_M, KeyBinding::ctrl(Key::P), When::Code),
     // --- Help ---
     cmd("shortcuts-help", n_("Keyboard Shortcuts"), n_("Help"), Some(KeyBinding::key(Key::F1)), When::Always),
 ];
@@ -259,6 +349,8 @@ pub(crate) fn window_command(panel: Panel) -> &'static str {
         Panel::Hierarchy => "window-hierarchy",
         Panel::Project => "window-project",
         Panel::Console => "window-console",
+        Panel::ErrorList => "window-error-list",
+        Panel::FindResults => "window-find-results",
         Panel::Profiler => "window-profiler",
         Panel::Inspector => "window-inspector",
     }
@@ -269,6 +361,8 @@ pub(crate) fn window_command(panel: Panel) -> &'static str {
 pub struct Keymap {
     /// Имя команды → сочетание (`None` — сочетание снято).
     overrides: BTreeMap<String, Option<KeyBinding>>,
+    /// Переназначенные сочетания из двух нажатий: первое нажатие (второе — в `overrides`).
+    chords: BTreeMap<String, KeyBinding>,
 }
 
 impl Keymap {
@@ -280,15 +374,37 @@ impl Keymap {
         }
     }
 
-    /// Подпись текущего сочетания (пусто — без сочетания).
+    /// Первое нажатие сочетания из двух (`None` — сочетание из одного нажатия).
+    pub fn prefix(&self, id: &str) -> Option<KeyBinding> {
+        match self.overrides.get(id) {
+            Some(_) => self.chords.get(id).copied(),
+            None => command(id).and_then(|c| c.prefix),
+        }
+    }
+
+    /// Подпись текущего сочетания (пусто — без сочетания): `Ctrl+S`, `Ctrl+K, Ctrl+C`.
     pub fn text(&self, id: &str) -> String {
-        self.binding(id).map(|b| b.text()).unwrap_or_default()
+        match (self.prefix(id), self.binding(id)) {
+            (Some(prefix), Some(key)) => format!("{}, {}", prefix.text(), key.text()),
+            (_, key) => key.map(|b| b.text()).unwrap_or_default(),
+        }
+    }
+
+    /// Назначить сочетание из двух нажатий.
+    pub fn set_chord(&mut self, id: &str, prefix: KeyBinding, key: KeyBinding) {
+        let Some(def) = command(id) else { return };
+        if def.prefix == Some(prefix) && def.default == Some(key) {
+            self.reset(id);
+        } else {
+            self.overrides.insert(id.to_string(), Some(key));
+            self.chords.insert(id.to_string(), prefix);
+        }
     }
 
     /// `text` в скобках после подсказки: `Play (Ctrl+P)`; без сочетания — только `text`.
     pub fn tip(&self, text: &str, id: &str) -> String {
         match self.binding(id) {
-            Some(binding) => format!("{text} ({})", binding.text()),
+            Some(_) => format!("{text} ({})", self.text(id)),
             None => text.to_string(),
         }
     }
@@ -296,7 +412,8 @@ impl Keymap {
     /// Назначить сочетание (`None` — снять). Совпадение с умолчанием убирает запись.
     pub fn set(&mut self, id: &str, binding: Option<KeyBinding>) {
         let Some(def) = command(id) else { return };
-        if def.default == binding {
+        self.chords.remove(id);
+        if def.default == binding && def.prefix.is_none() {
             self.overrides.remove(id);
         } else {
             self.overrides.insert(id.to_string(), binding);
@@ -306,10 +423,12 @@ impl Keymap {
     /// Вернуть сочетание по умолчанию.
     pub fn reset(&mut self, id: &str) {
         self.overrides.remove(id);
+        self.chords.remove(id);
     }
 
     pub fn reset_all(&mut self) {
         self.overrides.clear();
+        self.chords.clear();
     }
 
     /// Сочетание команды не меняли.
@@ -319,14 +438,17 @@ impl Keymap {
 
     /// Другая команда, у которой уже есть сочетание `binding`.
     pub fn conflict(&self, id: &str, binding: KeyBinding) -> Option<&'static CommandDef> {
-        COMMANDS.iter().find(|c| c.id != id && self.binding(c.id) == Some(binding))
+        COMMANDS.iter().find(|c| c.id != id && self.binding(c.id) == Some(binding) && self.prefix(c.id).is_none())
     }
 
     /// Строки файла настроек: `    shortcut.save: Ctrl+Shift+S,` (`none` — снято).
     pub(crate) fn to_text(&self) -> String {
         let mut text = String::new();
         for (id, binding) in &self.overrides {
-            let value = binding.map_or_else(|| "none".to_string(), |b| b.storage());
+            let value = match (self.chords.get(id), binding) {
+                (Some(prefix), Some(key)) => format!("{} {}", prefix.storage(), key.storage()),
+                _ => binding.map_or_else(|| "none".to_string(), |b| b.storage()),
+            };
             text.push_str(&format!("    shortcut.{id}: {value},\n", id = id, value = value));
         }
         text
@@ -340,6 +462,10 @@ impl Keymap {
         let value = value.trim();
         if value.eq_ignore_ascii_case("none") || value.is_empty() {
             self.set(id, None);
+        } else if let Some((first, second)) = value.split_once(' ').filter(|(_, b)| !b.trim().is_empty()) {
+            if let (Some(prefix), Some(key)) = (KeyBinding::parse(first), KeyBinding::parse(second)) {
+                self.set_chord(id, prefix, key);
+            }
         } else if let Some(binding) = KeyBinding::parse(value) {
             self.set(id, Some(binding));
         }
@@ -369,6 +495,8 @@ pub(crate) struct ShortcutState {
     pub listening: Option<&'static str>,
     /// Последняя команда, запущенная клавишами (для тестов и строки состояния).
     pub last: Option<&'static str>,
+    /// Нажато первое нажатие сочетания из двух (`Ctrl+K`): ждём второе.
+    pub chord: Option<KeyBinding>,
 }
 
 impl Editor {
@@ -459,6 +587,61 @@ impl Editor {
             "view-gizmos" => self.show_gizmos = !self.show_gizmos,
             "refresh" => self.actions.push(Action::RefreshAssets),
             "build-code" => self.actions.push(Action::Build),
+            "check-code" => {
+                crate::code_checks::request_compiler(self, None, 0.0);
+            }
+            "next-error" => crate::error_list::step(self, true),
+            "prev-error" => crate::error_list::step(self, false),
+            "quick-fix" | "quick-fix-alt" => self.code.commands.push("quick-fix"),
+            "word-wrap" => self.prefs.code.word_wrap = !self.prefs.code.word_wrap,
+            "find-next" => self.code.commands.push("find-next"),
+            "complete" => self.code.commands.push("complete"),
+            "parameter-info" => self.code.commands.push("parameter-info"),
+            "go-to-file" | "go-to-file-alt" => self.open_picker(crate::code_nav::PickerKind::Files),
+            "go-to-symbol" | "go-to-symbol-alt" => self.open_picker(crate::code_nav::PickerKind::FileSymbols),
+            "go-to-project-symbol" => self.open_picker(crate::code_nav::PickerKind::ProjectSymbols),
+            "go-to-definition" => self.go_to_definition(false),
+            "find-in-files" => self.open_find_in_files(),
+            "format-document" => self.code.commands.push("format-document"),
+            // F2 в дереве файлов — переименовать файл, в тексте — символ.
+            "rename-symbol" | "rename-symbol-alt" if self.code.tree.focused => {
+                if let Some(path) = self.code.tree.selected.last().cloned() {
+                    self.code.tree_commands.push(crate::code_tree::TreeCmd::BeginRename(path));
+                }
+            }
+            "rename-symbol" | "rename-symbol-alt" => self.begin_code_rename(),
+            "close-tab" => {
+                let active = self.code.active;
+                if !self.code.documents.is_empty() {
+                    self.code.request_close(&[active]);
+                }
+            }
+            "code-new-file" => {
+                let folder = crate::code_tree::selected_folder(self);
+                if let Some(folder) = folder {
+                    self.code.tree_commands.push(crate::code_tree::TreeCmd::New(crate::code_tree::NewKind::TextFile, folder));
+                }
+            }
+            "find-references" => self.find_all_references(),
+            "peek-definition" => self.go_to_definition(true),
+            "navigate-back" => self.navigate_history(true),
+            "navigate-forward" => self.navigate_history(false),
+            "next-tab" => self.switch_tab_mru(),
+            "reopen-tab" => self.reopen_closed_tab(),
+            "find-prev" => self.code.commands.push("find-prev"),
+            "find-selected" => self.code.commands.push("find-selected"),
+            "code-zoom-reset" => self.prefs.code.font_size = crate::code_prefs::CodePrefs::default().font_size,
+            "select-all-occurrences-alt" => self.code.commands.push("select-all-occurrences"),
+            other if crate::code_keys::CARET_COMMANDS.contains(&other) => {
+                let id = COMMANDS.iter().find(|c| c.id == other).map_or("", |c| c.id);
+                self.code.commands.push(id);
+            }
+            other if crate::code_keys::TEXT_COMMANDS.contains(&other) => {
+                if self.prefs.code.keymap == crate::code_prefs::Keymap::VisualStudio {
+                    let id = COMMANDS.iter().find(|c| c.id == other).map_or("", |c| c.id);
+                    self.code.commands.push(id);
+                }
+            }
             "maximize-panel" => {
                 let panel = self.maximized_panel().unwrap_or(Panel::Scene);
                 self.actions.push(Action::Layout(LayoutAction::ToggleMaximize(panel)));
@@ -490,6 +673,10 @@ impl Editor {
                     && !self.hierarchy_typing(ctx.input(|i| i.time))
             }
             When::Dock => false,
+            When::Code => {
+                let panel = self.focused_panel();
+                panel == Some(Panel::Code) || panel == Some(Panel::ErrorList)
+            }
         }
     }
 
@@ -501,6 +688,7 @@ impl Editor {
             return;
         }
         if self.dialog.is_some()
+            || self.code.close_ask.is_some()
             || self.dock.save_dialog.is_some()
             || self.project.modal_open()
             || self.settings_modal_open()
@@ -521,12 +709,36 @@ impl Editor {
             if window_open && *key == egui::Key::Escape && modifiers.is_none() {
                 continue;
             }
-            let Some(id) = self.match_command(ctx, *key, *modifiers, typing) else { continue };
+            let pressed = KeyBinding::from_event(*key, *modifiers);
+            let id = match self.settings.keys.chord.take() {
+                // Второе нажатие сочетания из двух: команда или ничего (нажатие поглощается).
+                Some(prefix) => COMMANDS
+                    .iter()
+                    .filter(|c| self.prefs.shortcuts.prefix(c.id) == Some(prefix) && self.command_active(ctx, c.when, typing))
+                    .find(|c| self.prefs.shortcuts.binding(c.id).is_some_and(|b| b.key == *key && b.matches_exact(*modifiers)))
+                    .map(|c| c.id)
+                    .or(Some("")),
+                None => {
+                    let starts_chord = COMMANDS.iter().any(|c| {
+                        self.prefs.shortcuts.prefix(c.id).is_some_and(|p| p == pressed) && self.command_active(ctx, c.when, typing)
+                    });
+                    if starts_chord {
+                        self.settings.keys.chord = Some(pressed);
+                        Some("")
+                    } else {
+                        self.match_command(ctx, *key, *modifiers, typing)
+                    }
+                }
+            };
+            let Some(id) = id else { continue };
             ctx.input_mut(|i| {
                 if let Some(at) = i.events.iter().position(|e| *e == event) {
                     i.events.remove(at);
                 }
             });
+            if id.is_empty() {
+                continue;
+            }
             self.settings.keys.last = Some(id);
             self.run_command(id);
         }
@@ -537,9 +749,13 @@ impl Editor {
     fn match_command(&self, ctx: &egui::Context, key: Key, modifiers: Modifiers, typing: bool) -> Option<&'static str> {
         let candidates: Vec<(&'static CommandDef, KeyBinding)> = COMMANDS
             .iter()
+            .filter(|c| self.prefs.shortcuts.prefix(c.id).is_none())
             .filter_map(|c| self.prefs.shortcuts.binding(c.id).filter(|b| b.key == key).map(|b| (c, b)))
             .filter(|(c, _)| self.command_active(ctx, c.when, typing))
             .collect();
+        // Команды вкладки Code — раньше общих с тем же сочетанием (как в Visual Studio).
+        let mut candidates = candidates;
+        candidates.sort_by_key(|(c, _)| c.when != When::Code);
         candidates
             .iter()
             .find(|(_, b)| b.matches_exact(modifiers))
@@ -615,8 +831,11 @@ mod tests {
         for (i, a) in COMMANDS.iter().enumerate() {
             for b in &COMMANDS[i + 1..] {
                 assert_ne!(a.id, b.id);
-                if a.default.is_some() {
-                    assert_ne!(a.default, b.default, "{} and {} share a default", a.id, b.id);
+                // Сочетание команды вкладки Code может совпадать с общим: в Code главнее она
+                // (как в Visual Studio Ctrl+D, Ctrl+P…). Внутри одной области — не может.
+                let same_scope = (a.when == When::Code) == (b.when == When::Code);
+                if a.default.is_some() && same_scope {
+                    assert_ne!((a.prefix, a.default), (b.prefix, b.default), "{} and {} share a default", a.id, b.id);
                 }
             }
         }

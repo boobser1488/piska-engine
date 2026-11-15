@@ -341,6 +341,7 @@ pub(crate) fn asset_icon(importer: &str) -> (Icon, Color32) {
         "Code" => (Icon::Script, Color32::from_rgb(0x9b, 0x7b, 0xff)),
         "Scenario" => (Icon::Script, Color32::from_rgb(0x4f, 0xd1, 0xc5)),
         "Text" => (Icon::Text, theme::TEXT_MUTED),
+        "Shader" => (Icon::Code, Color32::from_rgb(0xf0, 0xb4, 0x4c)),
         _ => (Icon::File, theme::TEXT_MUTED),
     }
 }
@@ -363,7 +364,7 @@ pub(crate) fn default_action(asset: &AssetEntry, root: &std::path::Path) -> Opti
                 position: None,
             },
         )),
-        "Code" | "Text" | "Scenario" => Some((tr_s("Open in Code Tab"), Action::OpenCode(root.join(&asset.path)))),
+        "Code" | "Text" | "Scenario" | "Shader" => Some((tr_s("Open in Code Tab"), Action::OpenCode(root.join(&asset.path)))),
         "Mesh" if asset.path.ends_with(".pmodel") => Some((tr_s("Open in Piska Modeler"), Action::OpenModel(asset.path.clone()))),
         _ => None,
     }

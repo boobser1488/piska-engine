@@ -288,3 +288,31 @@ fn physics_components_are_saved_with_the_scene() {
     app.run_headless(180, DT);
     assert!((position(&app, crate_id).y - 0.5).abs() < 0.05, "the loaded scene simulates");
 }
+
+/// Запросы от имени объекта (`ignore` / `QueryFilter3D::ignoring`) соблюдают матрицу слоёв:
+/// стрелок слоя 1 не видит стену слоя 2, если слои 1 и 2 не сталкиваются. Без запрета —
+/// как раньше.
+#[test]
+fn queries_from_an_object_honour_the_layer_matrix() {
+    let mut app = app_with_ground();
+    let shooter = app.spawn("Shooter").at3(0.0, 1.0, 0.0).layer(1).with(Rigidbody::kinematic()).with(Collider::sphere(0.3)).id();
+    let wall = app.spawn("Wall").at3(5.0, 1.0, 0.0).layer(2).with(Collider::cuboid(1.0, 2.0, 4.0)).id();
+    let back = app.spawn("Back").at3(10.0, 1.0, 0.0).with(Collider::cuboid(1.0, 2.0, 4.0)).id();
+    app.run_headless(2, DT);
+    let shoot = |app: &App| {
+        let physics = app.world.resources.get::<Physics3D>().unwrap();
+        let ray = physics.raycast(Vec3::new(0.0, 1.0, 0.0), Vec3::X, 30.0, Some(shooter)).map(|h| h.object);
+        let cast = physics
+            .cast_shape(CastShape3D::Sphere { radius: 0.2 }, Vec3::new(0.0, 1.0, 0.0), Quat::IDENTITY, Vec3::X * 30.0, QueryFilter3D::ignoring(shooter))
+            .map(|h| h.object);
+        // Без объекта (из-за края шара стрелка, чтобы не попасть в него самого).
+        let anonymous = physics.raycast(Vec3::new(0.5, 1.0, 0.0), Vec3::X, 30.0, None).map(|h| h.object);
+        (ray, cast, anonymous)
+    };
+    assert_eq!(shoot(&app), (Some(wall), Some(wall), Some(wall)), "default matrix: the wall blocks");
+    let mut settings = engine::core::settings::Physics3dSettings::default();
+    settings.layer_matrix.set(1, 2, false);
+    app.world.resources.get_mut::<Physics3D>().unwrap().apply_settings(&settings);
+    // От имени стрелка стена не видна; запрос без объекта не знает слоя — видит всё.
+    assert_eq!(shoot(&app), (Some(back), Some(back), Some(wall)));
+}

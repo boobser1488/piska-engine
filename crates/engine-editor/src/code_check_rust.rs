@@ -145,9 +145,8 @@ pub(crate) fn lex(text: &str) -> (Vec<(Tok, Range<usize>)>, Vec<Diagnostic>) {
                 while i < bytes.len() {
                     let b = bytes[i];
                     let exponent_sign = (b == b'+' || b == b'-') && matches!(bytes[i - 1], b'e' | b'E') && !text[start..i].starts_with("0x");
-                    if b.is_ascii_alphanumeric() || b == b'_' || exponent_sign {
-                        i += 1;
-                    } else if b == b'.' && bytes.get(i + 1).is_some_and(|n| n.is_ascii_digit()) {
+                    let fraction = b == b'.' && bytes.get(i + 1).is_some_and(|n| n.is_ascii_digit());
+                    if b.is_ascii_alphanumeric() || b == b'_' || exponent_sign || fraction {
                         i += 1;
                     } else if b == b'.' && !matches!(bytes.get(i + 1), Some(b'.') | Some(b'_')) && !bytes.get(i + 1).is_some_and(|n| n.is_ascii_alphabetic()) && !text[start..i].contains('.') {
                         // `1.` — тоже число с плавающей точкой.
@@ -295,6 +294,14 @@ pub(crate) fn check_delimiters(text: &str, tokens: &[(Tok, Range<usize>)]) -> Ve
                             .hint(trf!("close `{open}` with `{close}` before this `{c}`", open = open as char, close = closer(open) as char, c = c as char)),
                     );
                     stack.truncate(depth);
+                } else if let Some((open, at)) = stack.pop() {
+                    // Ничего глубже не подходит: эта скобка закрывает верхнюю, но не той формы.
+                    out.push(
+                        Diagnostic::error(trf!("mismatched closing delimiter: `{c}`", c = c as char), range.clone())
+                            .note(trf!("unclosed delimiter `{open}` on line {line}", open = open as char, line = line_of(at.start)))
+                            .hint(trf!("close `{open}` with `{close}` before this `{c}`", open = open as char, close = closer(open) as char, c = c as char))
+                            .fix(trf!("Replace with `{close}`", close = closer(open) as char), range.clone(), (closer(open) as char).to_string()),
+                    );
                 } else {
                     out.push(
                         Diagnostic::error(trf!("unexpected closing delimiter: `{c}`", c = c as char), range.clone())
@@ -322,14 +329,17 @@ fn unreflectable(ty: &str) -> Option<(&'static str, Option<&'static str>)> {
     Some(match head {
         "f64" => ("f32", Some("f32")),
         "usize" | "u64" | "u16" | "u8" => ("u32", Some("u32")),
-        "isize" | "i16" | "i8" | "i128" | "u128" => ("i32 or i64", Some("i32")),
-        "char" => ("String", Some("String")),
-        "Option" => ("a value with a default (for an object reference: ObjectRef)", None),
-        "HashMap" | "BTreeMap" | "HashSet" | "BTreeSet" | "VecDeque" => ("Vec<T>", None),
-        "Box" | "Rc" | "Arc" | "RefCell" | "Cell" => ("a plain field", None),
-        "&" | "" if ty.starts_with('&') => ("an owned type", None),
-        "" if ty.starts_with('[') => ("Vec<T>", None),
-        "" if ty.starts_with('(') => ("Vec2 / Vec3 or separate fields", None),
+        "isize" | "i16" | "i8" | "i128" | "u128" => (tr_s("i32 or i64"), Some("i32")),
+        "char" => ("String", Some("String")), // i18n-skip: имя типа / ключ
+        // Подсказка «используйте …» — переводится.
+        "Option" => (tr_s("a value with a default (for an object reference: ObjectRef)"), None),
+        "HashMap" | "BTreeMap" | "HashSet" | "BTreeSet" | "VecDeque" => ("Vec<T>", None), // i18n-skip: имя типа / ключ
+        // Подсказка «используйте …» — переводится.
+        "Box" | "Rc" | "Arc" | "RefCell" | "Cell" => (tr_s("a plain field"), None),
+        "&" | "" if ty.starts_with('&') => (tr_s("an owned type"), None),
+        "" if ty.starts_with('[') => ("Vec<T>", None), // i18n-skip: имя типа / ключ
+        // Подсказка «используйте …» — переводится.
+        "" if ty.starts_with('(') => (tr_s("Vec2 / Vec3 or separate fields"), None),
         _ => return None,
     })
 }
@@ -554,7 +564,7 @@ fn mod_rs_registration(path: &Path, text: &str, code: &[&(Tok, Range<usize>)]) -
         }
         let at = code
             .windows(2)
-            .find(|w| &text[w[0].1.clone()] == "struct" && &text[w[1].1.clone()] == component.name)
+            .find(|w| &text[w[0].1.clone()] == "struct" && text[w[1].1.clone()] == component.name)
             .map(|w| w[1].1.clone())
             .unwrap_or(0..0);
         out.push(

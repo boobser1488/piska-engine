@@ -383,10 +383,6 @@ impl CompilerCheck {
         }
     }
 
-    /// Сколько уже идёт текущая проверка.
-    pub fn elapsed(&self) -> Option<Duration> {
-        self.is_running().then(|| self.started.map(|s| s.elapsed())).flatten()
-    }
 }
 
 impl Drop for CompilerCheck {

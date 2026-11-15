@@ -277,6 +277,31 @@ pub trait PrefabSource {
     fn load(&self, reference: &str) -> Result<Prefab, SceneError>;
 }
 
+/// Префабы одной загрузки сцены: каждый файл читается и разбирается один раз, экземпляры
+/// получают копию разобранного (в сцене «Ташбазара» ~4 000 объектов из нескольких десятков
+/// префабов — без кэша каждый экземпляр заново читал и разбирал свой файл).
+pub(crate) struct CachingPrefabs<'a> {
+    inner: &'a dyn PrefabSource,
+    cache: std::cell::RefCell<HashMap<String, Prefab>>,
+}
+
+impl<'a> CachingPrefabs<'a> {
+    pub(crate) fn new(inner: &'a dyn PrefabSource) -> Self {
+        Self { inner, cache: std::cell::RefCell::new(HashMap::new()) }
+    }
+}
+
+impl PrefabSource for CachingPrefabs<'_> {
+    fn load(&self, reference: &str) -> Result<Prefab, SceneError> {
+        if let Some(prefab) = self.cache.borrow().get(reference) {
+            return Ok(prefab.clone());
+        }
+        let prefab = self.inner.load(reference)?;
+        self.cache.borrow_mut().insert(reference.to_string(), prefab.clone());
+        Ok(prefab)
+    }
+}
+
 /// Префабы из каталога: ссылка — путь относительно корня.
 pub struct DirPrefabs {
     pub root: PathBuf,

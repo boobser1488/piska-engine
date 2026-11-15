@@ -33,6 +33,9 @@ pub(crate) enum TexRef {
 pub(crate) enum Blend {
     Alpha,
     Additive,
+    /// Свой шейдер спрайта (`SpriteShader`): номер пачки «шейдер + параметры»
+    /// (renderer/custom.rs), смешивание — альфа.
+    Custom(u32),
 }
 
 /// Непрерывный кусок вершин в сыром буфере с общим ключом сортировки.
@@ -148,8 +151,11 @@ pub(crate) fn sprite_uv(sprite: &SpriteRenderer, inset: UvInset) -> UvRect {
     uv
 }
 
-/// Шесть вершин (два треугольника) четырёхугольника. Углы по порядку:
-/// левый нижний, правый нижний, правый верхний, левый верхний.
+/// Четыре вершины четырёхугольника (углы по порядку: левый нижний, правый нижний,
+/// правый верхний, левый верхний). Треугольники (0 1 2) и (0 2 3) задаёт общий индексный
+/// буфер квадов рендерера — вершин на треть меньше, чем при шести на квад.
+pub(crate) const QUAD_VERTICES: usize = 4;
+
 pub(crate) fn push_quad(out: &mut Vec<SpriteVertex>, corners: [Vec3; 4], uv: UvRect, color: [f32; 4]) {
     let uvs = [[uv.u0, uv.v1], [uv.u1, uv.v1], [uv.u1, uv.v0], [uv.u0, uv.v0]];
     let rect = [uv.u0.min(uv.u1), uv.v0.min(uv.v1), uv.u0.max(uv.u1), uv.v0.max(uv.v1)];
@@ -159,7 +165,7 @@ pub(crate) fn push_quad(out: &mut Vec<SpriteVertex>, corners: [Vec3; 4], uv: UvR
         color,
         rect,
     };
-    out.extend_from_slice(&[vertex(0), vertex(1), vertex(2), vertex(0), vertex(2), vertex(3)]);
+    out.extend_from_slice(&[vertex(0), vertex(1), vertex(2), vertex(3)]);
 }
 
 /// Углы прямоугольника спрайта в мире с учётом точки опоры.

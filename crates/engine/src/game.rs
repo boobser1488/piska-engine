@@ -73,6 +73,104 @@ pub fn run_game(build: BuildFn, config: WindowConfig) -> Result<(), EngineError>
     crate::run(app, config)
 }
 
+/// Собрать игру из уже созданного приложения с зарегистрированными компонентами: положить
+/// хранилище сохранений, подключить ассеты (каталог `assets` — на десктопе, пак — в браузере
+/// и на Android, см. [`crate::mount_assets`]) и загрузить стартовую сцену. Это тело
+/// функции `build_with`, которую пишет [`game!`](crate::game).
+pub fn build_game(mut app: App, save: SaveData, assets: impl AsRef<std::path::Path>, scene: &str) -> Result<App, EngineError> {
+    app.world.resources.insert(save);
+    crate::mount_assets(&mut app, assets)?;
+    crate::load_scene(&mut app, scene)?;
+    Ok(app)
+}
+
+/// Вызвать шаг `setup:` из [`game!`](crate::game) (отдельная функция — чтобы тип замыкания
+/// выводился из её сигнатуры).
+#[doc(hidden)]
+pub fn run_game_setup(app: &mut App, setup: impl FnOnce(&mut App) -> Result<(), EngineError>) -> Result<(), EngineError> {
+    setup(app)
+}
+
+/// Окно игры из [`game!`](crate::game): заданное в `window:` или «имя игры, 1280 × 720».
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __game_window {
+    ($name:expr) => {
+        $crate::render::WindowConfig::titled($name).with_size(1280, 720)
+    };
+    ($name:expr, $window:expr) => {
+        $window
+    };
+}
+
+/// Игра одним объявлением: имя, стартовая сцена, компоненты на Rust. Пишет за вас то,
+/// что раньше писали руками (и что по-прежнему можно написать руками — см. `docs/api/export.md`):
+///
+/// ```ignore
+/// pub mod scripts; // скрипты, созданные в редакторе (New Rust Script)
+/// use engine::prelude::*;
+///
+/// engine::game! {
+///     name: "Piska Starfall",
+///     scene: "scenes/main.scene",
+///     components: [GameManager],
+/// }
+/// ```
+///
+/// Получается (в корне крейта игры):
+/// * `pub const GAME_NAME` — имя (каталог сохранений, ключ `localStorage`, заголовок окна);
+/// * `pub fn register(app)` — `scripts::register(app)` (каталог `src/scripts/`, им управляет
+///   редактор) и `app.register::<T>()` для каждого из `components`;
+/// * `pub fn build_with(save)` — [`crate::app`], `register`, необязательный `setup`, затем
+///   [`build_game`]: сохранения, ассеты, сцена. Тесты передают `SaveData::in_memory()`;
+/// * `pub fn build()` — `build_with(engine::save_data(GAME_NAME))`; её открывает
+///   `engine::editor_main!` (программа редактора) и экспорт;
+/// * точки входа [`game_main!`](crate::game_main): `main` для десктопа, браузер, Android.
+///
+/// Необязательные поля после `components` (в этом порядке):
+/// * `window: WindowConfig::titled("…").with_size(800, 600)` — окно (по умолчанию «имя, 1280 × 720»);
+/// * `setup: |app| engine::add_static_cpp(app, engine::cpp_scripts!())` — что ещё сделать с
+///   приложением до загрузки ассетов (`FnOnce(&mut App) -> Result<(), EngineError>`).
+#[macro_export]
+macro_rules! game {
+    (
+        name: $name:expr,
+        scene: $scene:expr,
+        components: [$($component:ty),* $(,)?]
+        $(, window: $window:expr)?
+        $(, setup: $setup:expr)?
+        $(,)?
+    ) => {
+        /// Имя игры: каталог сохранений на десктопе, ключ `localStorage` в браузере, заголовок окна.
+        pub const GAME_NAME: &str = $name;
+
+        /// Зарегистрировать компоненты игры (сцены и префабы ссылаются на них по имени):
+        /// скрипты из `src/scripts/` и перечисленные в `engine::game!`.
+        pub fn register(app: &mut $crate::core::app::App) {
+            scripts::register(app);
+            $(app.register::<$component>();)*
+        }
+
+        /// Собрать игру с заданным хранилищем сохранений (тесты передают `SaveData::in_memory()`).
+        pub fn build_with(
+            save: $crate::core::save::SaveData,
+        ) -> ::core::result::Result<$crate::core::app::App, $crate::EngineError> {
+            #[allow(unused_mut)]
+            let mut app = $crate::app();
+            register(&mut app);
+            $($crate::run_game_setup(&mut app, $setup)?;)?
+            $crate::build_game(app, save, $crate::assets_dir!(), $scene)
+        }
+
+        /// Собрать игру: сохранения — там, где они живут на этой платформе.
+        pub fn build() -> ::core::result::Result<$crate::core::app::App, $crate::EngineError> {
+            build_with($crate::save_data(GAME_NAME))
+        }
+
+        $crate::game_main!(build, $crate::__game_window!(GAME_NAME $(, $window)?));
+    };
+}
+
 /// Точки входа игры для всех платформ из одной функции `build`.
 ///
 /// ```ignore

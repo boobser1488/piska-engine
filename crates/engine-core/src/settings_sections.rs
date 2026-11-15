@@ -491,6 +491,34 @@ pub struct GraphicsSettings {
     pub bloom_threshold: f32,
     /// Множитель плотности тумана из `Environment`; 0 — без тумана.
     pub fog_scale: f32,
+    /// Масштаб разрешения 3D-сцены (0.25…2): 0.75 — сцена рисуется в 75 % ширины и
+    /// высоты и растягивается при сведении кадра (интерфейс остаётся чётким). Главный
+    /// рычаг для слабых видеокарт: время кадра на рельефе почти пропорционально числу
+    /// пикселей. Больше 1 — сверхвыборка.
+    pub render_scale: f32,
+    /// Сколько каскадов теней разрешено компоненту `SoftShadows` (1–4).
+    pub shadow_cascades: u32,
+    /// Самый дорогой фильтр края теней `SoftShadows`: 0 — PCF 3×3, 1 — диск Пуассона,
+    /// 2 — контактное упрочнение.
+    pub shadow_filter: u32,
+    /// Экранное затенение (компонент `AmbientOcclusion`) разрешено.
+    pub ambient_occlusion: bool,
+    /// Блум «13 выборок» (компонент `PostQuality`) разрешён.
+    pub high_quality_bloom: bool,
+    /// FXAA (компонент `PostQuality`) разрешено.
+    pub fxaa: bool,
+    /// Полная детализация рельефа: вторая выборка против повторов плиток и трипланарная
+    /// скала. Выключено — рельеф заметно дешевле (слабые видеокарты, браузер, телефоны).
+    pub terrain_detail: bool,
+    /// Сколько точечных ламп и прожекторов может освещать кадр с компонентом `ManyLights`
+    /// (4…255; ближние к камере — первыми).
+    pub max_lights: u32,
+    /// Сколько ламп с компонентом `LightShadows` отбрасывают тени (ближние — первыми;
+    /// точечная лампа — шесть проходов теней, прожектор — один).
+    pub light_shadows: u32,
+    /// Детализация воды с компонентом `WaterEffects`: 0 — волны и блик, 1 — + преломление,
+    /// цвет по глубине и пена, 2 — + отражения сцены по экрану.
+    pub water_detail: u32,
 }
 
 impl Default for GraphicsSettings {
@@ -511,6 +539,16 @@ impl GraphicsSettings {
                 bloom_intensity: 1.0,
                 bloom_threshold: 1.0,
                 fog_scale: 1.0,
+                render_scale: 1.0,
+                shadow_cascades: 1,
+                shadow_filter: 0,
+                ambient_occlusion: false,
+                high_quality_bloom: false,
+                fxaa: true,
+                terrain_detail: false,
+                max_lights: 16,
+                light_shadows: 0,
+                water_detail: 0,
             },
             QualityLevel::Medium => Self {
                 quality: level,
@@ -520,6 +558,16 @@ impl GraphicsSettings {
                 bloom_intensity: 0.6,
                 bloom_threshold: 1.0,
                 fog_scale: 1.0,
+                render_scale: 1.0,
+                shadow_cascades: 2,
+                shadow_filter: 0,
+                ambient_occlusion: true,
+                high_quality_bloom: true,
+                fxaa: true,
+                terrain_detail: true,
+                max_lights: 64,
+                light_shadows: 1,
+                water_detail: 1,
             },
             QualityLevel::High => Self {
                 quality: level,
@@ -529,6 +577,16 @@ impl GraphicsSettings {
                 bloom_intensity: 1.0,
                 bloom_threshold: 1.0,
                 fog_scale: 1.0,
+                render_scale: 1.0,
+                shadow_cascades: 4,
+                shadow_filter: 2,
+                ambient_occlusion: true,
+                high_quality_bloom: true,
+                fxaa: true,
+                terrain_detail: true,
+                max_lights: 255,
+                light_shadows: 2,
+                water_detail: 2,
             },
         }
     }

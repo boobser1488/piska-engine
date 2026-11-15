@@ -54,6 +54,21 @@ struct PostParams {
     tone: [f32; 4],
     lift: [f32; 4],
     gain: [f32; 4],
+    /// x — затенение (AO) включено, y — сила контура, z — блум «13 выборок», w — FXAA.
+    fx: [f32; 4],
+    /// rgb — цвет контура.
+    outline_color: [f32; 4],
+}
+
+/// Эффекты сведения кадра из сцены (post_fx.rs, `PostQuality`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct ComposeFx {
+    pub ao: bool,
+    /// rgb — цвет, a — 1: затемнение цвета под линией.
+    pub outline: [f32; 4],
+    pub outline_strength: f32,
+    pub high_quality_bloom: bool,
+    pub fxaa: bool,
 }
 
 /// Текстуры под конкретный размер кадра.
@@ -68,6 +83,10 @@ struct Sized {
     /// `up[i]` читает уровень `i + 1`, добавляет к уровню `i`.
     up: Vec<wgpu::BindGroup>,
     composite: wgpu::BindGroup,
+    /// Сведение с текстурой эффектов по глубине (AO, контур), если она есть.
+    composite_fx: Option<(u32, wgpu::BindGroup)>,
+    /// Промежуточный кадр для FXAA (в формате цели) и его группа.
+    ldr: Option<(wgpu::TextureView, wgpu::BindGroup)>,
 }
 
 pub(crate) struct PostChain {
@@ -78,13 +97,20 @@ pub(crate) struct PostChain {
     down_pipeline: wgpu::RenderPipeline,
     up_pipeline: wgpu::RenderPipeline,
     composite_pipeline: wgpu::RenderPipeline,
+    fxaa_pipeline: wgpu::RenderPipeline,
+    down13_pipeline: wgpu::RenderPipeline,
+    prefilter13_pipeline: wgpu::RenderPipeline,
+    output_format: wgpu::TextureFormat,
+    /// 1×1 «без эффектов» (r = 1 — без затенения, g = 0 — без контура).
+    no_fx: wgpu::TextureView,
+    fx: ComposeFx,
     sized: Option<Sized>,
     /// Цветокоррекция следующего `run` (рендерер ставит её из сцены каждый кадр).
     grading: GradingParams,
 }
 
 impl PostChain {
-    pub fn new(device: &wgpu::Device, output_format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, output_format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("post shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("post.wgsl").into()),
@@ -120,6 +146,7 @@ impl PostChain {
                     count: None,
                 },
                 texture_entry(3),
+                texture_entry(4),
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -163,7 +190,33 @@ impl PostChain {
             alpha: wgpu::BlendComponent::REPLACE,
         };
 
+        let no_fx = {
+            use wgpu::util::DeviceExt;
+            device
+                .create_texture_with_data(
+                    queue,
+                    &wgpu::TextureDescriptor {
+                        label: Some("no post fx"),
+                        size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    },
+                    wgpu::util::TextureDataOrder::LayerMajor,
+                    &[255, 0, 0, 255],
+                )
+                .create_view(&Default::default())
+        };
         Self {
+            fxaa_pipeline: pipeline("fs_fxaa", output_format, None),
+            down13_pipeline: pipeline("fs_down13", HDR_FORMAT, None),
+            prefilter13_pipeline: pipeline("fs_prefilter13", HDR_FORMAT, None),
+            output_format,
+            no_fx,
+            fx: ComposeFx::default(),
             prefilter_pipeline: pipeline("fs_prefilter", HDR_FORMAT, None),
             down_pipeline: pipeline("fs_down", HDR_FORMAT, None),
             up_pipeline: pipeline("fs_up", HDR_FORMAT, Some(additive)),
@@ -184,6 +237,62 @@ impl PostChain {
             sized: None,
             grading: GradingParams::OFF,
         }
+    }
+
+    /// Эффекты следующего сведения: AO / контур из `fx_view` (текстура post_fx.rs с
+    /// номером поколения `generation`; `None` — без них), блум «13 выборок», FXAA.
+    pub(crate) fn set_fx(&mut self, device: &wgpu::Device, fx: ComposeFx, fx_view: Option<(&wgpu::TextureView, u32)>) {
+        self.fx = fx;
+        let Some(sized) = &mut self.sized else {
+            return;
+        };
+        match fx_view {
+            Some((view, generation)) => {
+                if sized.composite_fx.as_ref().map(|(g, _)| *g) != Some(generation) {
+                    let bind = Self::bind_with(device, &self.layout, &self.sampler, &self.params, &sized.hdr_view, &sized.bloom_views[0], view);
+                    sized.composite_fx = Some((generation, bind));
+                }
+            }
+            None => sized.composite_fx = None,
+        }
+        if fx.fxaa && sized.ldr.is_none() {
+            let view = device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("fxaa source"),
+                    size: wgpu::Extent3d { width: sized.size[0], height: sized.size[1], depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: self.output_format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                })
+                .create_view(&Default::default());
+            let bind = Self::bind_with(device, &self.layout, &self.sampler, &self.params, &view, &view, &self.no_fx);
+            sized.ldr = Some((view, bind));
+        }
+    }
+
+    fn bind_with(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
+        params: &wgpu::Buffer,
+        source: &wgpu::TextureView,
+        bloom: &wgpu::TextureView,
+        fx: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("post"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(source) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: params.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(bloom) },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(fx) },
+            ],
+        })
     }
 
     /// Цветокоррекция для следующих сведений кадра (`GradingParams::OFF` — без неё).
@@ -221,28 +330,7 @@ impl PostChain {
             .collect();
 
         let bind = |source: &wgpu::TextureView, bloom: &wgpu::TextureView| {
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("post"),
-                layout: &self.layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(source),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: self.params.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(bloom),
-                    },
-                ],
-            })
+            Self::bind_with(device, &self.layout, &self.sampler, &self.params, source, bloom, &self.no_fx)
         };
         // Проходы блума не читают `bloom_texture`, поэтому туда идёт тот же источник.
         let prefilter = bind(&hdr_view, &hdr_view);
@@ -262,6 +350,8 @@ impl PostChain {
             down,
             up,
             composite,
+            composite_fx: None,
+            ldr: None,
         });
     }
 
@@ -296,6 +386,13 @@ impl PostChain {
                 tone: self.grading.tone,
                 lift: self.grading.lift,
                 gain: self.grading.gain,
+                fx: [
+                    if self.fx.ao && sized.composite_fx.is_some() { 1.0 } else { 0.0 },
+                    if sized.composite_fx.is_some() { self.fx.outline_strength } else { 0.0 },
+                    if self.fx.high_quality_bloom { 1.0 } else { 0.0 },
+                    if self.fx.fxaa { 1.0 } else { 0.0 },
+                ],
+                outline_color: self.fx.outline,
             }),
         );
 
@@ -325,14 +422,28 @@ impl PostChain {
         let clear = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
 
         if bloom {
-            pass(encoder, &self.prefilter_pipeline, &sized.prefilter, &sized.bloom_views[0], clear);
+            // Блум «13 выборок» (`PostQuality`): уменьшение фильтром из 13 выборок, на первом
+            // шаге — среднее Кариса (одиночные яркие пиксели не мерцают).
+            let (prefilter, down) = if self.fx.high_quality_bloom {
+                (&self.prefilter13_pipeline, &self.down13_pipeline)
+            } else {
+                (&self.prefilter_pipeline, &self.down_pipeline)
+            };
+            pass(encoder, prefilter, &sized.prefilter, &sized.bloom_views[0], clear);
             for level in 0..BLOOM_LEVELS - 1 {
-                pass(encoder, &self.down_pipeline, &sized.down[level], &sized.bloom_views[level + 1], clear);
+                pass(encoder, down, &sized.down[level], &sized.bloom_views[level + 1], clear);
             }
             for level in (0..BLOOM_LEVELS - 1).rev() {
                 pass(encoder, &self.up_pipeline, &sized.up[level], &sized.bloom_views[level], wgpu::LoadOp::Load);
             }
         }
-        pass(encoder, &self.composite_pipeline, &sized.composite, target, clear);
+        let composite = sized.composite_fx.as_ref().map_or(&sized.composite, |(_, bind)| bind);
+        match (&sized.ldr, self.fx.fxaa) {
+            (Some((ldr, ldr_bind)), true) => {
+                pass(encoder, &self.composite_pipeline, composite, ldr, clear);
+                pass(encoder, &self.fxaa_pipeline, ldr_bind, target, clear);
+            }
+            _ => pass(encoder, &self.composite_pipeline, composite, target, clear),
+        }
     }
 }

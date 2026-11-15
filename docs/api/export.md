@@ -96,6 +96,28 @@ log.workspace = true
 
 ### 1.3. `src/lib.rs`
 
+Короче всего — одним объявлением `engine::game!`: имя игры, стартовая сцена, компоненты
+на Rust. Так устроены `games/template` и проекты из Piska Hub:
+
+```rust
+pub mod scripts; // скрипты из редактора (New Rust Script), `scripts::register`
+use engine::prelude::*;
+
+engine::game! {
+    name: "My Game",                 // заголовок окна, каталог сохранений, ключ localStorage
+    scene: "scenes/main.scene",      // путь внутри assets
+    components: [Player],            // свои компоненты (scripts::register — сам)
+    // необязательно, в этом порядке:
+    // window: WindowConfig::titled("My Game").with_size(800, 600),
+    // setup: |app| engine::add_static_cpp(app, engine::cpp_scripts!()),
+}
+```
+
+Макрос пишет ровно то, что ниже написано руками: `GAME_NAME`, `register(app)`,
+`build_with(save)` (тесты передают `SaveData::in_memory()`), `build()` и
+`engine::game_main!(build, …)`. Ручная форма остаётся рабочей — она нужна, если сборка
+игры необычная:
+
 ```rust
 use engine::prelude::*;
 

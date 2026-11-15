@@ -17,6 +17,7 @@ use super::walk::Frustum;
 use super::{Renderer, DEPTH_FORMAT, SAMPLES};
 use crate::post::HDR_FORMAT;
 use crate::terrain::{Terrain, Water};
+use crate::water_fx::{WaterEffects, WaterFxUniform};
 use crate::terrain_data::TerrainSampler;
 use crate::terrain_mesh::{build_chunk, build_indices, lod_cells, vertex_count, ChunkMesh, TerrainVertex};
 use crate::terrain_textures::{builtin_layers, downsample, from_image, LayerPixels, LAYER_TOTAL, TEX_SIZE};
@@ -348,7 +349,8 @@ struct WaterDraw {
 
 /// Всё GPU-состояние рельефов и воды одного рендерера.
 pub(crate) struct TerrainPass {
-    pipeline: wgpu::RenderPipeline,
+    /// По варианту шейдера (renderer/variant.rs); вариант 0 есть всегда.
+    pipelines: Vec<Option<wgpu::RenderPipeline>>,
     shadow_pipeline: wgpu::RenderPipeline,
     water_pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -371,6 +373,8 @@ pub(crate) struct TerrainPass {
     visible: Vec<(usize, (i32, i32), f32)>,
     waters: Vec<WaterUniform>,
     water_draws: Vec<WaterDraw>,
+    /// Вода с компонентом `WaterEffects` (рисует renderer/water_pass.rs).
+    pub water_fx: Vec<WaterFxUniform>,
     stats: TerrainStats,
 }
 
@@ -378,7 +382,7 @@ impl TerrainPass {
     pub fn new(device: &wgpu::Device, lit_layout: &wgpu::BindGroupLayout, globals_layout: &wgpu::BindGroupLayout) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("terrain shader"),
-            source: wgpu::ShaderSource::Wgsl(concat!(include_str!("../common.wgsl"), include_str!("../terrain.wgsl")).into()),
+            source: wgpu::ShaderSource::Wgsl(super::variant::terrain_source(0).into()),
         });
         let water_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("water shader"),
@@ -422,11 +426,7 @@ impl TerrainPass {
             label: Some("water layout"),
             entries: &[uniform_entry(0)],
         });
-        let vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<TerrainVertex>() as u64,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Snorm8x4, 2 => Unorm8x4, 3 => Unorm8x4],
-        };
+        let vertex_layout = terrain_vertex_layout();
         let depth = |write: bool, compare| wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: write,
@@ -434,38 +434,8 @@ impl TerrainPass {
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         };
-        let main_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("terrain pipeline layout"),
-            bind_group_layouts: &[lit_layout, &layout],
-            push_constant_ranges: &[],
-        });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("terrain pipeline"),
-            layout: Some(&main_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: std::slice::from_ref(&vertex_layout),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: HDR_FORMAT,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            // Юбки видны с обеих сторон.
-            primitive: wgpu::PrimitiveState::default(),
-            // Обратная глубина (depth.rs): ближе — больше.
-            depth_stencil: Some(depth(true, wgpu::CompareFunction::Greater)),
-            multisample: wgpu::MultisampleState { count: SAMPLES, ..wgpu::MultisampleState::default() },
-            multiview: None,
-            cache: None,
-        });
+        let mut pipelines: Vec<Option<wgpu::RenderPipeline>> = (0..super::variant::COUNT).map(|_| None).collect();
+        pipelines[0] = Some(terrain_pipeline(device, &shader, lit_layout, &layout));
         let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("terrain shadow layout"),
             bind_group_layouts: &[globals_layout, &layout],
@@ -531,7 +501,7 @@ impl TerrainPass {
             ..wgpu::SamplerDescriptor::default()
         });
         Self {
-            pipeline,
+            pipelines,
             shadow_pipeline,
             water_pipeline,
             layout,
@@ -549,6 +519,7 @@ impl TerrainPass {
             visible: Vec::new(),
             waters: Vec::new(),
             water_draws: Vec::new(),
+            water_fx: Vec::new(),
             stats: TerrainStats::default(),
         }
     }
@@ -763,6 +734,9 @@ impl TerrainPass {
         let scene = &world.scene;
         self.visible.clear();
         self.waters.clear();
+        self.water_fx.clear();
+        // Детализация воды с эффектами — пресет (Low 0, Medium 1, High 2); без ресурса — High.
+        let water_detail = world.resources.get::<engine_core::settings::GraphicsSettings>().map_or(2, |g| g.water_detail);
         let mut stats = TerrainStats::default();
 
         // --- Вода ---
@@ -774,11 +748,15 @@ impl TerrainPass {
             }
             let p = scene.world_matrix(id).w_axis.truncate();
             let c = water.deep_color;
-            self.waters.push(WaterUniform {
+            let uniform = WaterUniform {
                 center: [p.x, p.y, p.z, (water.size * 0.5).max(0.0)],
                 deep: [c.r, c.g, c.b, water.opacity.clamp(0.0, 1.0)],
                 wave: [time % 10_000.0, water.waves.max(0.0), water.wave_speed, 0.0],
-            });
+            };
+            match scene.get_component::<WaterEffects>(id).filter(|fx| fx.enabled) {
+                Some(fx) => self.water_fx.push(WaterFxUniform::new([uniform.center, uniform.deep, uniform.wave], fx, water_detail)),
+                None => self.waters.push(uniform),
+            }
         });
 
         // --- Рельефы ---
@@ -1075,12 +1053,27 @@ impl TerrainPass {
         calls
     }
 
-    /// Рельеф в кадр. Возвращает (вызовы, треугольники).
-    pub fn draw(&mut self, pass: &mut wgpu::RenderPass, lit: &wgpu::BindGroup) -> (u32, u64) {
+    /// Собрать конвейер рельефа для варианта шейдера, если его ещё нет.
+    pub fn ensure_variant(&mut self, device: &wgpu::Device, variant: usize, lit_layout: &wgpu::BindGroupLayout) {
+        if self.pipelines[variant].is_some() || self.states.is_empty() {
+            return;
+        }
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("terrain shader variant"),
+            source: wgpu::ShaderSource::Wgsl(super::variant::terrain_source(variant).into()),
+        });
+        self.pipelines[variant] = Some(terrain_pipeline(device, &shader, lit_layout, &self.layout));
+    }
+
+    /// Рельеф в кадр (конвейер варианта `variant`). Возвращает (вызовы, треугольники).
+    pub fn draw(&mut self, pass: &mut wgpu::RenderPass, lit: &wgpu::BindGroup, variant: usize) -> (u32, u64) {
+        let Some(pipeline) = self.pipelines[variant].as_ref() else {
+            return (0, 0);
+        };
         if self.visible.is_empty() {
             return (0, 0);
         }
-        pass.set_pipeline(&self.pipeline);
+        pass.set_pipeline(pipeline);
         pass.set_bind_group(0, lit, &[]);
         let (mut calls, mut triangles) = (0u32, 0u64);
         let mut current: Option<usize> = None;
@@ -1135,6 +1128,65 @@ impl TerrainPass {
         }
         self.waters.len() as u32
     }
+}
+
+/// Вершины рельефа: позиция, нормаль, веса слоёв, цвет.
+const TERRAIN_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Snorm8x4, 2 => Unorm8x4, 3 => Unorm8x4];
+
+fn terrain_vertex_layout() -> wgpu::VertexBufferLayout<'static> {
+    wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<TerrainVertex>() as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &TERRAIN_VERTEX_ATTRIBUTES,
+    }
+}
+
+/// Основной конвейер рельефа для модуля шейдера одного варианта.
+fn terrain_pipeline(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    lit_layout: &wgpu::BindGroupLayout,
+    layout: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let main_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("terrain pipeline layout"),
+        bind_group_layouts: &[lit_layout, layout],
+        push_constant_ranges: &[],
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("terrain pipeline"),
+        layout: Some(&main_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers: &[terrain_vertex_layout()],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: HDR_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        // Юбки видны с обеих сторон.
+        primitive: wgpu::PrimitiveState::default(),
+        // Обратная глубина (depth.rs): ближе — больше.
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Greater,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState { count: SAMPLES, ..wgpu::MultisampleState::default() },
+        multiview: None,
+        cache: None,
+    })
 }
 
 fn found_id_alive(scene: &Scene, id: GameObjectId) -> bool {

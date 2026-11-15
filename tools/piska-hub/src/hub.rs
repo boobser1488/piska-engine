@@ -464,10 +464,6 @@ pub struct Hub {
     last_request_check: Instant,
     /// «Сейчас» для подписей времени (тесты подставляют своё).
     pub(crate) now: Option<u64>,
-    /// Заставка оконного запуска (`None` — без неё: тесты, снимки).
-    pub(crate) splash: Option<engine_editor::kit::window::LoadingScreen>,
-    /// Нарисован хотя бы один полный кадр в цветах темы (окно можно показывать).
-    pub(crate) themed: bool,
     /// Открытое системное окно выбора папки / файла и куда пойдёт ответ.
     native_browse: Option<(BrowseTarget, engine_build::file_dialog::Dialog)>,
     /// Системного окна нет (не открылось): дальше — встроенный обзор.
@@ -558,8 +554,6 @@ impl Hub {
             last_alive: None,
             last_request_check: Instant::now(),
             now: None,
-            splash: None,
-            themed: false,
             native_browse: None,
             native_browse_failed: false,
         };
@@ -624,22 +618,6 @@ impl Hub {
     /// Системное окно выбора открыто (ждём ответа).
     pub fn native_browse_open(&self) -> bool {
         self.native_browse.is_some()
-    }
-
-    /// Показывать заставку загрузки, пока идёт первый обход проектов (оконный запуск).
-    pub fn enable_splash(&mut self) {
-        self.splash = Some(Default::default());
-    }
-
-    /// Полный кадр в цветах темы уже нарисован: окно (созданное невидимым) можно показать
-    /// без белого или серого кадра системы.
-    pub fn themed(&self) -> bool {
-        self.themed
-    }
-
-    /// Заставка ещё на экране.
-    pub fn splash_visible(&self) -> bool {
-        self.splash.as_ref().is_some_and(|s| s.visible())
     }
 
     /// Что хаб делает сейчас при запуске (`None` — готов): то, что пишет заставка.

@@ -150,6 +150,7 @@ impl App {
         while self.accumulator > 1e-6 {
             self.accumulator -= fixed;
             profile.fixed_steps += 1;
+            world.set_phase_dt(Some(fixed));
             each_subsystem!(|subsystem| subsystem.before_fixed_update(world));
             // Нажатия копятся до первого шага: короткое нажатие не теряется.
             world.input.begin_fixed_step();
@@ -157,6 +158,7 @@ impl App {
             each_subsystem!(|subsystem| subsystem.fixed_update(world, fixed));
             scripts!(world.flush_messages());
             world.input.end_fixed_step();
+            world.set_phase_dt(None);
         }
         world.time.fixed_alpha = (1.0 + self.accumulator / fixed).clamp(0.0, 1.0);
         each_subsystem!(|subsystem| subsystem.interpolate(world, world.time.fixed_alpha));

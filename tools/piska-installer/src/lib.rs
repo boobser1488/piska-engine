@@ -26,6 +26,7 @@ pub mod protocol;
 pub mod runner;
 pub mod scripts;
 pub mod settings;
+pub mod startup;
 mod ui;
 
 /// Диагностика `piska-export doctor` — тот же файл, вшитый сюда (один источник проверок).

@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 use engine_editor::kit::i18n::{brand, trf, Language};
 use piska_installer::capture::Painter;
 use piska_installer::cli::{self, Args};
+use engine_editor::kit::boot::Boot;
+use engine_editor::GpuWarmup;
 use piska_installer::instance::Instance;
 use piska_installer::{Action, Installer, InstallerOptions};
 use winit::application::ApplicationHandler;
@@ -35,7 +37,12 @@ struct Gfx {
 }
 
 struct Runner {
-    installer: Installer,
+    /// Запуск установщика: заставка, потом мастер (собирается в фоне, `startup.rs`).
+    boot: Boot<Installer>,
+    /// Устройство wgpu готовится в фоне с первой секунды.
+    warmup: Option<GpuWarmup>,
+    /// Сохранённый размер окна уже применён (он известен, когда установщик собран).
+    size_applied: bool,
     instance: Option<Instance>,
     gfx: Option<Gfx>,
     error: Option<String>,
@@ -47,17 +54,17 @@ struct Runner {
 
 impl Runner {
     fn create_gfx(&mut self, event_loop: &ActiveEventLoop) -> Result<Gfx, String> {
-        let (w, h) = self.installer.window_size.unwrap_or((1060.0, 700.0));
+        // Сохранённый размер окна известен только собранному установщику: он применяется позже.
         let attributes = Window::default_attributes()
             .with_title(trf!("{engine} Setup", engine = brand::ENGINE_NAME))
             .with_visible(false)
-            .with_inner_size(LogicalSize::new(w.max(900.0), h.max(600.0)))
+            .with_inner_size(LogicalSize::new(1060.0, 700.0))
             .with_min_inner_size(LogicalSize::new(900.0, 600.0));
         let attributes = engine_render::with_window_icon(attributes, None);
         let window = Arc::new(event_loop.create_window(attributes).map_err(|e| e.to_string())?);
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
-        let surface = instance.create_surface(window.clone()).map_err(|e| e.to_string())?;
-        let gpu = pollster::block_on(engine_render::Gpu::request(&instance, Some(&surface))).map_err(|e| e.to_string())?;
+        // Устройство готово или почти готово: его готовил отдельный поток.
+        let engine_editor::WindowGpu { surface, gpu } =
+            self.warmup.take().unwrap_or_else(GpuWarmup::start).finish(window.clone()).map_err(|e| e.to_string())?;
         let caps = surface.get_capabilities(&gpu.adapter);
         // egui рисует в гамма-пространстве: поверхность не-sRGB.
         let format = caps.formats.iter().copied().find(|f| !f.is_srgb()).or_else(|| caps.formats.first().copied()).ok_or("the window surface reports no formats")?;
@@ -75,7 +82,6 @@ impl Runner {
         surface.configure(&gpu.device, &config);
         let max_texture = gpu.device.limits().max_texture_dimension_2d as usize;
         let egui = egui_winit::State::new(egui::Context::default(), egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, Some(max_texture));
-        self.installer.enable_splash(egui.egui_ctx());
         Ok(Gfx { window, surface, config, painter: Painter::new(gpu.device, gpu.queue, format), egui })
     }
 
@@ -86,13 +92,8 @@ impl Runner {
         let now = Instant::now();
         let raw = gfx.egui.take_egui_input(&gfx.window);
         let ctx = gfx.egui.egui_ctx().clone();
-        let installer = &mut self.installer;
-        let mut full = ctx.run(raw, |ctx| {
-            installer.ui(ctx);
-            if let Some(text) = installer.clipboard.take() {
-                ctx.copy_text(text);
-            }
-        });
+        let boot = &mut self.boot;
+        let mut full = ctx.run(raw, |ctx| piska_installer::startup::frame(boot, ctx));
         let repaint = full.viewport_output.get(&egui::ViewportId::ROOT).map_or(Duration::ZERO, |v| v.repaint_delay);
         gfx.egui.handle_platform_output(&gfx.window, std::mem::take(&mut full.platform_output));
         match gfx.surface.get_current_texture() {
@@ -102,7 +103,7 @@ impl Runner {
                 gfx.window.pre_present_notify();
                 frame.present();
                 // Первый кадр, нарисованный с темой и шрифтами (первый только ставит шрифты).
-                if !self.shown && self.frames >= 1 {
+                if !self.shown && self.boot.themed() {
                     gfx.window.set_visible(true);
                     self.shown = true;
                 }
@@ -119,7 +120,7 @@ impl Runner {
         if self.max_frames.is_some_and(|max| self.frames >= max) {
             event_loop.exit();
         }
-        if self.installer.quit {
+        if self.boot.quit_requested() || self.boot.value().is_some_and(|i| i.quit) {
             event_loop.exit();
         }
     }
@@ -150,20 +151,26 @@ impl ApplicationHandler for Runner {
             self.next_frame = Instant::now();
         }
         match event {
-            WindowEvent::CloseRequested => {
-                self.installer.apply(Action::Close);
-                if self.installer.quit {
-                    event_loop.exit();
-                } else {
-                    self.next_frame = Instant::now();
+            WindowEvent::CloseRequested => match self.boot.value_mut() {
+                Some(installer) => {
+                    installer.apply(Action::Close);
+                    if installer.quit {
+                        event_loop.exit();
+                    } else {
+                        self.next_frame = Instant::now();
+                    }
                 }
-            }
+                // Установщик ещё собирается (или запуск не удался): спрашивать не о чем.
+                None => event_loop.exit(),
+            },
             WindowEvent::Resized(size) => {
                 gfx.config.width = size.width.max(1);
                 gfx.config.height = size.height.max(1);
                 gfx.surface.configure(&gfx.painter.device, &gfx.config);
                 let logical = size.to_logical::<f32>(gfx.window.scale_factor());
-                self.installer.window_size = Some((logical.width, logical.height));
+                if let Some(installer) = self.boot.value_mut() {
+                    installer.window_size = Some((logical.width, logical.height));
+                }
                 self.next_frame = Instant::now();
             }
             WindowEvent::RedrawRequested => self.frame(event_loop),
@@ -175,13 +182,27 @@ impl ApplicationHandler for Runner {
         // Невидимое окно не получает RedrawRequested (Windows не шлёт WM_PAINT спрятанному
         // окну): пока окно не показано, кадры рисуются прямо отсюда — иначе первый кадр не
         // наступит никогда и окно так и останется невидимым.
+        self.boot.poll();
         if self.gfx.is_some() && !self.shown {
-            self.installer.update();
+            if let Some(installer) = self.boot.value_mut() {
+                installer.update();
+            }
             self.frame(event_loop);
             event_loop.set_control_flow(ControlFlow::Poll);
             return;
         }
-        let changed = self.installer.update();
+        // Установщик собран: сохранённый размер окна.
+        if !self.size_applied {
+            if let (Some(installer), Some(gfx)) = (self.boot.value(), self.gfx.as_ref()) {
+                self.size_applied = true;
+                if let Some((w, h)) = installer.window_size {
+                    let _ = gfx.window.request_inner_size(LogicalSize::new(w.max(900.0), h.max(600.0)));
+                }
+            }
+        }
+        // Пока установщик собирается или заставка растворяется, кадры идут сами.
+        let animating = self.boot.state() != engine_editor::kit::boot::BootState::Ready || self.boot.splash_visible();
+        let changed = self.boot.value_mut().is_some_and(|installer| installer.update()) || animating;
         let focus = self.instance.as_mut().is_some_and(Instance::tick);
         let Some(gfx) = &self.gfx else {
             return;
@@ -245,6 +266,8 @@ fn run_window(args: Args) -> i32 {
         Some(Ok(instance)) => Some(instance),
         None => None,
     };
+    // Видеокарта готовится с первой секунды, пока создаются цикл событий и окно.
+    let warmup = GpuWarmup::start();
     let event_loop = match EventLoop::new() {
         Ok(e) => e,
         Err(err) => {
@@ -254,7 +277,9 @@ fn run_window(args: Args) -> i32 {
         }
     };
     let mut runner = Runner {
-        installer: Installer::new(options),
+        boot: piska_installer::startup::start(options),
+        warmup: Some(warmup),
+        size_applied: false,
         instance,
         gfx: None,
         error: None,
@@ -266,14 +291,23 @@ fn run_window(args: Args) -> i32 {
     if let Err(err) = event_loop.run_app(&mut runner) {
         runner.error = Some(err.to_string());
     }
-    runner.installer.save_settings();
-    let code = cli::exit_code_of(runner.installer.run.as_ref().map(|r| &r.outcome));
+    if let Some(message) = runner.boot.error() {
+        engine_build::host::gui_startup("piska-installer", brand::CONFIG_DIR_NAME);
+        eprintln!("piska-installer: {message}");
+        return cli::EXIT_CANNOT_START;
+    }
+    let Some(installer) = runner.boot.value_mut() else {
+        // Окно закрыли, пока установщик собирался: ничего не начато.
+        return cli::EXIT_OK;
+    };
+    installer.save_settings();
+    let code = cli::exit_code_of(installer.run.as_ref().map(|r| &r.outcome));
     if let Some(err) = runner.error {
         engine_build::host::gui_startup("piska-installer", brand::CONFIG_DIR_NAME);
         eprintln!("piska-installer: {err}");
         return cli::EXIT_CANNOT_START;
     }
-    if runner.installer.backend_error.is_some() {
+    if installer.backend_error.is_some() {
         return cli::EXIT_CANNOT_START;
     }
     code

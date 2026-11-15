@@ -192,6 +192,9 @@ struct Runner {
     frame_time: crate::frame_time::FrameTimeFilter,
     /// Период монитора, с; перечитывается раз в пару секунд (окно могли перенести).
     refresh_period: Option<f32>,
+    /// Ровная подача кадров (см. `frame_time::FramePacer`) и срок начала следующего кадра.
+    pacer: crate::frame_time::FramePacer,
+    pace_next: Option<Instant>,
 }
 
 /// Ограничить размер поверхности тем, что умеет устройство (WebGL2 — часто 4096 или 8192).
@@ -361,7 +364,8 @@ impl Runner {
         };
         let now = Instant::now();
         // Ограничиваем dt: после паузы/перетаскивания окна игра не «прыгает».
-        let dt = (now - self.last_frame).as_secs_f32().min(0.25);
+        let raw_dt = (now - self.last_frame).as_secs_f32();
+        let dt = raw_dt.min(0.25);
         self.last_frame = now;
         // С вертикальной синхронизацией кадры на экране идут ровно через период монитора,
         // а измеренное время гуляет: мир двигаем на выровненное (иначе мелкие рывки).
@@ -374,6 +378,15 @@ impl Runner {
         }
         let synced = self.config.vsync && self.config.fps_cap == 0;
         let dt = self.frame_time.filter(dt, self.refresh_period.filter(|_| synced));
+        // Следующий кадр — через период монитора по своим часам, а не «как отпустит драйвер».
+        self.pace_next = self
+            .refresh_period
+            .filter(|_| synced && crate::frame_time::pacing_enabled())
+            .map(|period| self.pacer.frame_started(now, std::time::Duration::from_secs_f32(period)));
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::frame_time::trace_frame(raw_dt, dt);
+        #[cfg(target_arch = "wasm32")]
+        let _ = raw_dt;
 
         self.app.tick(dt);
         sync_cursor_capture(&mut self.app.world.input, self.window.as_deref());
@@ -635,6 +648,20 @@ impl ApplicationHandler<UserEvent> for Runner {
             }
             _event_loop.set_control_flow(ControlFlow::Poll);
         }
+        // Ровная подача кадров с vsync: до срока — сон, последние миллисекунды — точное
+        // ожидание (в браузере кадры задаёт `requestAnimationFrame`).
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(next) = self.pace_next {
+            let now = Instant::now();
+            if now < next {
+                if next - now > std::time::Duration::from_millis(3) {
+                    _event_loop.set_control_flow(ControlFlow::WaitUntil(next - std::time::Duration::from_millis(2)));
+                    return;
+                }
+                crate::frame_time::wait_until(next);
+            }
+            _event_loop.set_control_flow(ControlFlow::Poll);
+        }
         window.request_redraw();
     }
 }
@@ -711,6 +738,8 @@ pub fn run(app: App, config: WindowConfig) -> Result<(), RenderError> {
         shown: false,
         frame_time: crate::frame_time::FrameTimeFilter::new(),
         refresh_period: None,
+        pacer: crate::frame_time::FramePacer::new(),
+        pace_next: None,
     };
 
     #[cfg(target_arch = "wasm32")]

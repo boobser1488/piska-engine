@@ -10,12 +10,12 @@
 //! Диагностика хранит байтовый диапазон в тексте буфера (переводы строк — `\n`) и строку /
 //! столбец (с единицы, столбец — в символах). Когда текст правят, диапазоны сдвигаются
 //! ([`shift_range`]), а диагностики компилятора помечаются устаревшими (`stale`) до
-//! следующей проверки. Интерфейс «поставщика диагностик» ([`Provider`]) общий: позже его
-//! может реализовать клиент rust-analyzer, ничего не меняя в показе.
+//! следующей проверки. Проверка — функция «путь + текст → диагностики»
+//! (`code_check_data::check_file`): её место может занять клиент rust-analyzer, ничего не
+//! меняя в показе.
 
-use std::collections::BTreeMap;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Важность диагностики (порядок — по убыванию важности).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -129,7 +129,7 @@ impl Diagnostic {
 }
 
 /// Начала строк текста — перевод «байт ↔ строка, столбец» без прохода по всему тексту.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LineIndex {
     starts: Vec<usize>,
 }
@@ -140,6 +140,21 @@ impl LineIndex {
         starts.push(0);
         starts.extend(text.bytes().enumerate().filter(|(_, b)| *b == b'\n').map(|(i, _)| i + 1));
         Self { starts }
+    }
+
+    /// Поправить индекс после правки `(начало, конец в старом, конец в новом)`; `text` —
+    /// уже новый текст. Пересчитываются только строки правки, остальные сдвигаются.
+    pub fn apply_change(&mut self, text: &str, change: (usize, usize, usize)) {
+        let (start, old_end, new_end) = change;
+        // Начала строк, у которых `\n` перед ними лежал в заменённом куске.
+        let from = self.starts.partition_point(|s| *s <= start);
+        let to = self.starts.partition_point(|s| *s <= old_end);
+        let delta = new_end as isize - old_end as isize;
+        let inserted: Vec<usize> = text.as_bytes()[start..new_end].iter().enumerate().filter(|(_, b)| **b == b'\n').map(|(i, _)| start + i + 1).collect();
+        for s in &mut self.starts[to..] {
+            *s = (*s as isize + delta) as usize;
+        }
+        self.starts.splice(from..to, inserted);
     }
 
     pub fn lines(&self) -> usize {
@@ -211,10 +226,25 @@ pub(crate) fn text_change(old: &str, new: &str) -> Option<(usize, usize, usize)>
         return None;
     }
     let (a, b) = (old.as_bytes(), new.as_bytes());
-    let mut prefix = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    // Сравнение кусками (`memcmp`): мегабайтный файл — десятки микросекунд на нажатие.
+    const CHUNK: usize = 512;
+    let n = a.len().min(b.len());
+    let mut prefix = 0;
+    while prefix + CHUNK <= n && a[prefix..prefix + CHUNK] == b[prefix..prefix + CHUNK] {
+        prefix += CHUNK;
+    }
+    while prefix < n && a[prefix] == b[prefix] {
+        prefix += 1;
+    }
     prefix = floor_char(old, prefix).min(floor_char(new, prefix));
-    let max_suffix = a.len().min(b.len()) - prefix;
-    let mut suffix = a.iter().rev().zip(b.iter().rev()).take(max_suffix).take_while(|(x, y)| x == y).count();
+    let max_suffix = n - prefix;
+    let mut suffix = 0;
+    while suffix + CHUNK <= max_suffix && a[a.len() - suffix - CHUNK..a.len() - suffix] == b[b.len() - suffix - CHUNK..b.len() - suffix] {
+        suffix += CHUNK;
+    }
+    while suffix < max_suffix && a[a.len() - suffix - 1] == b[b.len() - suffix - 1] {
+        suffix += 1;
+    }
     while suffix > 0 && (!old.is_char_boundary(a.len() - suffix) || !new.is_char_boundary(b.len() - suffix)) {
         suffix -= 1;
     }
@@ -277,12 +307,6 @@ pub(crate) fn apply_edits(text: &str, edits: &[TextEdit]) -> String {
     out
 }
 
-/// Поставщик диагностик для одного файла (мгновенные проверки; позже — LSP).
-pub(crate) trait Provider: Send + Sync {
-    /// Проверить текст файла `path`. Вызывается из фонового потока для больших файлов.
-    fn check(&self, path: &Path, text: &str) -> Vec<Diagnostic>;
-}
-
 /// Счётчики для строки состояния, заголовка вкладки и фильтров Error List.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Counts {
@@ -306,18 +330,6 @@ impl Counts {
             counts.add(d.severity);
         }
         counts
-    }
-}
-
-/// Диагностики компилятора по файлам проекта (в том числе не открытым).
-#[derive(Default)]
-pub(crate) struct CompilerDiagnostics {
-    pub by_file: BTreeMap<PathBuf, Vec<Diagnostic>>,
-}
-
-impl CompilerDiagnostics {
-    pub fn total(&self) -> Counts {
-        Counts::of(self.by_file.values().flatten())
     }
 }
 
@@ -417,7 +429,8 @@ mod tests {
         let mut r = 10..14;
         assert!(!shift_range(&mut r, (20, 20, 25)) && r == (10..14));
         let mut r = 10..14;
-        assert!(shift_range(&mut r, (11, 12, 12)));
+        // Удалили байт 11 внутри диапазона: он сжимается на байт.
+        assert!(shift_range(&mut r, (11, 12, 11)));
         assert_eq!(r, 10..13);
         let change = text_change("let x = 1;", "let xy = 1;").unwrap();
         assert_eq!(change, (5, 5, 6));
